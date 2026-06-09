@@ -164,24 +164,79 @@
 
   /* ===== 1. SPLASH ===== */
   .screen-splash .phone-inner {
-    background: linear-gradient(160deg, #6750A4 0%, #4F378B 100%);
+    background: linear-gradient(145deg, #4F378B 0%, #6750A4 50%, #7B5EC6 100%);
+    overflow: hidden;
+  }
+  /* 마퀴 컨테이너 */
+  .marquee-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  .marquee-row {
+    position: absolute;
+    display: flex;
+    white-space: nowrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .marquee-row-1 { top: 34%; }
+  .marquee-row-2 { top: 62%; }
+  .marquee-item {
+    font-size: 38px;
+    opacity: 0.28;
+    flex-shrink: 0;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.2));
+  }
+  .marquee-item-sm {
+    font-size: 30px;
+    opacity: 0.20;
+    flex-shrink: 0;
+  }
+  @keyframes marquee1 {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  @keyframes marquee2 {
+    from { transform: translateX(-5%); }
+    to   { transform: translateX(-55%); }
+  }
+  .marquee-inner-1 {
+    display: flex; gap: 12px;
+    animation: marquee1 7s linear infinite;
+  }
+  .marquee-inner-2 {
+    display: flex; gap: 12px;
+    animation: marquee2 4.5s linear infinite;
   }
   .splash-content {
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     text-align: center;
+    animation: fadeSlideUp 0.7s 0.3s both;
+    z-index: 2;
   }
-  .splash-icon {
-    font-size: 52px;
-    margin-bottom: 12px;
-    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translate(-50%, calc(-50% + 24px)); }
+    to   { opacity: 1; transform: translate(-50%, -50%); }
+  }
+  .splash-logo-circle {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    border: 1.5px solid rgba(255,255,255,0.35);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 32px;
+    backdrop-filter: blur(4px);
   }
   .splash-title {
     font-size: 26px;
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.5px;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.25);
   }
   .splash-sub {
     margin-top: 6px;
@@ -189,14 +244,15 @@
     color: rgba(255,255,255,0.7);
     letter-spacing: 0.5px;
   }
-  .splash-dot {
-    margin-top: 40px;
-    width: 32px; height: 4px;
-    background: rgba(255,255,255,0.4);
-    border-radius: 2px;
-    margin-left: auto; margin-right: auto;
-    animation: pulse 1.5s infinite;
+  .splash-dots {
+    position: absolute;
+    bottom: 48px; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 8px;
+    z-index: 2;
   }
+  .s-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .s-dot.on  { background: rgba(255,255,255,1); }
+  .s-dot.off { background: rgba(255,255,255,0.35); }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
 
   /* ===== 2. HOME ===== */
@@ -850,11 +906,71 @@
             <span>●●●</span><span>WiFi</span><span>🔋</span>
           </div>
         </div>
+        <!-- 마퀴 배경 레이어 -->
+        <div class="marquee-layer">
+          <div class="marquee-row marquee-row-1">
+            <div class="marquee-inner-1">
+              <span class="marquee-item">👗</span>
+              <span class="marquee-item">👔</span>
+              <span class="marquee-item">👕</span>
+              <span class="marquee-item">🧥</span>
+              <span class="marquee-item">👘</span>
+              <span class="marquee-item">🩱</span>
+              <span class="marquee-item">🥻</span>
+              <span class="marquee-item">👖</span>
+              <span class="marquee-item">🧣</span>
+              <span class="marquee-item">👒</span>
+              <!-- 무한 루프용 복사 -->
+              <span class="marquee-item">👗</span>
+              <span class="marquee-item">👔</span>
+              <span class="marquee-item">👕</span>
+              <span class="marquee-item">🧥</span>
+              <span class="marquee-item">👘</span>
+              <span class="marquee-item">🩱</span>
+              <span class="marquee-item">🥻</span>
+              <span class="marquee-item">👖</span>
+              <span class="marquee-item">🧣</span>
+              <span class="marquee-item">👒</span>
+            </div>
+          </div>
+          <div class="marquee-row marquee-row-2">
+            <div class="marquee-inner-2">
+              <span class="marquee-item-sm">🥿</span>
+              <span class="marquee-item-sm">👟</span>
+              <span class="marquee-item-sm">🧢</span>
+              <span class="marquee-item-sm">🩲</span>
+              <span class="marquee-item-sm">🥾</span>
+              <span class="marquee-item-sm">👗</span>
+              <span class="marquee-item-sm">🧤</span>
+              <span class="marquee-item-sm">👟</span>
+              <span class="marquee-item-sm">👘</span>
+              <span class="marquee-item-sm">🩱</span>
+              <span class="marquee-item-sm">🥿</span>
+              <span class="marquee-item-sm">👟</span>
+              <span class="marquee-item-sm">🧢</span>
+              <span class="marquee-item-sm">🩲</span>
+              <span class="marquee-item-sm">🥾</span>
+              <span class="marquee-item-sm">👗</span>
+              <span class="marquee-item-sm">🧤</span>
+              <span class="marquee-item-sm">👟</span>
+              <span class="marquee-item-sm">👘</span>
+              <span class="marquee-item-sm">🩱</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 중앙 로고 -->
         <div class="splash-content">
-          <div class="splash-icon">👗</div>
+          <div class="splash-logo-circle">✦</div>
           <div class="splash-title">AI 샷메이커</div>
           <div class="splash-sub">모델 비용 제로 · 화보 퀄리티</div>
-          <div class="splash-dot"></div>
+        </div>
+
+        <!-- 하단 점 -->
+        <div class="splash-dots">
+          <div class="s-dot on"></div>
+          <div class="s-dot off"></div>
+          <div class="s-dot off"></div>
         </div>
       </div>
     </div>

@@ -1,37 +1,96 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/primary">
+    android:background="@drawable/bg_splash_gradient">
 
-    <TextView
-        android:id="@+id/tv_app_name"
+    <!-- 흘러가는 옷 아이템 배경 레이어 -->
+    <com.aishotmaker.ui.common.ClothingMarqueeView
+        android:id="@+id/clothing_marquee"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 중앙 콘텐츠 -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="AI 샷메이커"
-        android:textColor="@color/white"
-        android:textSize="36sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.05"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/tv_tagline"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintVerticalChainStyle="packed" />
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center">
 
-    <TextView
-        android:id="@+id/tv_tagline"
+        <!-- 로고 아이콘 배경 원 -->
+        <FrameLayout
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:background="@drawable/bg_splash_logo_circle">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="✦"
+                android:textColor="@color/white"
+                android:textSize="36sp" />
+
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tv_app_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="AI 샷메이커"
+            android:textColor="@color/white"
+            android:textSize="34sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02"
+            android:shadowColor="#40000000"
+            android:shadowDx="0"
+            android:shadowDy="2"
+            android:shadowRadius="8" />
+
+        <TextView
+            android:id="@+id/tv_tagline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="모델 비용 제로 · 화보 퀄리티"
+            android:textColor="#CCEADDFF"
+            android:textSize="14sp"
+            android:letterSpacing="0.05" />
+
+    </LinearLayout>
+
+    <!-- 하단 로딩 점 -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="모델 비용 제로, 화보 퀄리티"
-        android:textColor="#CCEADDFF"
-        android:textSize="15sp"
-        app:layout_constraintTop_toBottomOf="@id/tv_app_name"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="64dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:gap="8dp">
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <View
+            android:id="@+id/dot1"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="@drawable/bg_splash_dot_active" />
+
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_splash_dot_inactive" />
+
+        <View
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_splash_dot_inactive" />
+
+    </LinearLayout>
+
+</FrameLayout>
