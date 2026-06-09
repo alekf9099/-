@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 샷메이커 — 화면 미리보기</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0f0f13;
+    font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    color: #fff;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #a78bfa, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 48px;
+  }
+
+  .screens-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    justify-content: center;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  .screen-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .screen-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+
+  /* 폰 프레임 */
+  .phone {
+    width: 280px;
+    height: 590px;
+    background: #1a1a2e;
+    border-radius: 40px;
+    padding: 14px;
+    box-shadow:
+      0 0 0 2px #333,
+      0 30px 80px rgba(0,0,0,0.6),
+      inset 0 0 0 1px #444;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .phone-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    background: #fff;
+  }
+
+  /* 상태바 */
+  .status-bar {
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 10px;
+    font-weight: 600;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+  }
+  .status-bar.light { color: #1a1a1a; background: rgba(255,255,255,0.95); }
+  .status-bar.dark { color: #fff; background: transparent; }
+  .status-icons { display: flex; gap: 4px; align-items: center; }
+
+  /* === 공통 컴포넌트 === */
+  .toolbar {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fff;
+    position: relative;
+  }
+  .toolbar-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1a1a1a;
+    flex: 1;
+  }
+  .back-btn {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    margin-right: 8px;
+  }
+  .back-btn::before {
+    content: '‹';
+    font-size: 22px;
+    color: #6750A4;
+    line-height: 1;
+  }
+
+  .fab {
+    position: absolute;
+    bottom: 20px; right: 20px;
+    width: auto;
+    height: 48px;
+    padding: 0 20px;
+    background: #6750A4;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(103,80,164,0.5);
+  }
+
+  /* BottomNav */
+  .bottom-nav {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 56px;
+    background: #fff;
+    border-top: 1px solid #e8e4f0;
+    display: flex;
+    align-items: stretch;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 9px;
+    color: #999;
+  }
+  .nav-item.active { color: #6750A4; }
+  .nav-icon { font-size: 18px; line-height: 1; }
+
+  /* ===== 1. SPLASH ===== */
+  .screen-splash .phone-inner {
+    background: linear-gradient(160deg, #6750A4 0%, #4F378B 100%);
+  }
+  .splash-content {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .splash-icon {
+    font-size: 52px;
+    margin-bottom: 12px;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+  }
+  .splash-title {
+    font-size: 26px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+  .splash-sub {
+    margin-top: 6px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+    letter-spacing: 0.5px;
+  }
+  .splash-dot {
+    margin-top: 40px;
+    width: 32px; height: 4px;
+    background: rgba(255,255,255,0.4);
+    border-radius: 2px;
+    margin-left: auto; margin-right: auto;
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+  /* ===== 2. HOME ===== */
+  .screen-home .phone-inner { background: #fafafa; }
+
+  .home-header {
+    background: #fff;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid #f0ecf8;
+  }
+  .home-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .app-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1a1a1a;
+  }
+  .credit-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #f3eeff;
+    border-radius: 20px;
+    padding: 4px 10px;
+  }
+  .credit-chip .num {
+    font-size: 14px;
+    font-weight: 700;
+    color: #6750A4;
+  }
+  .credit-chip .lbl {
+    font-size: 10px;
+    color: #9c84cf;
+  }
+  .charge-btn {
+    font-size: 10px;
+    background: #6750A4;
+    color: #fff;
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #888;
+    letter-spacing: 0.5px;
+    padding: 12px 16px 8px;
+  }
+  .history-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 12px;
+  }
+  .history-card {
+    border-radius: 12px;
+    overflow: hidden;
+    background: #e8e4f0;
+    position: relative;
+    aspect-ratio: 3/4;
+  }
+  .history-card img-placeholder {
+    display: block;
+    width: 100%; height: 100%;
+  }
+  .history-card .card-thumb {
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+  .history-card .done-badge {
+    position: absolute;
+    bottom: 6px; right: 6px;
+    background: #6750A4;
+    color: #fff;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 8px;
+  }
+  .card-bg-1 { background: linear-gradient(160deg, #e8d5f5, #d4b8ee); }
+  .card-bg-2 { background: linear-gradient(160deg, #fde8d8, #f5c4a8); }
+  .card-bg-3 { background: linear-gradient(160deg, #d8eef5, #b8d8ee); }
+
+  /* ===== 3. CAMERA ===== */
+  .screen-camera .phone-inner {
+    background: #000;
+  }
+  .camera-viewfinder {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    bottom: 100px;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .camera-scene {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mannequin {
+    font-size: 90px;
+    opacity: 0.7;
+    filter: drop-shadow(0 0 20px rgba(255,255,255,0.1));
+  }
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 33.33% 33.33%;
+  }
+  .focus-ring {
+    position: absolute;
+    width: 60px; height: 60px;
+    border: 2px solid #FFD600;
+    border-radius: 4px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .camera-top-bar {
+    position: absolute;
+    top: 24px; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+    z-index: 5;
+  }
+  .cam-icon-btn {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .camera-guide-text {
+    position: absolute;
+    bottom: 110px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .camera-bottom {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 100px;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+  }
+  .gallery-btn {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    background: #2a2a2a;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .shutter-btn {
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shutter-inner {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  /* ===== 4. EDITOR ===== */
+  .screen-editor .phone-inner { background: #fafafa; }
+
+  .editor-preview {
+    position: relative;
+    height: 200px;
+    background: #f3eeff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .editor-clothing {
+    font-size: 80px;
+    opacity: 0.9;
+  }
+  .bg-removed-badge {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: #4caf50;
+    color: #fff;
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .checker-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(45deg, #ddd 25%, transparent 25%),
+      linear-gradient(-45deg, #ddd 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ddd 75%),
+      linear-gradient(-45deg, transparent 75%, #ddd 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
+    opacity: 0.4;
+  }
+  .nucci-toggle {
+    position: absolute;
+    bottom: 8px; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+  .toggle-pill {
+    background: #fff;
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 10px;
+    color: #666;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .toggle-pill.active { background: #6750A4; color: #fff; }
+
+  .model-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #333;
+    padding: 10px 16px 6px;
+  }
+  .model-scroll {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px;
+    overflow: hidden;
+  }
+  .model-card {
+    width: 68px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  .model-card .model-thumb {
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+  }
+  .model-card .model-name {
+    background: #1a1a1a;
+    color: #fff;
+    font-size: 8px;
+    padding: 3px 4px;
+    text-align: center;
+  }
+  .model-card.selected {
+    outline: 2.5px solid #6750A4;
+    outline-offset: 1px;
+  }
+  .model-card .check {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 16px; height: 16px;
+    background: #6750A4;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+    color: #fff;
+  }
+  .m-bg-1 { background: linear-gradient(160deg, #fde8d8, #f5b8a8); }
+  .m-bg-2 { background: linear-gradient(160deg, #e8d5f5, #c8a8ee); }
+  .m-bg-3 { background: linear-gradient(160deg, #d5e8f5, #a8c8ee); }
+  .m-bg-4 { background: linear-gradient(160deg, #f5f0e8, #eedca8); }
+
+  .generate-btn {
+    position: absolute;
+    bottom: 12px; left: 12px; right: 12px;
+    height: 48px;
+    background: linear-gradient(135deg, #6750A4, #8B5CF6);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 6px 20px rgba(103,80,164,0.45);
+  }
+
+  /* ===== 5. PROCESSING ===== */
+  .screen-processing .phone-inner {
+    background: linear-gradient(160deg, #f8f5ff, #ede8ff);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+  .processing-anim {
+    width: 160px; height: 160px;
+    border-radius: 80px;
+    background: linear-gradient(135deg, #e8d8ff, #d0b8ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 64px;
+    position: relative;
+    animation: spin-aura 3s ease-in-out infinite;
+    box-shadow: 0 0 40px rgba(103,80,164,0.3);
+  }
+  @keyframes spin-aura {
+    0%,100% { box-shadow: 0 0 30px rgba(103,80,164,0.3); }
+    50% { box-shadow: 0 0 60px rgba(103,80,164,0.6); }
+  }
+  .processing-ring {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    border-top-color: #6750A4;
+    border-right-color: #a78bfa;
+    animation: rotate 1.2s linear infinite;
+  }
+  @keyframes rotate { to { transform: rotate(360deg); } }
+  .processing-status {
+    margin-top: 28px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #4F378B;
+    text-align: center;
+    padding: 0 24px;
+  }
+  .processing-sub {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #9c84cf;
+    text-align: center;
+  }
+  .progress-bar-wrap {
+    margin-top: 28px;
+    width: 200px;
+    height: 8px;
+    background: #e0d8f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 68%;
+    background: linear-gradient(90deg, #6750A4, #a78bfa);
+    border-radius: 4px;
+    animation: progress-anim 2s ease-in-out infinite;
+  }
+  @keyframes progress-anim {
+    0% { width: 55%; }
+    50% { width: 78%; }
+    100% { width: 55%; }
+  }
+  .processing-step-list {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 200px;
+  }
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+  }
+  .step-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+    flex-shrink: 0;
+  }
+  .step-dot.done { background: #4caf50; color: #fff; }
+  .step-dot.active { background: #6750A4; color: #fff; animation: pulse 1s infinite; }
+  .step-dot.pending { background: #e0d8f0; color: #aaa; }
+  .step-label.done { color: #666; text-decoration: line-through; }
+  .step-label.active { color: #4F378B; font-weight: 700; }
+  .step-label.pending { color: #bbb; }
+
+  /* ===== 6. RESULT ===== */
+  .screen-result .phone-inner { background: #fafafa; }
+
+  .result-image {
+    height: 260px;
+    background: linear-gradient(160deg, #e8d5f5, #c8a0e8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .result-model {
+    font-size: 100px;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,0.2));
+    position: relative;
+    z-index: 2;
+  }
+  .result-bg-blur {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 30%, rgba(167,139,250,0.4), transparent 70%);
+  }
+  .result-badge {
+    position: absolute;
+    top: 12px; left: 12px;
+    background: rgba(255,255,255,0.9);
+    border-radius: 10px;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #6750A4;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    backdrop-filter: blur(8px);
+  }
+  .result-card {
+    margin: 12px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  }
+  .result-card-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #1a1a1a;
+    margin-bottom: 2px;
+  }
+  .result-card-sub {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 14px;
+  }
+  .result-btns {
+    display: flex;
+    gap: 10px;
+  }
+  .btn-primary {
+    flex: 1;
+    height: 40px;
+    background: linear-gradient(135deg, #6750A4, #8B5CF6);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .btn-outline {
+    flex: 1;
+    height: 40px;
+    border: 1.5px solid #6750A4;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6750A4;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .result-footer {
+    display: flex;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .btn-text {
+    flex: 1;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6750A4;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .btn-text-sec {
+    flex: 1;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 12px;
+  }
+
+  /* ===== 7. SUBSCRIPTION ===== */
+  .screen-sub .phone-inner { background: #fafafa; overflow-y: auto; }
+  .sub-header-card {
+    margin: 12px;
+    background: linear-gradient(135deg, #6750A4, #8B5CF6);
+    border-radius: 16px;
+    padding: 16px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .sub-header-card::before {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+  }
+  .sub-plan-label { font-size: 11px; opacity: 0.8; margin-bottom: 2px; }
+  .sub-credits-big { font-size: 28px; font-weight: 800; }
+  .sub-credits-unit { font-size: 13px; opacity: 0.8; }
+
+  .best-plan-card {
+    margin: 0 12px 8px;
+    background: #fff;
+    border: 2px solid #6750A4;
+    border-radius: 16px;
+    padding: 14px;
+    position: relative;
+  }
+  .best-badge {
+    position: absolute;
+    top: -10px; left: 16px;
+    background: #6750A4;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 10px;
+  }
+  .plan-title { font-size: 15px; font-weight: 800; color: #1a1a1a; margin-bottom: 4px; }
+  .plan-price { font-size: 20px; font-weight: 800; color: #6750A4; }
+  .plan-price span { font-size: 11px; font-weight: 400; color: #888; }
+  .plan-features {
+    margin: 8px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .feature-row {
+    font-size: 10px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .feature-row::before { content: '✓'; color: #6750A4; font-weight: 700; }
+  .sub-btn {
+    width: 100%;
+    height: 40px;
+    background: linear-gradient(135deg, #6750A4, #8B5CF6);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 10px;
+  }
+  .credit-packages { padding: 0 12px 80px; }
+  .credit-pkg-title { font-size: 12px; font-weight: 700; color: #888; margin: 8px 0 6px; }
+  .pkg-row {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .pkg-info .pkg-amount { font-size: 15px; font-weight: 700; color: #1a1a1a; }
+  .pkg-info .pkg-unit-price { font-size: 10px; color: #888; }
+  .pkg-btn {
+    background: #f3eeff;
+    color: #6750A4;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  /* flow-arrow */
+  .flow-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .flow-arrow {
+    font-size: 24px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  @media (max-width: 900px) {
+    .flow-arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>✦ AI 샷메이커</h1>
+<p class="subtitle">쇼핑몰 사장님을 위한 AI 착용샷 자동화 앱 — 화면 미리보기</p>
+
+<div class="flow-container">
+
+  <!-- ① SPLASH -->
+  <div class="screen-wrapper">
+    <div class="screen-label">① 스플래시</div>
+    <div class="phone screen-splash">
+      <div class="phone-inner">
+        <div class="status-bar dark">
+          <span>9:41</span>
+          <div class="status-icons">
+            <span>●●●</span><span>WiFi</span><span>🔋</span>
+          </div>
+        </div>
+        <div class="splash-content">
+          <div class="splash-icon">👗</div>
+          <div class="splash-title">AI 샷메이커</div>
+          <div class="splash-sub">모델 비용 제로 · 화보 퀄리티</div>
+          <div class="splash-dot"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">→</div>
+
+  <!-- ② HOME -->
+  <div class="screen-wrapper">
+    <div class="screen-label">② 홈</div>
+    <div class="phone screen-home">
+      <div class="phone-inner">
+        <div class="status-bar light">
+          <span>9:41</span>
+          <div class="status-icons">
+            <span>●●●</span><span>🔋</span>
+          </div>
+        </div>
+        <div style="padding-top:24px">
+          <div class="home-header">
+            <div class="home-header-top">
+              <div class="app-title">AI 샷메이커</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div class="credit-chip">
+                  <span class="num">5</span>
+                  <span class="lbl">장 남음</span>
+                </div>
+                <div class="charge-btn">충전</div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:#888">안녕하세요! 오늘도 멋진 착용샷 만들어 보세요 ✨</div>
+          </div>
+          <div class="section-title">최근 작업</div>
+          <div class="history-grid">
+            <div class="history-card card-bg-1">
+              <div class="card-thumb">👗</div>
+              <div class="done-badge">완성</div>
+            </div>
+            <div class="history-card card-bg-2">
+              <div class="card-thumb">👔</div>
+              <div class="done-badge">완성</div>
+            </div>
+            <div class="history-card card-bg-3">
+              <div class="card-thumb">👕</div>
+              <div class="done-badge">완성</div>
+            </div>
+            <div class="history-card" style="background:#f0eaf8;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px">
+              <div style="font-size:24px">＋</div>
+              <div style="font-size:9px;color:#9c84cf">새로 만들기</div>
+            </div>
+          </div>
+        </div>
+        <div class="fab">
+          <span>📷</span> 촬영하기
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-item active">
+            <span class="nav-icon">🏠</span>
+            <span>홈</span>
+          </div>
+          <div class="nav-item">
+            <span class="nav-icon">💎</span>
+            <span>구독</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">→</div>
+
+  <!-- ③ CAMERA -->
+  <div class="screen-wrapper">
+    <div class="screen-label">③ 카메라</div>
+    <div class="phone screen-camera">
+      <div class="phone-inner">
+        <div class="status-bar dark" style="background:transparent">
+          <span style="color:#fff">9:41</span>
+          <div class="status-icons" style="color:#fff">
+            <span>●●●</span><span>🔋</span>
+          </div>
+        </div>
+        <div class="camera-viewfinder">
+          <div class="camera-scene">
+            <div class="mannequin">🥻</div>
+            <div class="grid-overlay"></div>
+            <div class="focus-ring"></div>
+          </div>
+          <div class="camera-top-bar">
+            <div class="cam-icon-btn" style="color:#fff">✕</div>
+            <div style="color:#fff;font-size:11px;font-weight:600">촬영 모드</div>
+            <div class="cam-icon-btn">⚡</div>
+          </div>
+        </div>
+        <div class="camera-guide-text">옷을 중앙에 맞춰 촬영해주세요</div>
+        <div class="camera-bottom">
+          <div class="gallery-btn">🖼️</div>
+          <div class="shutter-btn">
+            <div class="shutter-inner"></div>
+          </div>
+          <div style="width:44px;height:44px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">→</div>
+
+  <!-- ④ EDITOR -->
+  <div class="screen-wrapper">
+    <div class="screen-label">④ 편집 / 모델 선택</div>
+    <div class="phone screen-editor">
+      <div class="phone-inner">
+        <div class="status-bar light">
+          <span>9:41</span>
+          <div class="status-icons"><span>🔋</span></div>
+        </div>
+        <div style="padding-top:24px">
+          <div class="toolbar">
+            <div class="back-btn"></div>
+            <div class="toolbar-title">모델 선택</div>
+            <div style="font-size:11px;color:#6750A4;font-weight:700">잔여 5장</div>
+          </div>
+          <div class="editor-preview">
+            <div class="checker-bg"></div>
+            <div class="editor-clothing">👗</div>
+            <div class="bg-removed-badge">✓ 누끼 완료</div>
+            <div class="nucci-toggle">
+              <div class="toggle-pill">원본</div>
+              <div class="toggle-pill active">누끼 미리보기</div>
+            </div>
+          </div>
+          <div class="model-section-title">AI 모델 선택</div>
+          <div class="model-scroll">
+            <div class="model-card selected m-bg-1">
+              <div class="model-thumb">👩</div>
+              <div class="model-name">소연 (동양)</div>
+              <div class="check">✓</div>
+            </div>
+            <div class="model-card m-bg-2">
+              <div class="model-thumb">👩‍🦰</div>
+              <div class="model-name">Emma (서양)</div>
+            </div>
+            <div class="model-card m-bg-3">
+              <div class="model-thumb">👨</div>
+              <div class="model-name">지훈 (남성)</div>
+            </div>
+            <div class="model-card m-bg-4">
+              <div class="model-thumb">👩‍🦱</div>
+              <div class="model-name">Lily (서양)</div>
+            </div>
+          </div>
+          <div style="padding:8px 16px;font-size:11px;color:#9c84cf;text-align:center">
+            선택: 소연 (동양인 여성)
+          </div>
+        </div>
+        <div class="generate-btn">
+          ✨ 착용샷 생성 (크레딧 1장)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">→</div>
+
+  <!-- ⑤ PROCESSING -->
+  <div class="screen-wrapper">
+    <div class="screen-label">⑤ AI 생성중</div>
+    <div class="phone screen-processing">
+      <div class="phone-inner" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:24px">
+        <div class="processing-anim">
+          🤖
+          <div class="processing-ring"></div>
+        </div>
+        <div class="processing-status">AI 모델이 옷을 입히는 중...</div>
+        <div class="processing-sub">고화질 처리 중이에요, 잠시만요!</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-fill"></div>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#9c84cf">68%</div>
+        <div class="processing-step-list">
+          <div class="step-item">
+            <div class="step-dot done">✓</div>
+            <span class="step-label done">배경 제거 완료</span>
+          </div>
+          <div class="step-item">
+            <div class="step-dot done">✓</div>
+            <span class="step-label done">의류 분석 완료</span>
+          </div>
+          <div class="step-item">
+            <div class="step-dot active">●</div>
+            <span class="step-label active">AI 착용 합성 중...</span>
+          </div>
+          <div class="step-item">
+            <div class="step-dot pending">○</div>
+            <span class="step-label pending">고해상도 후처리</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">→</div>
+
+  <!-- ⑥ RESULT -->
+  <div class="screen-wrapper">
+    <div class="screen-label">⑥ 결과</div>
+    <div class="phone screen-result">
+      <div class="phone-inner">
+        <div class="status-bar light">
+          <span>9:41</span>
+          <div class="status-icons"><span>🔋</span></div>
+        </div>
+        <div style="padding-top:24px">
+          <div class="result-image">
+            <div class="result-bg-blur"></div>
+            <div class="result-model">👩</div>
+            <div class="result-badge">✦ AI 생성 완료</div>
+          </div>
+          <div class="result-card">
+            <div class="result-card-title">화보 완성! 🎉</div>
+            <div class="result-card-sub">스마트스토어에 바로 올려보세요</div>
+            <div class="result-btns">
+              <div class="btn-primary">⬇ 저장하기</div>
+              <div class="btn-outline">↗ 공유하기</div>
+            </div>
+          </div>
+          <div class="result-footer">
+            <div class="btn-text">📷 새 착용샷</div>
+            <div class="btn-text-sec">← 홈으로</div>
+          </div>
+        </div>
+        <div class="bottom-nav">
+          <div class="nav-item active">
+            <span class="nav-icon">🏠</span>
+            <span>홈</span>
+          </div>
+          <div class="nav-item">
+            <span class="nav-icon">💎</span>
+            <span>구독</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 구독 화면은 별도 행 -->
+<div style="margin-top:48px;display:flex;flex-direction:column;align-items:center;gap:16px">
+  <div class="screen-label" style="font-size:14px">⑦ 크레딧 / 구독</div>
+  <div class="phone screen-sub" style="height:640px">
+    <div class="phone-inner">
+      <div class="status-bar light">
+        <span>9:41</span>
+        <div class="status-icons"><span>🔋</span></div>
+      </div>
+      <div style="padding-top:24px;height:100%;overflow-y:auto">
+        <div class="toolbar">
+          <div class="back-btn"></div>
+          <div class="toolbar-title">크레딧 / 구독</div>
+        </div>
+        <div class="sub-header-card">
+          <div class="sub-plan-label">현재 플랜 · 무료</div>
+          <div style="display:flex;align-items:baseline;gap:4px">
+            <div class="sub-credits-big">5</div>
+            <div class="sub-credits-unit">장 남음</div>
+          </div>
+        </div>
+        <div class="best-plan-card">
+          <div class="best-badge">BEST</div>
+          <div class="plan-title">월 구독</div>
+          <div class="plan-price">29,000원 <span>/ 월</span></div>
+          <div class="plan-features">
+            <div class="feature-row">매월 착용샷 100장 제공</div>
+            <div class="feature-row">장당 290원 (일반가 대비 -70%)</div>
+            <div class="feature-row">언제든지 해지 가능</div>
+          </div>
+          <div class="sub-btn">월 구독 시작하기</div>
+        </div>
+        <div class="credit-packages">
+          <div class="credit-pkg-title">일회성 크레딧 충전</div>
+          <div class="pkg-row">
+            <div class="pkg-info">
+              <div class="pkg-amount">30장</div>
+              <div class="pkg-unit-price">장당 333원</div>
+            </div>
+            <div class="pkg-btn">9,900원</div>
+          </div>
+          <div class="pkg-row">
+            <div class="pkg-info">
+              <div class="pkg-amount">100장</div>
+              <div class="pkg-unit-price">장당 290원</div>
+            </div>
+            <div class="pkg-btn">29,000원</div>
+          </div>
+          <div class="pkg-row">
+            <div class="pkg-info">
+              <div class="pkg-amount" style="color:#6750A4">300장 🔥</div>
+              <div class="pkg-unit-price" style="color:#6750A4">장당 233원 최저가</div>
+            </div>
+            <div class="pkg-btn" style="background:#6750A4;color:#fff">69,900원</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center;margin-top:48px;color:#555;font-size:12px;padding-bottom:40px">
+  AI 샷메이커 v1.0 · Android · Material Design 3<br>
+  <span style="color:#6750A4">Package: com.aishotmaker</span>
+</div>
+
+</body>
+</html>
