@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI 샷메이커</string>
+    <string name="tab_home">홈</string>
+    <string name="tab_history">히스토리</string>
+    <string name="tab_subscription">구독</string>
+    <string name="btn_capture">촬영</string>
+    <string name="btn_generate">착용 샷 생성</string>
+    <string name="btn_save">저장하기</string>
+    <string name="btn_share">공유하기</string>
+    <string name="credits_unit">장</string>
+    <string name="file_provider_authority">com.aishotmaker.fileprovider</string>
+</resources>
