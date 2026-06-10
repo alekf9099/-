@@ -10,3 +10,13 @@
 local.properties
 app/build/
 *.keystore
+
+# Backend (Python/FastAPI)
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.db
+backend/.env
+backend/storage/jobs/
+backend/storage/models/
