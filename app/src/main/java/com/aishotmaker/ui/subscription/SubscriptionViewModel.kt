@@ -5,6 +5,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.aishotmaker.data.repository.AuthRepository
 import com.aishotmaker.data.repository.Result
 import com.aishotmaker.data.repository.UserRepository
 import com.aishotmaker.domain.model.SubscriptionType
@@ -15,6 +16,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SubscriptionViewModel @Inject constructor(
     private val userRepository: UserRepository,
+    private val authRepository: AuthRepository,
     private val billingManager: BillingManager
 ) : ViewModel() {
 
@@ -41,6 +43,10 @@ class SubscriptionViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun logout() {
+        authRepository.logout()
     }
 
     fun startMonthlySubscription(activity: Activity) {

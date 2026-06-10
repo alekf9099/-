@@ -14,5 +14,8 @@ class Settings(BaseSettings):
 
     free_credits: int = 5
 
+    # Google 소셜 로그인 OAuth 클라이언트 ID (Android 앱의 Web Client ID)
+    google_client_id: str = ""
+
 
 settings = Settings()

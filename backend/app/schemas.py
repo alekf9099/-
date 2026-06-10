@@ -73,6 +73,10 @@ class LoginRequest(CamelModel):
     password: str
 
 
+class GoogleLoginRequest(CamelModel):
+    id_token: str
+
+
 class TokenResponse(CamelModel):
     access_token: str
     token_type: str = "bearer"

@@ -7,6 +7,21 @@ import retrofit2.http.*
 
 interface ApiService {
 
+    @POST("auth/register")
+    suspend fun register(
+        @Body request: RegisterRequest
+    ): Response<ApiResponse<TokenResponse>>
+
+    @POST("auth/login")
+    suspend fun login(
+        @Body request: LoginRequest
+    ): Response<ApiResponse<TokenResponse>>
+
+    @POST("auth/google")
+    suspend fun loginWithGoogle(
+        @Body request: GoogleLoginRequest
+    ): Response<ApiResponse<TokenResponse>>
+
     @GET("models")
     suspend fun getAiModels(): Response<ApiResponse<List<AiModelDto>>>
 
@@ -83,4 +98,23 @@ data class CreditBalanceDto(
 data class PurchaseRequest(
     val packageId: String,
     val purchaseToken: String
+)
+
+data class RegisterRequest(
+    val email: String,
+    val password: String
+)
+
+data class LoginRequest(
+    val email: String,
+    val password: String
+)
+
+data class GoogleLoginRequest(
+    val idToken: String
+)
+
+data class TokenResponse(
+    val accessToken: String,
+    val tokenType: String
 )

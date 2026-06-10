@@ -18,6 +18,8 @@ room = "2.6.1"
 datastore = "1.0.0"
 lottie = "6.3.0"
 billingKtx = "6.2.0"
+credentials = "1.3.0"
+googleid = "1.1.1"
 junit = "4.13.2"
 junitExt = "1.1.5"
 espresso = "3.5.1"
@@ -76,6 +78,11 @@ lottie = { group = "com.airbnb.android", name = "lottie", version.ref = "lottie"
 
 # Google Play Billing
 billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billingKtx" }
+
+# Google 소셜 로그인 (Credential Manager)
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

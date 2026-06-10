@@ -9,16 +9,21 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.aishotmaker.R
+import com.aishotmaker.data.repository.AuthRepository
 import com.aishotmaker.databinding.FragmentSplashBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class SplashFragment : Fragment() {
 
     private var _binding: FragmentSplashBinding? = null
     private val binding get() = _binding!!
+
+    @Inject
+    lateinit var authRepository: AuthRepository
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -34,7 +39,11 @@ class SplashFragment : Fragment() {
         animateLogo()
         lifecycleScope.launch {
             delay(2200)
-            findNavController().navigate(R.id.action_splash_to_home)
+            if (authRepository.isLoggedIn()) {
+                findNavController().navigate(R.id.action_splash_to_home)
+            } else {
+                findNavController().navigate(R.id.action_splash_to_login)
+            }
         }
     }
 

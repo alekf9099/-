@@ -16,7 +16,8 @@ class User(Base):
 
     id = Column(String, primary_key=True, default=gen_id)
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    hashed_password = Column(String, nullable=True)
+    auth_provider = Column(String, default="EMAIL", nullable=False)  # EMAIL, GOOGLE
     credits = Column(Integer, default=5, nullable=False)
     subscription_type = Column(String, default="FREE", nullable=False)
     subscription_expires_at = Column(DateTime, nullable=True)

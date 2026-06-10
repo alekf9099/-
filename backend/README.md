@@ -47,6 +47,7 @@ uvicorn app.main:app --reload
 | --- | --- | --- |
 | POST | `/v1/auth/register` | 회원가입 (이메일/비밀번호), 무료 크레딧 5개 지급 |
 | POST | `/v1/auth/login` | 로그인, JWT 토큰 발급 |
+| POST | `/v1/auth/google` | Google 소셜 로그인 (ID 토큰 검증 후 가입/로그인, JWT 토큰 발급) |
 | GET | `/v1/models` | AI 모델(가상 피팅 모델) 목록 조회 |
 | POST | `/v1/generate` | 옷 사진 업로드 → 배경 제거 + 모델 착샷 생성 작업 시작 |
 | GET | `/v1/generate/{jobId}/status` | 생성 작업 상태/결과 조회 |
@@ -55,6 +56,16 @@ uvicorn app.main:app --reload
 | POST | `/v1/user/credits/purchase` | 크레딧 패키지 구매 (인앱결제 토큰 검증은 TODO) |
 
 모든 인증 필요 엔드포인트는 `Authorization: Bearer <accessToken>` 헤더가 필요합니다.
+
+### Google 소셜 로그인 설정
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 OAuth 2.0 클라이언트 ID를 2개 생성합니다.
+   - **웹 애플리케이션** 타입 클라이언트 ID (서버 측 토큰 검증용)
+   - **Android** 타입 클라이언트 ID (앱 패키지명 `com.aishotmaker` + SHA-1 서명 등록)
+2. 백엔드 `.env`의 `GOOGLE_CLIENT_ID`에 위 **웹 클라이언트 ID**를 설정합니다.
+3. Android 앱 `app/src/main/res/values/strings.xml`의 `default_web_client_id`도 동일한 **웹 클라이언트 ID**로 교체합니다.
+4. 앱은 Credential Manager로 Google ID 토큰을 받아 `POST /v1/auth/google`로 전달하며,
+   서버는 `google-auth` 라이브러리로 토큰을 검증하고 이메일 기준으로 자동 가입/로그인 처리합니다.
 
 ## 간단한 테스트
 

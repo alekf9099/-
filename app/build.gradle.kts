@@ -104,6 +104,11 @@ dependencies {
     // Google Play Billing
     implementation(libs.billing.ktx)
 
+    // Google 소셜 로그인 (Credential Manager)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

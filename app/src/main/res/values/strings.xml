@@ -10,4 +10,21 @@
     <string name="btn_share">공유하기</string>
     <string name="credits_unit">장</string>
     <string name="file_provider_authority">com.aishotmaker.fileprovider</string>
+
+    <!-- 인증 -->
+    <string name="login_title">AI 샷메이커</string>
+    <string name="login_subtitle">로그인하고 AI 착용샷을 시작해보세요</string>
+    <string name="hint_email">이메일</string>
+    <string name="hint_password">비밀번호</string>
+    <string name="hint_password_confirm">비밀번호 확인</string>
+    <string name="btn_login">로그인</string>
+    <string name="btn_google_login">Google로 계속하기</string>
+    <string name="btn_register">회원가입</string>
+    <string name="login_to_register">아직 계정이 없으신가요? 회원가입</string>
+    <string name="register_title">회원가입</string>
+    <string name="register_to_login">이미 계정이 있으신가요? 로그인</string>
+    <string name="or_divider">또는</string>
+
+    <!-- TODO: Google Cloud Console에서 발급받은 OAuth 2.0 웹 클라이언트 ID로 교체 필요 -->
+    <string name="default_web_client_id" translatable="false">YOUR_WEB_CLIENT_ID.apps.googleusercontent.com</string>
 </resources>

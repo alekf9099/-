@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
+import com.aishotmaker.R
 import com.aishotmaker.databinding.FragmentSubscriptionBinding
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -68,6 +69,18 @@ class SubscriptionFragment : Fragment() {
         // 월 구독
         binding.btnSubscribeMonthly.setOnClickListener {
             viewModel.startMonthlySubscription(requireActivity())
+        }
+
+        // 로그아웃
+        binding.tvLogout.setOnClickListener {
+            viewModel.logout()
+            findNavController().navigate(
+                R.id.loginFragment,
+                null,
+                androidx.navigation.NavOptions.Builder()
+                    .setPopUpTo(R.id.nav_graph, true)
+                    .build()
+            )
         }
     }
 
