@@ -36,7 +36,8 @@ class GenerationJobDto(CamelModel):
     original_image_url: str
     removed_bg_image_url: Optional[str] = None
     result_image_url: Optional[str] = None
-    selected_model_id: str
+    selected_model_id: Optional[str] = None
+    user_photo_url: Optional[str] = None
     created_at: int
     completed_at: Optional[int] = None
     credits_used: Optional[int] = None

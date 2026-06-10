@@ -31,6 +31,7 @@ def _job_to_dto(job: models.GenerationJob, remaining_credits: int | None = None)
         removed_bg_image_url=job.removed_bg_image_url,
         result_image_url=job.result_image_url,
         selected_model_id=job.selected_model_id,
+        user_photo_url=job.user_photo_url,
         created_at=_to_millis(job.created_at),
         completed_at=_to_millis(job.completed_at),
         credits_used=job.credits_used,
@@ -42,7 +43,8 @@ def _job_to_dto(job: models.GenerationJob, remaining_credits: int | None = None)
 def generate(
     background_tasks: BackgroundTasks,
     image: UploadFile = File(...),
-    model_id: str = Form(...),
+    model_id: str | None = Form(None),
+    user_photo: UploadFile | None = File(None),
     remove_bg: str = Form("true"),
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
@@ -50,9 +52,14 @@ def generate(
     if user.credits <= 0:
         raise HTTPException(status_code=402, detail="크레딧이 부족합니다.")
 
-    ai_model = db.query(models.AiModel).filter(models.AiModel.id == model_id).first()
-    if not ai_model:
-        raise HTTPException(status_code=404, detail="선택한 AI 모델을 찾을 수 없습니다.")
+    if not model_id and not user_photo:
+        raise HTTPException(status_code=400, detail="AI 모델을 선택하거나 본인 사진을 업로드해주세요.")
+
+    ai_model = None
+    if model_id:
+        ai_model = db.query(models.AiModel).filter(models.AiModel.id == model_id).first()
+        if not ai_model:
+            raise HTTPException(status_code=404, detail="선택한 AI 모델을 찾을 수 없습니다.")
 
     job_id = uuid.uuid4().hex
     job_dir = os.path.join(settings.storage_dir, "jobs", job_id)
@@ -62,12 +69,21 @@ def generate(
     with open(original_path, "wb") as f:
         f.write(image.file.read())
 
+    user_photo_path = None
+    user_photo_url = None
+    if user_photo:
+        user_photo_path = os.path.join(job_dir, "user_photo.jpg")
+        with open(user_photo_path, "wb") as f:
+            f.write(user_photo.file.read())
+        user_photo_url = f"{settings.base_url}/static/jobs/{job_id}/user_photo.jpg"
+
     job = models.GenerationJob(
         id=job_id,
         user_id=user.id,
         status="PENDING",
         original_image_url=f"{settings.base_url}/static/jobs/{job_id}/original.jpg",
         selected_model_id=model_id,
+        user_photo_url=user_photo_url,
         credits_used=1,
     )
     db.add(job)
@@ -81,7 +97,8 @@ def generate(
         original_path=original_path,
         job_dir=job_dir,
         model_id=model_id,
-        model_name=ai_model.name,
+        model_name=ai_model.name if ai_model else None,
+        person_image_path=user_photo_path,
         do_remove_bg=remove_bg.lower() == "true",
     )
 
@@ -92,8 +109,9 @@ def _process_generation_job(
     job_id: str,
     original_path: str,
     job_dir: str,
-    model_id: str,
-    model_name: str,
+    model_id: str | None,
+    model_name: str | None,
+    person_image_path: str | None,
     do_remove_bg: bool,
 ) -> None:
     """백그라운드에서 실행되는 생성 파이프라인 (배경제거 → VTON 합성).
@@ -125,7 +143,7 @@ def _process_generation_job(
         time.sleep(1.5)
 
         result_path = os.path.join(job_dir, "result.jpg")
-        vton_provider.generate(garment_path, model_id, model_name, result_path)
+        vton_provider.generate(garment_path, model_id, model_name, result_path, person_image_path=person_image_path)
 
         job.result_image_url = f"{settings.base_url}/static/jobs/{job_id}/result.jpg"
         job.status = "COMPLETED"

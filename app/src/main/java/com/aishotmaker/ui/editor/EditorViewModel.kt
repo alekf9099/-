@@ -2,6 +2,7 @@ package com.aishotmaker.ui.editor
 
 import android.graphics.Bitmap
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -40,6 +41,28 @@ class EditorViewModel @Inject constructor(
     private val _credits = MutableLiveData(userRepository.getCachedCredits())
     val credits: LiveData<Int> = _credits
 
+    private val _fittingMode = MutableLiveData(FittingMode.AI_MODEL)
+    val fittingMode: LiveData<FittingMode> = _fittingMode
+
+    private val _userPhotoPath = MutableLiveData<String?>(null)
+    val userPhotoPath: LiveData<String?> = _userPhotoPath
+
+    private val _canGenerate = MediatorLiveData<Boolean>().apply {
+        fun update() {
+            val ready = when (_fittingMode.value) {
+                FittingMode.AI_MODEL -> _selectedModel.value != null
+                FittingMode.USER_PHOTO -> _userPhotoPath.value != null
+                else -> false
+            }
+            value = ready && (_credits.value ?: 0) > 0
+        }
+        addSource(_fittingMode) { update() }
+        addSource(_selectedModel) { update() }
+        addSource(_userPhotoPath) { update() }
+        addSource(_credits) { update() }
+    }
+    val canGenerate: LiveData<Boolean> = _canGenerate
+
     init {
         loadAiModels()
     }
@@ -70,4 +93,16 @@ class EditorViewModel @Inject constructor(
     fun selectModel(model: AiModel) {
         _selectedModel.value = model
     }
+
+    fun selectFittingMode(mode: FittingMode) {
+        _fittingMode.value = mode
+    }
+
+    fun setUserPhoto(path: String) {
+        _userPhotoPath.value = path
+    }
+}
+
+enum class FittingMode {
+    AI_MODEL, USER_PHOTO
 }

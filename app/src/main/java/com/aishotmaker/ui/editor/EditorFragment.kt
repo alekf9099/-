@@ -1,10 +1,12 @@
 package com.aishotmaker.ui.editor
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
@@ -13,6 +15,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import coil.load
 import com.aishotmaker.databinding.FragmentEditorBinding
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.File
 
 @AndroidEntryPoint
 class EditorFragment : Fragment() {
@@ -23,6 +26,12 @@ class EditorFragment : Fragment() {
     private val viewModel: EditorViewModel by viewModels()
     private val args: EditorFragmentArgs by navArgs()
     private lateinit var modelAdapter: AiModelAdapter
+
+    private val pickUserPhoto = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { copyUserPhotoToCache(it) }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -70,7 +79,6 @@ class EditorFragment : Fragment() {
         }
 
         viewModel.selectedModel.observe(viewLifecycleOwner) { model ->
-            binding.btnGenerate.isEnabled = model != null
             binding.tvSelectedModel.text = model?.name ?: "모델을 선택해주세요"
         }
 
@@ -81,7 +89,32 @@ class EditorFragment : Fragment() {
 
         viewModel.credits.observe(viewLifecycleOwner) { credits ->
             binding.tvCreditsRemaining.text = "잔여 크레딧: ${credits}장"
-            binding.btnGenerate.isEnabled = credits > 0 && viewModel.selectedModel.value != null
+        }
+
+        viewModel.fittingMode.observe(viewLifecycleOwner) { mode ->
+            val isAiModel = mode == FittingMode.AI_MODEL
+            binding.tvModelSectionTitle.visibility = if (isAiModel) View.VISIBLE else View.GONE
+            binding.rvModels.visibility = if (isAiModel) View.VISIBLE else View.GONE
+            binding.tvSelectedModel.visibility = if (isAiModel) View.VISIBLE else View.GONE
+            binding.groupUserPhoto.visibility = if (isAiModel) View.GONE else View.VISIBLE
+
+            val checkedId = if (isAiModel) binding.btnModeAiModel.id else binding.btnModeUserPhoto.id
+            if (binding.toggleFittingMode.checkedButtonId != checkedId) {
+                binding.toggleFittingMode.check(checkedId)
+            }
+        }
+
+        viewModel.userPhotoPath.observe(viewLifecycleOwner) { path ->
+            if (path != null) {
+                binding.ivUserPhoto.load(path) { crossfade(true) }
+                binding.btnPickUserPhoto.text = "다른 사진 선택"
+            } else {
+                binding.btnPickUserPhoto.text = "전신 사진 선택"
+            }
+        }
+
+        viewModel.canGenerate.observe(viewLifecycleOwner) { canGenerate ->
+            binding.btnGenerate.isEnabled = canGenerate
         }
     }
 
@@ -101,12 +134,38 @@ class EditorFragment : Fragment() {
             binding.ivCapturedClothing.visibility = if (checked) View.GONE else View.VISIBLE
             binding.ivRemovedBg.visibility = if (checked) View.VISIBLE else View.GONE
         }
+
+        binding.toggleFittingMode.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            val mode = if (checkedId == binding.btnModeAiModel.id) FittingMode.AI_MODEL else FittingMode.USER_PHOTO
+            viewModel.selectFittingMode(mode)
+        }
+
+        binding.btnPickUserPhoto.setOnClickListener {
+            pickUserPhoto.launch("image/*")
+        }
+    }
+
+    private fun copyUserPhotoToCache(uri: Uri) {
+        val outputFile = File(requireContext().cacheDir, "user_photo_${System.currentTimeMillis()}.jpg")
+        requireContext().contentResolver.openInputStream(uri)?.use { input ->
+            outputFile.outputStream().use { output -> input.copyTo(output) }
+        }
+        viewModel.setUserPhoto(outputFile.absolutePath)
     }
 
     private fun navigateToProcessing() {
-        val modelId = viewModel.selectedModel.value?.id ?: return
         val imagePath = args.imagePath
-        val action = EditorFragmentDirections.actionEditorToProcessing(imagePath, modelId)
+        val action = when (viewModel.fittingMode.value) {
+            FittingMode.USER_PHOTO -> {
+                val userPhotoPath = viewModel.userPhotoPath.value ?: return
+                EditorFragmentDirections.actionEditorToProcessing(imagePath, null, userPhotoPath)
+            }
+            else -> {
+                val modelId = viewModel.selectedModel.value?.id ?: return
+                EditorFragmentDirections.actionEditorToProcessing(imagePath, modelId, null)
+            }
+        }
         findNavController().navigate(action)
     }
 

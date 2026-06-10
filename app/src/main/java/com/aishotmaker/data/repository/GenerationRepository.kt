@@ -49,7 +49,8 @@ class GenerationRepository @Inject constructor(
 
     fun generateFittingShot(
         imageFile: File,
-        modelId: String,
+        modelId: String? = null,
+        userPhotoFile: File? = null,
         removeBg: Boolean = true
     ): Flow<Result<GenerationJob>> = flow {
         emit(Result.Loading)
@@ -59,10 +60,17 @@ class GenerationRepository @Inject constructor(
                 imageFile.name,
                 imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
             )
-            val modelIdBody = modelId.toRequestBody("text/plain".toMediaTypeOrNull())
+            val modelIdBody = modelId?.toRequestBody("text/plain".toMediaTypeOrNull())
             val removeBgBody = removeBg.toString().toRequestBody("text/plain".toMediaTypeOrNull())
+            val userPhotoPart = userPhotoFile?.let {
+                MultipartBody.Part.createFormData(
+                    "user_photo",
+                    it.name,
+                    it.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                )
+            }
 
-            val response = apiService.generateFittingShot(imagePart, modelIdBody, removeBgBody)
+            val response = apiService.generateFittingShot(imagePart, modelIdBody, removeBgBody, userPhotoPart)
             if (response.isSuccessful && response.body()?.success == true) {
                 val jobDto = response.body()!!.data!!
                 val job = jobDto.toDomain()
@@ -114,6 +122,7 @@ class GenerationRepository @Inject constructor(
         removedBgImageUrl = removedBgImageUrl,
         resultImageUrl = resultImageUrl,
         selectedModelId = selectedModelId,
+        userPhotoUrl = userPhotoUrl,
         createdAt = createdAt,
         completedAt = completedAt
     )

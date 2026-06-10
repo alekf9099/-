@@ -39,7 +39,8 @@ data class GenerationJob(
     val originalImageUrl: String,
     val removedBgImageUrl: String?,
     val resultImageUrl: String?,
-    val selectedModelId: String,
+    val selectedModelId: String?,
+    val userPhotoUrl: String?,
     val createdAt: Long,
     val completedAt: Long?
 )

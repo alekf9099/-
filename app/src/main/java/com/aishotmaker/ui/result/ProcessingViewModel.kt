@@ -23,7 +23,7 @@ class ProcessingViewModel @Inject constructor(
     private val _progress = MutableLiveData(0)
     val progress: LiveData<Int> = _progress
 
-    fun startGeneration(imagePath: String, modelId: String) {
+    fun startGeneration(imagePath: String, modelId: String?, userPhotoPath: String?) {
         viewModelScope.launch {
             _processingState.value = ProcessingState.Loading
             _progress.value = 10
@@ -34,7 +34,8 @@ class ProcessingViewModel @Inject constructor(
                 return@launch
             }
 
-            generationRepository.generateFittingShot(imageFile, modelId).collect { result ->
+            val userPhotoFile = userPhotoPath?.let { File(it) }
+            generationRepository.generateFittingShot(imageFile, modelId, userPhotoFile).collect { result ->
                 when (result) {
                     is Result.Loading -> {
                         _processingState.value = ProcessingState.Processing("서버에 전송 중...")

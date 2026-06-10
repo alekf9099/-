@@ -29,8 +29,9 @@ interface ApiService {
     @POST("generate")
     suspend fun generateFittingShot(
         @Part image: MultipartBody.Part,
-        @Part("model_id") modelId: RequestBody,
-        @Part("remove_bg") removeBg: RequestBody
+        @Part("model_id") modelId: RequestBody?,
+        @Part("remove_bg") removeBg: RequestBody,
+        @Part userPhoto: MultipartBody.Part?
     ): Response<ApiResponse<GenerationJobDto>>
 
     @GET("generate/{jobId}/status")
@@ -75,7 +76,8 @@ data class GenerationJobDto(
     val originalImageUrl: String,
     val removedBgImageUrl: String?,
     val resultImageUrl: String?,
-    val selectedModelId: String,
+    val selectedModelId: String?,
+    val userPhotoUrl: String?,
     val createdAt: Long,
     val completedAt: Long?,
     val creditsUsed: Int?,

@@ -33,7 +33,7 @@ class ProcessingFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setupObservers()
-        viewModel.startGeneration(args.imagePath, args.modelId)
+        viewModel.startGeneration(args.imagePath, args.modelId, args.userPhotoPath)
     }
 
     private fun setupObservers() {
@@ -63,7 +63,7 @@ class ProcessingFragment : Fragment() {
         binding.layoutError.visibility = View.VISIBLE
         binding.tvError.text = message
         binding.btnRetry.setOnClickListener {
-            viewModel.startGeneration(args.imagePath, args.modelId)
+            viewModel.startGeneration(args.imagePath, args.modelId, args.userPhotoPath)
         }
         binding.btnCancel.setOnClickListener {
             findNavController().navigateUp()

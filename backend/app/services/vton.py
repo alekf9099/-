@@ -13,11 +13,16 @@ class VTONProvider(ABC):
     def generate(
         self,
         garment_path: str,
-        model_id: str,
-        model_name: str,
+        model_id: str | None,
+        model_name: str | None,
         output_path: str,
+        person_image_path: str | None = None,
     ) -> None:
-        """garment_path 의류 이미지를 model_id 모델에 합성하여 output_path에 저장."""
+        """garment_path 의류 이미지를 인물에 합성하여 output_path에 저장.
+
+        person_image_path가 주어지면 사용자가 업로드한 본인 사진을 인물로 사용하고,
+        없으면 model_id로 지정된 AI 모델 인물을 사용한다.
+        """
 
 
 def get_vton_provider() -> VTONProvider:
@@ -39,22 +44,28 @@ class MockVTONProvider(VTONProvider):
     def generate(
         self,
         garment_path: str,
-        model_id: str,
-        model_name: str,
+        model_id: str | None,
+        model_name: str | None,
         output_path: str,
+        person_image_path: str | None = None,
     ) -> None:
-        bg_top, bg_bottom, accent_color = self._colors_for(model_id)
+        if person_image_path:
+            canvas = self._build_person_canvas(person_image_path)
+            label = "AI FITTING - MY PHOTO"
+        else:
+            bg_top, bg_bottom, accent_color = self._colors_for(model_id or "default")
 
-        w, h = self.SIZE[0] * self.SCALE, self.SIZE[1] * self.SCALE
-        canvas = Image.new("RGB", (w, h))
-        draw = ImageDraw.Draw(canvas)
+            w, h = self.SIZE[0] * self.SCALE, self.SIZE[1] * self.SCALE
+            canvas = Image.new("RGB", (w, h))
+            draw = ImageDraw.Draw(canvas)
 
-        self._draw_gradient_bg(draw, w, h, bg_top, bg_bottom)
-        self._draw_silhouette(draw, w, h, accent_color)
+            self._draw_gradient_bg(draw, w, h, bg_top, bg_bottom)
+            self._draw_silhouette(draw, w, h, accent_color)
 
-        canvas = canvas.resize(self.SIZE, Image.LANCZOS)
+            canvas = canvas.resize(self.SIZE, Image.LANCZOS)
+            label = f"AI MODEL - {model_id}"
 
-        # 의류 이미지를 실루엣 위치에 합성 (그림자 + 합성)
+        # 의류 이미지를 인물 위치에 합성 (그림자 + 합성)
         garment = Image.open(garment_path).convert("RGBA")
         garment.thumbnail((420, 520))
         gx = (self.SIZE[0] - garment.width) // 2
@@ -74,15 +85,35 @@ class MockVTONProvider(VTONProvider):
 
         draw = ImageDraw.Draw(canvas, "RGBA")
 
-        # 상단 라벨 바 (PIL 기본 폰트는 한글을 지원하지 않으므로 ASCII인 model_id 사용)
+        # 상단 라벨 바 (PIL 기본 폰트는 한글을 지원하지 않으므로 ASCII 텍스트만 사용)
         draw.rectangle([(0, 0), (self.SIZE[0], 56)], fill=(0, 0, 0, 130))
-        draw.text((20, 16), f"AI MODEL - {model_id}", fill=(255, 255, 255))
+        draw.text((20, 16), label, fill=(255, 255, 255))
 
         # 하단 워터마크 바
         draw.rectangle([(0, self.SIZE[1] - 40), (self.SIZE[0], self.SIZE[1])], fill=(0, 0, 0, 200))
         draw.text((20, self.SIZE[1] - 28), "DEMO RESULT - Mock VTON Provider", fill=(255, 255, 255))
 
         canvas.save(output_path, "JPEG", quality=92)
+
+    def _build_person_canvas(self, person_image_path: str) -> Image.Image:
+        """사용자가 업로드한 전신 사진을 결과 캔버스 크기에 맞춰 채워넣는다."""
+        person = Image.open(person_image_path).convert("RGB")
+
+        target_w, target_h = self.SIZE
+        src_ratio = person.width / person.height
+        target_ratio = target_w / target_h
+
+        if src_ratio > target_ratio:
+            new_height = target_h
+            new_width = int(new_height * src_ratio)
+        else:
+            new_width = target_w
+            new_height = int(new_width / src_ratio)
+
+        person = person.resize((new_width, new_height), Image.LANCZOS)
+        left = (new_width - target_w) // 2
+        top = (new_height - target_h) // 2
+        return person.crop((left, top, left + target_w, top + target_h))
 
     def _colors_for(self, model_id: str) -> tuple[tuple, tuple, tuple]:
         seed = int(hashlib.md5(model_id.encode()).hexdigest(), 16)
@@ -154,19 +185,26 @@ class ReplicateVTONProvider(VTONProvider):
     def generate(
         self,
         garment_path: str,
-        model_id: str,
-        model_name: str,
+        model_id: str | None,
+        model_name: str | None,
         output_path: str,
+        person_image_path: str | None = None,
     ) -> None:
-        from app.services.model_images import get_model_image_provider
+        if person_image_path:
+            # 사용자가 업로드한 본인 사진을 인물 이미지로 사용
+            human_image_path = person_image_path
+            garment_des = "garment"
+        else:
+            from app.services.model_images import get_model_image_provider
 
-        # 모델 인물 이미지(인물 사진)와 의류 이미지를 함께 전달
-        model_image_path = output_path + ".model_ref.jpg"
-        get_model_image_provider().generate_portrait(
-            model_image_path, model_id=model_id, name=model_name, ethnicity="ASIAN", gender="FEMALE"
-        )
+            # 모델 인물 이미지(인물 사진)와 의류 이미지를 함께 전달
+            human_image_path = output_path + ".model_ref.jpg"
+            get_model_image_provider().generate_portrait(
+                human_image_path, model_id=model_id, name=model_name, ethnicity="ASIAN", gender="FEMALE"
+            )
+            garment_des = f"garment for {model_name}"
 
-        with open(model_image_path, "rb") as f:
+        with open(human_image_path, "rb") as f:
             human_data = f.read()
         with open(garment_path, "rb") as f:
             garm_data = f.read()
@@ -185,7 +223,7 @@ class ReplicateVTONProvider(VTONProvider):
             "input": {
                 "human_img": human_b64,
                 "garm_img": garm_b64,
-                "garment_des": f"garment for {model_name}",
+                "garment_des": garment_des,
             },
         }
         resp = requests.post(self.API_URL, json=payload, headers=headers, timeout=30)

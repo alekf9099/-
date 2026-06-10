@@ -109,6 +109,38 @@
         android:layout_height="wrap_content"
         android:visibility="gone" />
 
+    <!-- 피팅 방식 선택 (AI 모델 / 내 사진) -->
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/toggle_fitting_mode"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="16dp"
+        app:singleSelection="true"
+        app:selectionRequired="true"
+        app:layout_constraintTop_toBottomOf="@id/card_bg_removal_status"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_mode_ai_model"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:checked="true"
+            android:text="AI 모델로 보기" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_mode_user_photo"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="내 사진으로 입어보기" />
+
+    </com.google.android.material.button.MaterialButtonToggleGroup>
+
     <!-- AI 모델 선택 영역 -->
     <TextView
         android:id="@+id/tv_model_section_title"
@@ -120,7 +152,7 @@
         android:textSize="16sp"
         android:textStyle="bold"
         android:textColor="@color/text_primary"
-        app:layout_constraintTop_toBottomOf="@id/card_bg_removal_status"
+        app:layout_constraintTop_toBottomOf="@id/toggle_fitting_mode"
         app:layout_constraintStart_toStartOf="parent" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -148,6 +180,38 @@
         app:layout_constraintTop_toBottomOf="@id/rv_models"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- 내 사진으로 피팅하기 영역 -->
+    <LinearLayout
+        android:id="@+id/group_user_photo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="16dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/toggle_fitting_mode"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ImageView
+            android:id="@+id/iv_user_photo"
+            android:layout_width="72dp"
+            android:layout_height="96dp"
+            android:scaleType="centerCrop"
+            android:background="@color/surface" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_pick_user_photo"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text="전신 사진 선택" />
+
+    </LinearLayout>
 
     <!-- 생성 버튼 -->
     <com.google.android.material.button.MaterialButton
