@@ -21,12 +21,23 @@ Android 앱(`ApiService.kt`)과 1:1로 매칭되는 `/v1` REST API를 FastAPI로
   - 추후 `RembgProvider`, 클라우드 API 등으로 교체 가능
 - `app/services/model_images.py`
   - `ModelImageProvider` (ABC) → `LocalAvatarProvider` (기본, PIL 기반 인물 일러스트)
-  - `MODEL_IMAGE_PROVIDER=replicate` + `REPLICATE_API_TOKEN` 설정 시 `ReplicateModelImageProvider`(SDXL)가 실제 AI 인물 이미지를 생성
+  - `MODEL_IMAGE_PROVIDER=pollinations` 설정 시 `PollinationsModelImageProvider`가 무료(가입/API 키 불필요)로 AI 사진풍 인물 이미지를 생성
+  - `MODEL_IMAGE_PROVIDER=replicate` + `REPLICATE_API_TOKEN` 설정 시 `ReplicateModelImageProvider`(SDXL)가 더 높은 품질의 AI 인물 이미지를 생성
 - `app/services/vton.py`
   - `VTONProvider` (ABC) → `MockVTONProvider` (기본, 합성 이미지 생성)
   - `VTON_PROVIDER=replicate` + `REPLICATE_API_TOKEN` 설정 시 `ReplicateVTONProvider`(IDM-VTON)가 실제 가상 피팅 이미지를 생성
 
-### 실제 AI 이미지로 전환하기
+### 무료로 AI 모델 이미지 품질 올리기 (Pollinations)
+
+```bash
+# .env
+MODEL_IMAGE_PROVIDER=pollinations
+```
+
+가입/API 키/카드 등록 없이 AI 모델 인물 썸네일이 사진풍 이미지로 생성됩니다
+(외부 무료 서비스라 속도가 느리거나 일시적으로 응답이 없을 수 있음).
+
+### 실제 AI 이미지로 전환하기 (Replicate, 유료)
 
 ```bash
 # .env

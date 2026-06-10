@@ -1,6 +1,8 @@
 import hashlib
+import os
 import time
 from abc import ABC, abstractmethod
+from urllib.parse import quote
 
 import requests
 from PIL import Image, ImageDraw
@@ -24,6 +26,8 @@ class ModelImageProvider(ABC):
 def get_model_image_provider() -> ModelImageProvider:
     if settings.model_image_provider == "replicate" and settings.replicate_api_token:
         return ReplicateModelImageProvider(settings.replicate_api_token)
+    if settings.model_image_provider == "pollinations":
+        return PollinationsModelImageProvider()
     return LocalAvatarProvider()
 
 
@@ -163,6 +167,49 @@ class LocalAvatarProvider(ModelImageProvider):
         draw.arc(
             [(cx - 18 * s, eye_y + 30 * s), (cx + 18 * s, eye_y + 50 * s)],
             start=20, end=160, fill=mouth_color, width=int(3 * s),
+        )
+
+
+class PollinationsModelImageProvider(ModelImageProvider):
+    """Pollinations.ai(무료, 가입/API 키 불필요)를 사용해 AI 인물 이미지를 생성.
+
+    MODEL_IMAGE_PROVIDER=pollinations 설정만으로 사용 가능하며,
+    동일한 ModelImageProvider 인터페이스를 구현하므로 호출부 코드 변경이 필요 없음.
+    """
+
+    BASE_URL = "https://image.pollinations.ai/prompt/"
+
+    def generate_portrait(
+        self,
+        output_path: str,
+        model_id: str,
+        name: str,
+        ethnicity: str,
+        gender: str,
+    ) -> None:
+        prompt = self._build_prompt(name, ethnicity, gender)
+        seed = int(hashlib.md5(model_id.encode()).hexdigest(), 16) % 1_000_000
+
+        url = self.BASE_URL + quote(prompt)
+        params = {"width": 768, "height": 1024, "seed": seed, "nologo": "true"}
+        resp = requests.get(url, params=params, timeout=120)
+        resp.raise_for_status()
+
+        tmp_path = output_path + ".tmp"
+        with open(tmp_path, "wb") as f:
+            f.write(resp.content)
+
+        img = Image.open(tmp_path).convert("RGB")
+        img = img.resize((300, 400), Image.LANCZOS)
+        img.save(output_path, "JPEG", quality=92)
+        os.remove(tmp_path)
+
+    def _build_prompt(self, name: str, ethnicity: str, gender: str) -> str:
+        ethnicity_desc = "Korean" if ethnicity == "ASIAN" else "Western"
+        gender_desc = "woman" if gender == "FEMALE" else "man"
+        return (
+            f"professional studio portrait photo of a {ethnicity_desc} {gender_desc} fashion model, "
+            "plain background, soft lighting, high detail, photorealistic, fashion catalog photo"
         )
 
 
