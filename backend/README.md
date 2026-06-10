@@ -13,15 +13,31 @@ Android 앱(`ApiService.kt`)과 1:1로 매칭되는 `/v1` REST API를 FastAPI로
 
 ## 아키텍처
 
-배경 제거(누끼)와 가상 피팅(VTON)은 추상 인터페이스로 분리되어 있어,
-지금은 Mock 구현체로 동작하고 추후 실제 AI 모델/외부 API로 교체할 수 있습니다.
+배경 제거(누끼), AI 모델 인물 이미지, 가상 피팅(VTON)은 모두 추상 인터페이스로 분리되어 있어,
+지금은 API 키 없이 동작하는 로컬 구현체로 동작하고 환경변수만 설정하면 실제 AI API로 교체됩니다.
 
 - `app/services/bg_removal.py`
   - `BgRemovalProvider` (ABC) → `FloodFillBgRemoval` (현재 사용, 단순 플러드필 기반)
   - 추후 `RembgProvider`, 클라우드 API 등으로 교체 가능
+- `app/services/model_images.py`
+  - `ModelImageProvider` (ABC) → `LocalAvatarProvider` (기본, PIL 기반 인물 일러스트)
+  - `MODEL_IMAGE_PROVIDER=replicate` + `REPLICATE_API_TOKEN` 설정 시 `ReplicateModelImageProvider`(SDXL)가 실제 AI 인물 이미지를 생성
 - `app/services/vton.py`
-  - `VTONProvider` (ABC) → `MockVTONProvider` (현재 사용, 합성 이미지 생성)
-  - 추후 `RemoteVTONProvider` (Replicate, RunPod 등 IDM-VTON 호스팅)로 교체 가능
+  - `VTONProvider` (ABC) → `MockVTONProvider` (기본, 합성 이미지 생성)
+  - `VTON_PROVIDER=replicate` + `REPLICATE_API_TOKEN` 설정 시 `ReplicateVTONProvider`(IDM-VTON)가 실제 가상 피팅 이미지를 생성
+
+### 실제 AI 이미지로 전환하기
+
+```bash
+# .env
+MODEL_IMAGE_PROVIDER=replicate
+VTON_PROVIDER=replicate
+REPLICATE_API_TOKEN=r8_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+위 값을 설정하고 서버를 재시작하면, 시드 데이터의 AI 모델 인물 이미지와 `/generate`의
+착용샷 결과가 Replicate API(SDXL / IDM-VTON)를 통해 실제 AI로 생성됩니다.
+키가 없으면 자동으로 로컬 구현체로 동작합니다.
 
 ## 실행 방법
 

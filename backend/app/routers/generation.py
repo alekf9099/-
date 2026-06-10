@@ -11,12 +11,12 @@ from app.config import settings
 from app.database import SessionLocal, get_db
 from app.deps import get_current_user
 from app.services.bg_removal import FloodFillBgRemoval
-from app.services.vton import MockVTONProvider
+from app.services.vton import get_vton_provider
 
 router = APIRouter()
 
 bg_remover = FloodFillBgRemoval()
-vton_provider = MockVTONProvider()
+vton_provider = get_vton_provider()
 
 
 def _to_millis(dt: datetime | None) -> int | None:
