@@ -49,7 +49,8 @@ import com.melodeal.community.ReportTarget
 import com.melodeal.community.Track
 import com.melodeal.ui.app
 import com.melodeal.ui.components.EmptyState
-import com.melodeal.ui.components.GradientButton
+import com.melodeal.ui.components.FollowChip
+import com.melodeal.ui.components.compactCount
 import com.melodeal.ui.components.PlayerAvatar
 import com.melodeal.ui.components.SectionTitle
 import com.melodeal.ui.components.stageGlow
@@ -80,9 +81,11 @@ fun ProfileScreen(
         var reporting by remember { mutableStateOf(false) }
         var confirmBlock by remember { mutableStateOf(false) }
         var toast by remember { mutableStateOf<String?>(null) }
+        var following by remember { mutableStateOf(false) }
         val scope = rememberCoroutineScope()
         LaunchedEffect(targetId, reload, me) {
-            profile = if (isMe) me else runCatching { community.profile(targetId) }.getOrNull()
+            profile = runCatching { community.profile(targetId) }.getOrNull() ?: if (isMe) me else null
+            if (!isMe) following = runCatching { community.isFollowing(targetId) }.getOrDefault(false)
             tracks = runCatching { community.tracksBy(targetId) }.getOrDefault(emptyList())
             if (isMe) blocked = runCatching { community.blockedUsers() }.getOrDefault(emptyList())
         }
@@ -90,6 +93,12 @@ fun ProfileScreen(
             profile = profile, tracks = tracks, isMe = isMe, blocked = blocked,
             onBack = onBack, onOpenTrack = onOpenTrack, onSettings = onSettings,
             onEdit = { editing = true },
+            following = following,
+            onFollow = {
+                val now = !following
+                following = now
+                scope.launch { runCatching { community.setFollowing(targetId, now) }.onSuccess { reload++ }.onFailure { following = !now; toast = it.message } }
+            },
             onChat = { scope.launch { runCatching { community.openConversation(targetId) }.onSuccess(onChat).onFailure { toast = it.message } } },
             onReport = { reporting = true },
             onBlock = { confirmBlock = true },
@@ -145,6 +154,8 @@ fun ProfileContent(
     onOpenTrack: (String) -> Unit = {},
     onSettings: () -> Unit = {},
     onEdit: () -> Unit = {},
+    following: Boolean = false,
+    onFollow: () -> Unit = {},
     onChat: () -> Unit = {},
     onReport: () -> Unit = {},
     onBlock: () -> Unit = {},
@@ -164,17 +175,19 @@ fun ProfileContent(
                 PlayerAvatar(profile?.nickname ?: "?", Neon.Pink, 84)
                 Text(profile?.nickname ?: "", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 10.dp))
                 if (!profile?.bio.isNullOrBlank()) Text(profile!!.bio, color = Neon.TextMid, style = MaterialTheme.typography.bodyMedium)
-                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    StatBlock("${tracks.size}", "공유한 곡")
-                    StatBlock("${tracks.sumOf { it.likeCount }}", "받은 좋아요")
-                    StatBlock(tracks.filter { it.ratingCount > 0 }.let { r -> if (r.isEmpty()) "-" else "%.1f".format(r.sumOf { it.ratingSum }.toDouble() / r.sumOf { it.ratingCount }) }, "평균 별점")
+                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    StatBlock("${tracks.size}", "곡")
+                    StatBlock(compactCount(profile?.followerCount ?: 0), "팔로워")
+                    StatBlock(compactCount(profile?.followingCount ?: 0), "팔로잉")
+                    StatBlock(compactCount(tracks.sumOf { it.likeCount }), "받은 좋아요")
                 }
                 Spacer(Modifier.height(14.dp))
                 if (isMe) {
                     OutlinedButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = null); Text("  프로필 수정") }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        GradientButton("메시지", Neon.Hero, icon = Icons.AutoMirrored.Filled.Chat, onClick = onChat, modifier = Modifier.width(160.dp))
+                        FollowChip(following, onFollow)
+                        OutlinedButton(onClick = onChat) { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null); Text("  메시지") }
                         IconButton(onClick = onReport) { Icon(Icons.Filled.Flag, contentDescription = "신고", tint = Neon.TextMid) }
                         IconButton(onClick = onBlock) { Icon(Icons.Filled.Block, contentDescription = "차단", tint = Neon.TextMid) }
                     }

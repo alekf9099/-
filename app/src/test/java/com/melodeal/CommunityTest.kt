@@ -13,6 +13,8 @@ import com.melodeal.data.song.Genre
 import com.melodeal.studio.Composition
 import com.melodeal.studio.MelodyGenerator
 import com.melodeal.studio.MusicKey
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,7 +28,7 @@ import org.junit.Test
 
 class CommunityTest {
     private val lenient = Json { ignoreUnknownKeys = true }
-    private fun demo() = DemoCommunity(replyDelayMs = 10)
+    private fun demo() = DemoCommunity(replyDelayMs = 10, reactionDelayMs = 0)
 
     private inline fun <reified E : Throwable> assertThrows(block: () -> Unit) {
         try { block(); fail("${E::class.simpleName} 예외가 나야 함") } catch (e: Throwable) { if (e !is E) throw e }
@@ -103,8 +105,10 @@ class CommunityTest {
         c.saveProfile("흥얼러", "")
         val conv = c.openConversation("u2", "t2")
         assertEquals(conv, c.openConversation("u2"))
+        // 답장을 놓치지 않도록 보내기 전에 먼저 듣기 시작한다
+        val waiting = async(start = CoroutineStart.UNDISPATCHED) { withTimeout(2000) { c.incoming(conv).first() } }
         c.sendMessage(conv, "가사 붙여도 될까요?")
-        val reply = withTimeout(2000) { c.incoming(conv).first() }
+        val reply = waiting.await()
         assertEquals("u2", reply.senderId)
         assertEquals(1, c.conversations().first().unread)
         c.markRead(conv)

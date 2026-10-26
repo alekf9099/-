@@ -81,11 +81,12 @@ object PreviewPlayer {
     private var player: SynthPlayer? = null
     private var job: Job? = null
 
-    fun toggle(track: Track, onStarted: () -> Unit = {}) {
-        if (_state.value.trackId == track.id) stop() else play(track.id, track.composition, onStarted)
+    fun toggle(track: Track, onStarted: () -> Unit = {}, onCompleted: () -> Unit = {}) {
+        if (_state.value.trackId == track.id) stop() else play(track.id, track.composition, onStarted, onCompleted)
     }
 
-    fun play(id: String, comp: Composition, onStarted: () -> Unit = {}) {
+    /** [onCompleted]: 끝까지 들었을 때 (차트 점수에 반영) */
+    fun play(id: String, comp: Composition, onStarted: () -> Unit = {}, onCompleted: () -> Unit = {}) {
         stop()
         _state.value = State(id, loading = true)
         job = scope.launch {
@@ -99,7 +100,7 @@ object PreviewPlayer {
             while (isActive) {
                 delay(100)
                 _state.value = State(id, progress = (p.positionSec / total).toFloat().coerceIn(0f, 1f))
-                if (p.isFinished) break
+                if (p.isFinished) { onCompleted(); break }
             }
             stop()
         }
@@ -114,12 +115,12 @@ object PreviewPlayer {
 }
 
 @Composable
-fun PlayButton(track: Track, size: Dp = 44.dp, onStarted: () -> Unit = {}) {
+fun PlayButton(track: Track, size: Dp = 44.dp, onStarted: () -> Unit = {}, onCompleted: () -> Unit = {}) {
     val st by PreviewPlayer.state.collectAsState()
     val mine = st.trackId == track.id
     Box(
         Modifier.size(size).clip(CircleShape).background(if (mine) Neon.Hero else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Neon.SurfaceHigh, Neon.SurfaceHigh)))
-            .clickable { PreviewPlayer.toggle(track, onStarted) },
+            .clickable { PreviewPlayer.toggle(track, onStarted, onCompleted) },
         contentAlignment = Alignment.Center,
     ) {
         when {
@@ -227,7 +228,7 @@ fun ReportDialog(title: String, onDismiss: () -> Unit, onSubmit: (ReportReason, 
  * 커뮤니티 탭 공통 관문: 로그인 → 닉네임이 없으면 닉네임 정하기 화면, 있으면 content.
  */
 @Composable
-fun CommunityGate(content: @Composable () -> Unit) {
+fun CommunityGate(requireProfile: Boolean = true, content: @Composable () -> Unit) {
     val community = app().community
     val me by community.me.collectAsState()
     var checked by remember { mutableStateOf(me != null) }
@@ -251,8 +252,48 @@ fun CommunityGate(content: @Composable () -> Unit) {
                 }) { Text("다시 시도") }
             }
         }
+        !requireProfile -> content()
         else -> NicknameSetup()
     }
+}
+
+/**
+ * 둘러보기는 닉네임 없이 하고, 좋아요·추천·팔로우처럼 활동할 때만 닉네임을 묻는다.
+ * 돌려준 함수로 감싼 동작은 닉네임이 있으면 바로, 없으면 닉네임을 정한 뒤 실행된다.
+ */
+@Composable
+fun rememberProfileGuard(): (() -> Unit) -> Unit {
+    val community = app().community
+    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    pending?.let { action ->
+        var nickname by remember { mutableStateOf("") }
+        var error by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("닉네임을 정해 주세요") },
+            text = {
+                Column {
+                    Text("좋아요·추천·팔로우는 닉네임을 정한 뒤 할 수 있어요. 언제든 MY에서 바꿀 수 있어요.", color = Neon.TextMid, style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        nickname, { nickname = it.take(12); error = null }, label = { Text("닉네임 (2~12자)") }, singleLine = true,
+                        isError = error != null, supportingText = { error?.let { Text(it) } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = nickname.trim().length >= 2, onClick = {
+                    scope.launch {
+                        runCatching { community.saveProfile(nickname, "") }
+                            .onSuccess { pending = null; action() }
+                            .onFailure { error = (it as? CommunityException)?.message ?: it.message }
+                    }
+                }) { Text("시작하기") }
+            },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("나중에") } },
+        )
+    }
+    return { action -> if (community.me.value != null) action() else pending = action }
 }
 
 @Composable

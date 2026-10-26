@@ -10,10 +10,27 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Equalizer
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import com.melodeal.community.Track
+import com.melodeal.ui.activity.ActivityScreen
+import com.melodeal.ui.chart.ChartScreen
+import com.melodeal.ui.create.CreateSheet
+import com.melodeal.ui.discover.DiscoverScreen
+import com.melodeal.ui.my.MyScreen
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -27,9 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
-import com.melodeal.ui.community.ChatListScreen
 import com.melodeal.ui.community.ChatRoomScreen
-import com.melodeal.ui.community.FeedScreen
 import com.melodeal.ui.community.ProfileScreen
 import com.melodeal.ui.community.TrackDetailScreen
 import kotlinx.coroutines.delay
@@ -45,7 +60,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.melodeal.ui.AppViewModel
-import com.melodeal.ui.home.HomeScreen
 import com.melodeal.ui.onboarding.OnboardingScreen
 import com.melodeal.ui.party.PartyQueueScreen
 import com.melodeal.ui.party.PartySetupScreen
@@ -83,13 +97,13 @@ object Routes {
     const val RANKING = "ranking"
     const val SETTINGS = "settings"
     const val RECORD = "studio/record"
-    const val FEED = "feed"
-    const val CHATS = "chats"
-    const val ME = "me"
+    const val CHART = "chart"
+    const val ACTIVITY = "activity"
+    const val MY = "my"
     fun track(id: String) = "track/$id"
     fun profile(id: String) = "profile/$id"
     fun chat(id: String) = "chat/$id"
-    val tabs = setOf(HOME, FEED, CHATS, ME)
+    val tabs = setOf(HOME, CHART, ACTIVITY, MY)
     fun editor(id: Long) = "studio/edit/$id"
 
     /** reservePlayer >= 0 이면 해당 참가자 예약용으로 곡을 고른다 */
@@ -104,18 +118,30 @@ private fun AppNav(appVm: AppViewModel) {
     val nav = rememberNavController()
     val settings = (androidx.compose.ui.platform.LocalContext.current.applicationContext as MelodealApp).settings
     val singerName = { settings.state.value.myName.ifBlank { "나" } }
-    val community = (androidx.compose.ui.platform.LocalContext.current.applicationContext as MelodealApp).community
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as MelodealApp
+    val community = app.community
     val me by community.me.collectAsState()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     var unread by remember { mutableIntStateOf(0) }
-    // 안 읽은 메시지 배지 (로그인돼 있을 때만, 20초마다)
-    LaunchedEffect(me) {
+    var refreshBadge by remember { mutableIntStateOf(0) }
+    var creating by remember { mutableStateOf(false) }
+    // 활동 탭 배지 = 안 읽은 알림 + 안 읽은 메시지 (로그인돼 있을 때만, 20초마다 + 새 알림이 오면 바로)
+    LaunchedEffect(me, refreshBadge) {
         while (me != null) {
-            unread = runCatching { community.conversations().sumOf { it.unread } }.getOrDefault(unread)
+            unread = runCatching {
+                community.notifications().count { !it.read } + community.conversations().sumOf { it.unread }
+            }.getOrDefault(unread)
             delay(20_000)
         }
     }
+    LaunchedEffect(me) { if (me != null) community.notificationEvents().collect { unread++ } }
+    fun sing(t: Track) {
+        val id = "community:${t.id}"
+        app.songs.putTransient(t.composition.toSong(id, t.ownerNickname))
+        nav.navigate(Routes.sing(id, singerName()))
+    }
+    fun party() = nav.navigate(if (appVm.party.value.players.isEmpty()) Routes.PARTY_SETUP else Routes.PARTY_QUEUE)
     fun openTab(tab: String) = nav.navigate(tab) {
         popUpTo(Routes.HOME) { saveState = true }
         launchSingleTop = true
@@ -131,24 +157,25 @@ private fun AppNav(appVm: AppViewModel) {
             })
         }
         composable(Routes.HOME) {
-            HomeScreen(
-                onParty = { nav.navigate(if (appVm.party.value.players.isEmpty()) Routes.PARTY_SETUP else Routes.PARTY_QUEUE) },
-                onSolo = { nav.navigate(Routes.songs()) },
-                onRanking = { nav.navigate(Routes.RANKING) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
-                onCreate = { nav.navigate(Routes.RECORD) },
-                onOpenSong = { nav.navigate(Routes.editor(it)) },
+            DiscoverScreen(onOpenTrack = { nav.navigate(Routes.track(it)) }, onOpenProfile = { nav.navigate(Routes.profile(it)) }, onSing = ::sing)
+        }
+        composable(Routes.CHART) { ChartScreen(onOpenTrack = { nav.navigate(Routes.track(it)) }) }
+        composable(Routes.ACTIVITY) {
+            ActivityScreen(
+                onOpenTrack = { nav.navigate(Routes.track(it)) },
+                onOpenProfile = { nav.navigate(Routes.profile(it)) },
+                onOpenChat = { nav.navigate(Routes.chat(it)) },
+                onSeen = { refreshBadge++ },
             )
         }
-        composable(Routes.FEED) {
-            FeedScreen(onOpenTrack = { nav.navigate(Routes.track(it)) }, onOpenProfile = { nav.navigate(Routes.profile(it)) })
-        }
-        composable(Routes.CHATS) { ChatListScreen(onOpen = { nav.navigate(Routes.chat(it)) }) }
-        composable(Routes.ME) {
-            ProfileScreen(
-                userId = null, onBack = null,
+        composable(Routes.MY) {
+            MyScreen(
+                onOpenSong = { nav.navigate(Routes.editor(it)) },
                 onOpenTrack = { nav.navigate(Routes.track(it)) },
-                onChat = { nav.navigate(Routes.chat(it)) },
+                onCreate = { creating = true },
+                onSing = { nav.navigate(Routes.songs()) },
+                onParty = ::party,
+                onRanking = { nav.navigate(Routes.RANKING) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
             )
         }
@@ -269,33 +296,55 @@ private fun AppNav(appVm: AppViewModel) {
         composable(Routes.RANKING) { RankingScreen(onBack = { nav.popBackStack() }) }
         composable(Routes.SETTINGS) { SettingsScreen(onBack = { nav.popBackStack() }) }
     }
-    if (route in Routes.tabs) BottomTabs(route, unread, ::openTab)
+    if (route in Routes.tabs) BottomTabs(route, unread, ::openTab, onCreate = { creating = true })
+    }
+    if (creating) {
+        CreateSheet(
+            onDismiss = { creating = false },
+            onRecord = { creating = false; nav.navigate(Routes.RECORD) },
+            onOpenSong = { creating = false; nav.navigate(Routes.editor(it)) },
+            onSing = { creating = false; nav.navigate(Routes.songs()) },
+            onParty = { creating = false; party() },
+        )
     }
 }
 
+private data class Tab(val route: String, val label: String, val on: androidx.compose.ui.graphics.vector.ImageVector, val off: androidx.compose.ui.graphics.vector.ImageVector)
+
+/** 홈 · 차트 · ＋만들기 · 활동 · MY */
 @Composable
-private fun BottomTabs(route: String?, unread: Int, onTab: (String) -> Unit) {
+private fun BottomTabs(route: String?, unread: Int, onTab: (String) -> Unit, onCreate: () -> Unit) {
+    val left = listOf(Tab(Routes.HOME, "홈", Icons.Filled.Home, Icons.Outlined.Home), Tab(Routes.CHART, "차트", Icons.Filled.Equalizer, Icons.Outlined.Equalizer))
+    val right = listOf(Tab(Routes.ACTIVITY, "활동", Icons.Filled.Notifications, Icons.Outlined.Notifications), Tab(Routes.MY, "MY", Icons.Filled.Person, Icons.Outlined.Person))
+    val colors = NavigationBarItemDefaults.colors(
+        selectedIconColor = Neon.TextHigh, selectedTextColor = Neon.TextHigh,
+        indicatorColor = Neon.Pink.copy(alpha = 0.16f), unselectedIconColor = Neon.TextLow, unselectedTextColor = Neon.TextLow,
+    )
     NavigationBar(containerColor = Neon.Surface, tonalElevation = 0.dp) {
-        listOf(
-            Triple(Routes.HOME, "만들기", Icons.Filled.GraphicEq),
-            Triple(Routes.FEED, "둘러보기", Icons.Filled.Explore),
-            Triple(Routes.CHATS, "메시지", Icons.AutoMirrored.Filled.Chat),
-            Triple(Routes.ME, "내 정보", Icons.Filled.Person),
-        ).forEach { (r, label, icon) ->
-            NavigationBarItem(
-                selected = route == r,
-                onClick = { onTab(r) },
-                icon = {
-                    BadgedBox(badge = { if (r == Routes.CHATS && unread > 0) Badge(containerColor = Neon.Pink) { Text("$unread") } }) {
-                        Icon(icon, contentDescription = label)
-                    }
-                },
-                label = { Text(label) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Neon.Pink, selectedTextColor = Neon.TextHigh,
-                    indicatorColor = Neon.Pink.copy(alpha = 0.14f), unselectedIconColor = Neon.TextLow, unselectedTextColor = Neon.TextLow,
-                ),
-            )
-        }
+        @Composable
+        fun item(t: Tab) = NavigationBarItem(
+            selected = route == t.route,
+            onClick = { onTab(t.route) },
+            icon = {
+                BadgedBox(badge = { if (t.route == Routes.ACTIVITY && unread > 0) Badge(containerColor = Neon.Pink) { Text(if (unread > 99) "99+" else "$unread") } }) {
+                    Icon(if (route == t.route) t.on else t.off, contentDescription = t.label)
+                }
+            },
+            label = { Text(t.label) },
+            colors = colors,
+        )
+        left.forEach { item(it) }
+        NavigationBarItem(
+            selected = false,
+            onClick = onCreate,
+            icon = {
+                Box(Modifier.size(width = 52.dp, height = 36.dp).clip(CircleShape).background(Neon.Hero), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Add, contentDescription = "만들기", tint = Color.White)
+                }
+            },
+            label = { Text("만들기") },
+            colors = NavigationBarItemDefaults.colors(indicatorColor = Color.Transparent, unselectedTextColor = Neon.TextMid),
+        )
+        right.forEach { item(it) }
     }
 }

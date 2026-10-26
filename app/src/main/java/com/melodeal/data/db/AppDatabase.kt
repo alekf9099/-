@@ -2,6 +2,7 @@ package com.melodeal.data.db
 
 import android.content.Context
 import androidx.room.AutoMigration
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -50,6 +51,8 @@ data class CreationEntity(
     val json: String,
     val createdAt: Long,
     val updatedAt: Long,
+    /** 멜로딜에 공유한 곡 id (공유 안 했으면 null) */
+    @ColumnInfo(defaultValue = "NULL") val publishedTrackId: String? = null,
 )
 
 data class PlayerStat(val playerName: String, val plays: Int, val avgScore: Double, val bestScore: Int)
@@ -109,6 +112,12 @@ interface CreationDao {
     @Query("UPDATE creations SET title = :title, json = :json, updatedAt = :updatedAt WHERE id = :id")
     suspend fun update(id: Long, title: String, json: String, updatedAt: Long)
 
+    @Query("UPDATE creations SET publishedTrackId = :trackId WHERE id = :id")
+    suspend fun setPublished(id: Long, trackId: String?)
+
+    @Query("SELECT * FROM creations WHERE publishedTrackId = :trackId LIMIT 1")
+    suspend fun byTrack(trackId: String): CreationEntity?
+
     @Query("SELECT * FROM creations ORDER BY updatedAt DESC")
     fun all(): Flow<List<CreationEntity>>
 
@@ -124,9 +133,9 @@ interface CreationDao {
 
 @Database(
     entities = [ScoreEntity::class, ImportedSongEntity::class, CreationEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scores(): ScoreDao

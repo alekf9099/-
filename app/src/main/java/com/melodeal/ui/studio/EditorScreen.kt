@@ -75,7 +75,7 @@ import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Close
 import com.melodeal.ui.app
 import com.melodeal.ui.appViewModel
-import com.melodeal.ui.community.PublishDialog
+import com.melodeal.ui.community.ShareSheet
 import com.melodeal.ui.components.GradientButton
 import com.melodeal.ui.components.NeonCard
 import com.melodeal.ui.components.SectionTitle
@@ -114,7 +114,8 @@ class EditorActions(
 fun EditorScreen(id: Long, onBack: () -> Unit, onSing: (songId: String) -> Unit, onPublished: (trackId: String) -> Unit = {}) {
     val vm = appViewModel("editor:$id") { EditorViewModel(it, id) }
     val s by vm.state.collectAsState()
-    val settings by app().settings.state.collectAsState()
+    val app = app()
+    val settings by app.settings.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var chordSlot by remember { mutableStateOf<Int?>(null) }
@@ -157,9 +158,20 @@ fun EditorScreen(id: Long, onBack: () -> Unit, onSing: (songId: String) -> Unit,
     )
 
     if (publishing) {
-        PublishDialog(s.comp, onDismiss = { publishing = false }) { trackId ->
-            publishing = false
-            onPublished(trackId)
+        val community = app().community
+        var existing by remember { mutableStateOf<com.melodeal.community.Track?>(null) }
+        var checked by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            // 이미 공유한 곡이면 그 곡의 설정을 이어서 바꾼다
+            existing = app.studio.saved(id)?.publishedTrackId?.let { runCatching { community.track(it) }.getOrNull() }
+            checked = true
+        }
+        if (checked) {
+            ShareSheet(s.comp, existing, onDismiss = { publishing = false }) { trackId ->
+                publishing = false
+                scope.launch { app.studio.markPublished(id, trackId) }
+                if (trackId != null) onPublished(trackId)
+            }
         }
     }
 

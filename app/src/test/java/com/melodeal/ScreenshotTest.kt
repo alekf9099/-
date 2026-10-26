@@ -13,7 +13,6 @@ import com.melodeal.data.db.ScoreEntity
 import com.melodeal.scoring.Judgement
 import com.melodeal.scoring.foldToOctaveOf
 import com.melodeal.ui.AppViewModel
-import com.melodeal.ui.home.HomeScreen
 import com.melodeal.ui.party.PartyQueueScreen
 import com.melodeal.ui.party.PartySetupScreen
 import com.melodeal.ui.ranking.RankingScreen
@@ -27,13 +26,23 @@ import com.melodeal.ui.sing.SingUiState
 import com.melodeal.ui.sing.TracePoint
 import com.melodeal.ui.songs.SongListScreen
 import com.melodeal.ui.onboarding.OnboardingScreen
-import com.melodeal.community.FeedSort
+import com.melodeal.community.ChartKind
+import com.melodeal.community.DemoCommunity
+import com.melodeal.community.ShareSettings
+import com.melodeal.ui.activity.ActivityContent
+import com.melodeal.ui.activity.ActivityScreen
+import com.melodeal.ui.chart.ChartContent
+import com.melodeal.ui.chart.ChartUiState
 import com.melodeal.ui.community.ChatListScreen
 import com.melodeal.ui.community.ChatRoomScreen
-import com.melodeal.ui.community.FeedContent
-import com.melodeal.ui.community.FeedScreen
-import com.melodeal.ui.community.FeedUiState
 import com.melodeal.ui.community.ProfileScreen
+import com.melodeal.ui.community.ShareDraft
+import com.melodeal.ui.community.ShareSheetContent
+import com.melodeal.ui.create.CreateSheetContent
+import com.melodeal.ui.discover.DiscoverContent
+import com.melodeal.ui.discover.DiscoverUiState
+import com.melodeal.ui.my.MyContent
+import com.melodeal.ui.my.MyUiState
 import com.melodeal.ui.community.TrackDetailScreen
 import com.melodeal.data.song.Genre
 import com.melodeal.studio.Composition
@@ -48,6 +57,7 @@ import com.melodeal.ui.studio.RecordContent
 import com.melodeal.ui.studio.RecordUiState
 import com.melodeal.ui.theme.Neon
 import com.melodeal.ui.theme.MelodealTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
@@ -73,7 +83,7 @@ class ScreenshotTest {
 
     /** 서버 설정이 있어도 스크린샷은 항상 체험 모드 예시 데이터로 */
     @org.junit.Before
-    fun useDemoCommunity() = app.useCommunity(com.melodeal.community.DemoCommunity())
+    fun useDemoCommunity() = app.useCommunity(DemoCommunity(reactionDelayMs = 0))
 
     /** waitForText: DB에서 비동기로 읽어오는 화면은 이 글자가 나타날 때까지 기다린 뒤 찍는다 */
     private fun shot(name: String, waitForText: String? = null, content: @Composable () -> Unit) {
@@ -137,12 +147,20 @@ class ScreenshotTest {
         app.studio.create(base)
     }
 
-    @Test fun home_empty() = shot("01_home_empty") { HomeScreen({}, {}, {}, {}) }
-
     @Test fun home() {
-        seedScores()
-        seedCompositions()
-        shot("02_home", waitForText = "밤하늘 산책") { HomeScreen({}, {}, {}, {}) }
+        signedIn()
+        val c = app.community
+        val s = runBlocking { DiscoverUiState(forYou = c.discover(), followingIds = setOf("u1"), recommendsLeft = 2, myId = "me", loading = false) }
+        shot("01_home") { DiscoverContent(s) }
+    }
+
+    @Test fun homeFollowingEmpty() {
+        signedIn()
+        val c = app.community
+        val s = runBlocking {
+            DiscoverUiState(tab = 1, forYou = c.discover(), suggestions = listOf("u1", "u2", "u3").mapNotNull { c.profile(it) }, myId = "me", loading = false)
+        }
+        shot("02_home_following") { DiscoverContent(s) }
     }
 
     @Test fun recordSetup() = shot("11_record_setup") { RecordContent(RecordUiState(genre = Genre.BALLAD, bpm = 84)) }
@@ -225,16 +243,49 @@ class ScreenshotTest {
 
     private fun signedIn() = runBlocking { app.community.saveProfile("흥얼러", "출근길에 멜로디를 만들어요") }
 
-    @Test fun feed() {
+    @Test fun chart() {
         signedIn()
-        shot("14_feed", waitForText = "밤하늘 산책") { FeedScreen({}, {}) }
+        val entries = runBlocking { app.community.chart(ChartKind.WEEKLY) }
+        shot("14_chart") { ChartContent(ChartUiState(entries = entries, loading = false)) }
     }
 
-    @Test fun feedWeekly() {
+    @Test fun activity() {
+        val demo = DemoCommunity(reactionDelayMs = 5)
+        app.useCommunity(demo)
         signedIn()
-        shot("15_feed_weekly", waitForText = "새벽 세 시") {
-            FeedContent(FeedUiState(sort = FeedSort.WEEKLY, tracks = runBlocking { app.community.feed(FeedSort.WEEKLY) }, loading = false))
+        val notifications = runBlocking {
+            demo.publish(sampleComposition(), "처음 올려요")
+            kotlinx.coroutines.withTimeout(5000) { while (demo.notifications().size < 4) kotlinx.coroutines.delay(10) }
+            demo.notifications()
         }
+        shot("15_activity") { ActivityContent(0, {}, notifications, emptyList()) }
+    }
+
+    @Test fun my() {
+        signedIn()
+        val id = seedCompositions()
+        val st = runBlocking {
+            val comp = app.studio.get(id)!!
+            val t = app.community.publish(comp, "후렴만 먼저 공개해요", ShareSettings(startBar = 2, bars = 2))
+            app.studio.markPublished(id, t.id)
+            app.community.setFollowing("u1", true)
+            val songs = app.studio.all.first()
+            MyUiState(app.community.profile("me"), songs, mapOf(t.id to app.community.track(t.id)!!.copy(likeCount = 12, recommendCount = 3)), mapOf(t.id to 2))
+        }
+        shot("24_my") { MyContent(st) }
+    }
+
+    @Test fun shareSheet() {
+        signedIn()
+        val comp = sampleComposition()
+        val draft = ShareDraft(settings = ShareSettings.highlight(comp, 2), description = "후렴만 먼저 공개해요!")
+        shot("25_share_sheet") { ShareSheetContent(comp, null, draft) }
+    }
+
+    @Test fun createSheet() {
+        seedCompositions()
+        val recent = runBlocking { app.studio.all.first().take(3) }
+        shot("26_create_sheet") { Box(Modifier.background(Neon.Surface)) { CreateSheetContent(recent) } }
     }
 
     @Test fun trackDetail() {
@@ -270,7 +321,7 @@ class ScreenshotTest {
         shot("19_chat_list", waitForText = "퇴근길피아노") { ChatListScreen {} }
     }
 
-    @Test fun nicknameSetup() = shot("20_nickname_setup", waitForText = "환영해요") { FeedScreen({}, {}) }
+    @Test fun nicknameSetup() = shot("20_nickname_setup", waitForText = "환영해요") { ActivityScreen({}, {}, {}) }
 
     @Test fun onboarding1() = shot("21_onboarding_1") { OnboardingScreen(onFinish = {}, startPage = 0) }
     @Test fun onboarding2() = shot("22_onboarding_2") { OnboardingScreen(onFinish = {}, startPage = 1) }

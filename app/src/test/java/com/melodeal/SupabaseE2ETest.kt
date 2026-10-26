@@ -66,7 +66,7 @@ class SupabaseE2ETest {
         bob.setLiked(t.id, true)
         bob.rate(t.id, 4)
         bob.addComment(t.id, "좋아요!")
-        bob.recordPlay(t.id)
+        bob.recordListen(t.id, completed = true)
         val seen = alice.track(t.id)!!
         assertEquals(1, seen.likeCount)
         assertEquals(4.0, seen.ratingAvg, 1e-9)
@@ -79,7 +79,7 @@ class SupabaseE2ETest {
         // 실시간 채팅: 밥이 곡을 보고 대화를 열고, 앨리스는 실시간으로 받는다
         val conv = bob.openConversation(a.id, t.id)
         assertEquals(conv, alice.openConversation(b.id))
-        val incoming = async { withTimeout(15_000) { alice.incoming(conv).first() } }
+        val incoming = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { withTimeout(15_000) { alice.incoming(conv).first() } }
         delay(2500) // 실시간 구독이 붙을 시간
         bob.sendMessage(conv, "가사 붙여봐도 될까요?")
         assertEquals("가사 붙여봐도 될까요?", incoming.await().body)

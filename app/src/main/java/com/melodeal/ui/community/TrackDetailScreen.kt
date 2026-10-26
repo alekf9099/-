@@ -60,8 +60,19 @@ import com.melodeal.MelodealApp
 import com.melodeal.community.Comment
 import com.melodeal.community.ReportTarget
 import com.melodeal.community.Track
+import com.melodeal.studio.SavedComposition
 import com.melodeal.ui.appViewModel
+import com.melodeal.community.Visibility
+import com.melodeal.ui.components.CoverArt
+import com.melodeal.ui.components.FollowChip
 import com.melodeal.ui.components.GradientButton
+import com.melodeal.ui.components.LikeButton
+import com.melodeal.ui.components.ReactionButton
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.RocketLaunch
 import com.melodeal.ui.components.PlayerAvatar
 import com.melodeal.ui.components.SectionTitle
 import com.melodeal.ui.components.Tag
@@ -78,6 +89,10 @@ data class DetailUiState(
     val loading: Boolean = true,
     val notFound: Boolean = false,
     val toast: String? = null,
+    val recommendsLeft: Int = 3,
+    val following: Boolean = false,
+    /** 내 곡이고 이 폰에 원본이 있으면 원본 (공개 범위 다시 고르기용) */
+    val original: SavedComposition? = null,
 ) {
     val isMine get() = track != null && track.ownerId == myId
 }
@@ -92,7 +107,34 @@ class TrackDetailViewModel(private val app: MelodealApp, private val trackId: St
     fun load() = viewModelScope.launch {
         val t = runCatching { community.track(trackId) }.getOrNull()
         val c = if (t != null) runCatching { community.comments(trackId) }.getOrDefault(emptyList()) else emptyList()
-        _state.update { it.copy(track = t, comments = c, loading = false, notFound = t == null) }
+        val left = runCatching { community.recommendsLeft() }.getOrDefault(_state.value.recommendsLeft)
+        val following = t != null && t.ownerId != community.me.value?.id && runCatching { community.isFollowing(t.ownerId) }.getOrDefault(false)
+        val original = if (t != null && t.ownerId == community.me.value?.id) runCatching { app.studio.byTrack(t.id) }.getOrNull() else null
+        _state.update {
+            it.copy(
+                track = t, comments = c, loading = false, notFound = t == null, recommendsLeft = left, following = following,
+                original = original, myId = community.me.value?.id,
+            )
+        }
+    }
+
+    fun recommend() {
+        val s = _state.value
+        val t = s.track ?: return
+        when {
+            s.isMine -> return _state.update { it.copy(toast = "내 곡은 추천할 수 없어요") }
+            t.recommendedByMe -> return _state.update { it.copy(toast = "오늘 이미 추천한 곡이에요") }
+            s.recommendsLeft <= 0 -> return _state.update { it.copy(toast = com.melodeal.community.CommunityException.RecommendLimit().message) }
+        }
+        _state.update { it.copy(track = t.copy(recommendedByMe = true, recommendCount = t.recommendCount + 1), recommendsLeft = it.recommendsLeft - 1) }
+        act("추천했어요! 오늘 ${s.recommendsLeft - 1}번 더 추천할 수 있어요") { community.recommend(t.id) }
+    }
+
+    fun toggleFollow() {
+        val t = _state.value.track ?: return
+        val now = !_state.value.following
+        _state.update { it.copy(following = now) }
+        act(if (now) "${t.ownerNickname}님을 팔로우해요. 새 곡이 홈 '팔로잉'에 떠요" else null) { community.setFollowing(t.ownerId, now) }
     }
 
     private fun act(success: String? = null, block: suspend () -> Unit) = viewModelScope.launch {
@@ -114,7 +156,7 @@ class TrackDetailViewModel(private val app: MelodealApp, private val trackId: St
     fun report(target: ReportTarget, id: String, reason: com.melodeal.community.ReportReason, detail: String) =
         act("신고가 접수됐어요. 검토 후 조치할게요") { community.report(target, id, reason, detail) }
     fun block(userId: String, then: () -> Unit) = viewModelScope.launch { runCatching { community.block(userId) }.onSuccess { then() } }
-    fun played() = viewModelScope.launch { runCatching { community.recordPlay(trackId) } }
+    fun played(completed: Boolean = false) = viewModelScope.launch { runCatching { community.recordListen(trackId, completed) } }
     fun consumeToast() = _state.update { it.copy(toast = null) }
 
     suspend fun openChat(): String? = _state.value.track?.let { t ->
@@ -122,14 +164,20 @@ class TrackDetailViewModel(private val app: MelodealApp, private val trackId: St
     }
 
     /** 이 곡을 내 노래 목록으로 가져와 편집 (리믹스) */
-    suspend fun remix(): Long? = _state.value.track?.let { t ->
+    suspend fun remix(): Long? = _state.value.track?.takeIf { it.allowRemix || _state.value.isMine }?.let { t ->
         app.studio.create(t.composition.copy(title = "${t.composition.title} (리믹스)".take(30)))
     }
 
-    suspend fun delete() { runCatching { community.deleteTrack(trackId) } }
+    suspend fun delete() {
+        runCatching { community.deleteTrack(trackId) }
+        _state.value.original?.let { unlink(it.id) }
+    }
+
+    /** 공유를 취소하면 내 노래 목록의 '공유됨' 표시도 지운다 */
+    suspend fun unlink(creationId: Long) = app.studio.markPublished(creationId, null)
 
     /** 노래방 화면에서 부를 수 있도록 임시 등록하고 곡 ID를 돌려준다 */
-    fun prepareSing(): String? = _state.value.track?.let { t ->
+    fun prepareSing(): String? = _state.value.track?.takeIf { it.allowSing || _state.value.isMine }?.let { t ->
         val id = "community:${t.id}"
         app.songs.putTransient(t.composition.toSong(id, t.ownerNickname))
         id
@@ -151,6 +199,8 @@ fun TrackDetailScreen(
     var reportTarget by remember { mutableStateOf<Pair<ReportTarget, String>?>(null) }
     var confirmBlock by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
+    val guard = rememberProfileGuard()
     val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     LaunchedEffect(s.toast) { s.toast?.let { snackbar.showSnackbar(it); vm.consumeToast() } }
 
@@ -158,14 +208,18 @@ fun TrackDetailScreen(
         DetailContent(
             s,
             onBack = onBack,
-            onLike = vm::toggleLike,
-            onRate = vm::rate,
-            onComment = vm::comment,
+            onLike = { guard(vm::toggleLike) },
+            onRecommend = { guard(vm::recommend) },
+            onFollow = { guard(vm::toggleFollow) },
+            onShareSettings = { sharing = true },
+            onRate = { n -> guard { vm.rate(n) } },
+            onComment = { body -> guard { vm.comment(body) } },
             onDeleteComment = vm::deleteComment,
             onReportComment = { reportTarget = ReportTarget.COMMENT to it },
             onOpenProfile = onOpenProfile,
-            onPlayed = vm::played,
-            onChat = { scope.launch { vm.openChat()?.let(onChat) } },
+            onPlayed = { vm.played() },
+            onCompleted = { vm.played(true) },
+            onChat = { guard { scope.launch { vm.openChat()?.let(onChat) } } },
             onSing = { vm.prepareSing()?.let(onSing) },
             onRemix = { scope.launch { vm.remix()?.let(onRemixed) } },
             onReportTrack = { s.track?.let { reportTarget = ReportTarget.TRACK to it.id } },
@@ -173,6 +227,17 @@ fun TrackDetailScreen(
             onDelete = { confirmDelete = true },
         )
         androidx.compose.material3.SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp))
+    }
+
+    if (sharing) {
+        s.track?.let { t ->
+            ShareSheet(s.original?.composition, t, onDismiss = { sharing = false }) { id ->
+                sharing = false
+                if (id == null) {
+                    scope.launch { s.original?.let { vm.unlink(it.id) }; onBack() }
+                } else vm.load()
+            }
+        }
     }
 
     reportTarget?.let { (type, id) ->
@@ -206,12 +271,16 @@ fun DetailContent(
     s: DetailUiState,
     onBack: () -> Unit = {},
     onLike: () -> Unit = {},
+    onRecommend: () -> Unit = {},
+    onFollow: () -> Unit = {},
+    onShareSettings: () -> Unit = {},
     onRate: (Int) -> Unit = {},
     onComment: (String) -> Unit = {},
     onDeleteComment: (String) -> Unit = {},
     onReportComment: (String) -> Unit = {},
     onOpenProfile: (String) -> Unit = {},
     onPlayed: () -> Unit = {},
+    onCompleted: () -> Unit = {},
     onChat: () -> Unit = {},
     onSing: () -> Unit = {},
     onRemix: () -> Unit = {},
@@ -245,31 +314,43 @@ fun DetailContent(
             else -> {
                 LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item {
-                        // 곡 헤더
-                        Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Neon.Hero).padding(20.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Tag(t.genre.label, Color.White)
-                                Spacer(Modifier.width(6.dp))
-                                Tag("${t.composition.key.label} · ${t.composition.bpm} BPM", Color.White)
-                            }
-                            Text(t.title, style = MaterialTheme.typography.headlineLarge, color = Color.White, modifier = Modifier.padding(top = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Row(Modifier.padding(top = 6.dp).clickable { onOpenProfile(t.ownerId) }, verticalAlignment = Alignment.CenterVertically) {
-                                PlayerAvatar(t.ownerNickname, Color.White, 24)
-                                Text("  ${t.ownerNickname} · ${relativeTime(t.createdAt)}", color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelLarge)
-                            }
-                            MelodyShape(
-                                t.composition,
-                                Modifier.fillMaxWidth().padding(vertical = 14.dp).height(48.dp),
-                                progress = if (st.trackId == t.id) st.progress else null,
-                                color = Color.White,
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                PlayButton(t, 56.dp, onStarted = onPlayed)
-                                Column(Modifier.padding(start = 12.dp)) {
-                                    Text("%d:%02d".format(t.composition.durationSec.toInt() / 60, t.composition.durationSec.toInt() % 60), color = Color.White, style = MaterialTheme.typography.titleMedium)
-                                    Text("재생 ${t.playCount}회", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
+                        // 곡 헤더: 자동 커버 아트 위에 정보
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))) {
+                            CoverArt(t.id, t.composition, Modifier.matchParentSize(), melody = false)
+                            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.25f)))
+                            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Tag(t.genre.label, Color.White)
+                                    Spacer(Modifier.width(6.dp))
+                                    Tag("${t.composition.key.label} · ${t.composition.bpm} BPM", Color.White)
+                                    if (t.isPartial) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Tag("하이라이트 ${t.composition.bars}/${t.fullBars}마디", Color.White, Icons.Filled.ContentCut)
+                                    }
+                                }
+                                Text(t.title, style = MaterialTheme.typography.headlineLarge, color = Color.White, modifier = Modifier.padding(top = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(Modifier.weight(1f, fill = false).clickable { onOpenProfile(t.ownerId) }, verticalAlignment = Alignment.CenterVertically) {
+                                        PlayerAvatar(t.ownerNickname, Color.White, 24)
+                                        Text("  ${t.ownerNickname} · ${relativeTime(t.createdAt)}", color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                    }
+                                    if (!s.isMine) {
+                                        Spacer(Modifier.width(8.dp))
+                                        FollowChip(s.following, onFollow, onDark = true)
+                                    }
+                                }
+                                MelodyShape(
+                                    t.composition,
+                                    Modifier.fillMaxWidth().padding(vertical = 14.dp).height(48.dp),
+                                    progress = if (st.trackId == t.id) st.progress else null,
+                                    color = Color.White,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    PlayButton(t, 56.dp, onStarted = onPlayed, onCompleted = onCompleted)
+                                    Column(Modifier.padding(start = 12.dp)) {
+                                        Text("%d:%02d".format(t.composition.durationSec.toInt() / 60, t.composition.durationSec.toInt() % 60), color = Color.White, style = MaterialTheme.typography.titleMedium)
+                                        Text("재생 ${t.playCount}회" + if (t.visibility == Visibility.UNLISTED) " · 링크 공개" else "", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
+                                    }
                                 }
                             }
                         }
@@ -281,31 +362,32 @@ fun DetailContent(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Neon.Surface).padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onLike).padding(horizontal = 8.dp)) {
-                                Icon(if (t.likedByMe) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = "좋아요", tint = if (t.likedByMe) Neon.Pink else Neon.TextMid, modifier = Modifier.size(30.dp))
-                                Text("${t.likeCount}", style = MaterialTheme.typography.labelLarge)
-                            }
+                            LikeButton(t.likedByMe, t.likeCount, onLike, labelColor = Neon.TextHigh)
+                            ReactionButton(
+                                on = t.recommendedByMe, iconOn = Icons.Filled.RocketLaunch, iconOff = Icons.Outlined.RocketLaunch,
+                                label = "추천", tint = Neon.Gold, onClick = onRecommend, labelColor = Neon.TextHigh, enabled = !s.isMine,
+                                caption = "${t.recommendCount}", description = "추천 ${t.recommendCount}, 오늘 ${s.recommendsLeft}번 남음",
+                            )
                             Box(Modifier.width(1.dp).height(44.dp).background(Neon.Outline).padding(horizontal = 8.dp))
                             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                                 Text(
                                     if (t.ratingCount == 0) "아직 별점이 없어요" else "평균 %.1f · %d명 참여".format(t.ratingAvg, t.ratingCount),
                                     color = Neon.TextMid, style = MaterialTheme.typography.labelMedium,
                                 )
-                                if (s.isMine) Text("내 곡에는 별점을 줄 수 없어요", color = Neon.TextLow, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                                else StarRating(t.myRating, onRate)
+                                if (s.isMine) Text("내 곡에는 별점·추천을 줄 수 없어요", color = Neon.TextLow, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                                else {
+                                    StarRating(t.myRating, onRate)
+                                    Text("오늘 남은 추천 ${s.recommendsLeft}번", color = Neon.TextLow, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+                                }
                             }
                         }
                     }
                     item {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ActionTile(Icons.Filled.Mic, "부르기", Modifier.weight(1f), onSing)
-                            ActionTile(Icons.AutoMirrored.Filled.CallSplit, "리믹스", Modifier.weight(1f), onRemix)
-                            if (!s.isMine) ActionTile(Icons.AutoMirrored.Filled.Chat, "메시지", Modifier.weight(1f), onChat)
-                        }
-                    }
-                    if (!s.isMine) {
-                        item {
-                            GradientButton("${t.ownerNickname}님에게 메시지 보내기", Neon.Hero, icon = Icons.AutoMirrored.Filled.Chat, onClick = onChat, modifier = Modifier.fillMaxWidth())
+                            ActionTile(Icons.Filled.Mic, if (t.allowSing || s.isMine) "부르기" else "부르기 비허용", Modifier.weight(1f), onSing, enabled = t.allowSing || s.isMine)
+                            ActionTile(Icons.AutoMirrored.Filled.CallSplit, if (t.allowRemix || s.isMine) "리믹스" else "리믹스 비허용", Modifier.weight(1f), onRemix, enabled = t.allowRemix || s.isMine)
+                            if (s.isMine) ActionTile(Icons.Filled.Tune, "공개 설정", Modifier.weight(1f), onShareSettings)
+                            else ActionTile(Icons.AutoMirrored.Filled.Chat, "메시지", Modifier.weight(1f), onChat)
                         }
                     }
                     item { SectionTitle("댓글 ${t.commentCount}") }
@@ -328,13 +410,13 @@ fun DetailContent(
 }
 
 @Composable
-private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, onClick: () -> Unit, enabled: Boolean = true) {
     Column(
-        modifier.clip(RoundedCornerShape(16.dp)).background(Neon.Surface).clickable(onClick = onClick).padding(vertical = 12.dp),
+        modifier.clip(RoundedCornerShape(16.dp)).background(Neon.Surface).clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = null, tint = Neon.Cyan)
-        Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 4.dp))
+        Icon(if (enabled) icon else Icons.Filled.Lock, contentDescription = null, tint = if (enabled) Neon.Cyan else Neon.TextLow)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (enabled) Neon.TextHigh else Neon.TextLow, modifier = Modifier.padding(top = 4.dp))
     }
 }
 

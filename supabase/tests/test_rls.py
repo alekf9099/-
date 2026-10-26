@@ -147,4 +147,93 @@ as_user(None); denied("비로그인은 대화 열기 불가", "select open_conve
 denied("비로그인은 재생 수 조작 불가", "select increment_play(%s)", (t1,))
 as_user(C); ok("로그인 사용자는 재생 수 +1 가능", "select increment_play(gen_random_uuid())")
 
+print("공개 범위 · 추천 · 청취")
+db.execute("reset role")
+D = str(uuid.uuid4()); db.execute("insert into auth.users values (%s)", (D,))
+as_user(D); ok("D 프로필 생성", "insert into profiles (id, nickname) values (%s, '노을')", (D,))
+as_user(C)
+pub = [ok(f"C 공개 곡 {i}", "insert into tracks (owner_id, title, genre, composition, is_partial, highlight_start_bar, full_bars) values (%s, %s, 'BALLAD', %s, true, 4, 16) returning id", (C, f"곡{i}", comp))[0][0] for i in range(4)]
+unl = ok("C 링크 공개 곡", "insert into tracks (owner_id, title, genre, composition, visibility) values (%s, '비밀', 'POP', %s, 'unlisted') returning id", (C, comp))[0][0]
+denied("없는 공개 범위", "insert into tracks (owner_id, title, genre, composition, visibility) values (%s, 'x', 'POP', %s, 'friends')", (C, comp))
+ok("C 공개 범위 변경", "update tracks set allow_remix = false where id = %s", (pub[0],), expect_rows=1)
+ok("C가 추천 수 조작해도 무시됨", "update tracks set recommend_count = 99 where id = %s", (pub[0],))
+assert scalar("select recommend_count from tracks where id = %s", (pub[0],)) == 0
+as_user(C); denied("내 곡 추천 불가", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[0], C))
+as_user(D)
+ok("남은 추천 3", "select recommends_left()", expect_rows=1)
+for i in range(3):
+    ok(f"D 추천 {i+1}", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[i], D))
+denied("하루 4번째 추천 불가", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[3], D))
+denied("같은 곡 같은 날 두 번 추천 불가", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[0], D))
+as_user(D); assert db.execute("select recommends_left()").fetchone()[0] == 0
+denied("남 대신 추천 불가", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[3], B))
+assert scalar("select recommend_count from tracks where id = %s", (pub[0],)) == 1
+as_user(D); ok("추천 취소", "delete from recommends where track_id = %s and user_id = %s", (pub[2], D), expect_rows=1)
+assert scalar("select recommend_count from tracks where id = %s", (pub[2],)) == 0
+as_user(D); ok("취소하면 다시 추천 가능", "insert into recommends (track_id, user_id) values (%s, %s)", (pub[3], D))
+
+as_user(D)
+ok("D 청취", "select record_listen(%s, false)", (pub[1],))
+ok("같은 날 다시 끝까지 들음", "select record_listen(%s, true)", (pub[1],))
+assert scalar("select play_count from tracks where id = %s", (pub[1],)) == 1
+assert scalar("select completed from listens where track_id = %s and user_id = %s", (pub[1], D)) is True
+as_user(D); denied("청취 기록 직접 쓰기 불가", "insert into listens (track_id, user_id) values (%s, %s)", (pub[2], D))
+as_user(B); ok("남의 청취 기록은 안 보임", "select * from listens", expect_rows=0)
+as_user(None); denied("비로그인 청취 기록 불가", "select record_listen(%s)", (pub[1],))
+denied("비로그인 남은 추천 조회 불가", "select recommends_left()")
+
+print("차트")
+# D는 새 계정(7일 이내) → 반응 점수 절반. 오래된 계정 B는 그대로.
+db.execute("reset role")
+db.execute("update profiles set created_at = now() - interval '30 days' where id in (%s, %s, %s)", (A, B, C))
+as_user(B); ok("B가 곡3 좋아요", "insert into likes (track_id, user_id) values (%s, %s)", (pub[3], B))
+ok("B가 링크 공개 곡 좋아요", "insert into likes (track_id, user_id) values (%s, %s)", (unl, B))
+rows = ok("주간 차트", "select track_id, score from chart('weekly')")
+ids = [r[0] for r in rows]
+assert ids[0] in (pub[0], pub[3]), rows   # 추천(5×0.5)+좋아요(1) 경쟁
+assert unl not in ids, "링크 공개 곡은 차트 제외"
+assert t1 not in ids, "숨김 곡은 차트 제외"
+sc = dict(rows)
+assert abs(sc[pub[1]] - (2.5 + 0.25)) < 0.05, sc  # 추천 5×0.5 + 끝까지 들음 0.5×0.5
+assert abs(sc[pub[3]] - (2.5 + 1.0)) < 0.05, sc
+ok("장르 필터", "select track_id from chart('weekly', 'POP')", expect_rows=0)
+ok("신인 차트 (C 첫 곡 30일 이내, 반응 받은 3곡)", "select track_id from chart('rookie')", expect_rows=3)
+db.execute("reset role"); db.execute("update tracks set created_at = now() - interval '60 days' where id = %s", (pub[0],))
+as_user(B); ok("오래된 제작자는 신인 차트 제외", "select track_id from chart('rookie')", expect_rows=0)
+ok("지난주 차트는 비어 있음", "select track_id from chart('last_week')", expect_rows=0)
+ok("급상승 차트", "select track_id from chart('rising')", expect_rows=3)
+denied("모르는 차트 종류", "select * from chart('monthly')")
+as_user(None); ok("비로그인도 차트 조회", "select track_id from chart('weekly')", expect_rows=3)
+
+print("팔로우 · 알림")
+as_user(D); ok("D가 C 팔로우", "insert into follows (follower_id, followee_id) values (%s, %s)", (D, C))
+denied("자기 자신 팔로우 불가", "insert into follows (follower_id, followee_id) values (%s, %s)", (D, D))
+denied("남 대신 팔로우 불가", "insert into follows (follower_id, followee_id) values (%s, %s)", (B, C))
+assert scalar("select (follower_count, following_count)::text from profiles where id = %s", (C,)) == "(1,0)"
+assert scalar("select following_count from profiles where id = %s", (D,)) == 1
+as_user(C); ok("C가 팔로워 수 조작해도 무시됨", "update profiles set follower_count = 1000, bio = '안녕' where id = %s", (C,))
+assert scalar("select follower_count from profiles where id = %s", (C,)) == 1
+as_user(C); denied("A가 C를 차단했으므로 C는 A 팔로우 불가", "insert into follows (follower_id, followee_id) values (%s, %s)", (C, A))
+as_user(D); ok("D 언팔로우", "delete from follows where follower_id = %s and followee_id = %s", (D, C), expect_rows=1)
+assert scalar("select follower_count from profiles where id = %s", (C,)) == 0
+as_user(C)
+kinds = sorted(r[0] for r in ok("C가 받은 알림", "select kind from notifications"))
+assert kinds == ["follow", "like", "like", "recommend", "recommend", "recommend", "recommend"], kinds
+as_user(C); ok("C 댓글은 자기 곡이라 알림 없음", "insert into comments (track_id, user_id, body) values (%s, %s, '내 곡')", (pub[1], C))
+assert scalar("select count(*) from notifications where user_id = %s and kind = 'comment'", (C,)) == 0
+as_user(D); ok("D 댓글 → C 알림", "insert into comments (track_id, user_id, body) values (%s, %s, '최고')", (pub[1], D))
+assert scalar("select count(*) from notifications where user_id = %s and kind = 'comment'", (C,)) == 1
+as_user(D); ok("D는 C 알림을 못 봄", "select * from notifications", expect_rows=0)
+denied("알림 직접 만들기 불가", "insert into notifications (user_id, actor_id, kind) values (%s, %s, 'like')", (C, D))
+denied("남의 알림 읽음 처리 불가", "update notifications set read_at = now() where user_id = %s", (C,))
+as_user(C); ok("C 알림 모두 읽음", "update notifications set read_at = now() where read_at is null", expect_rows=8)
+denied("알림 내용 변조 불가", "update notifications set kind = 'follow'")
+denied("알림 함수 직접 호출 불가", "select private.notify(%s, %s, 'like', null)", (C, D))
+# 차단 관계면 알림 없음: A가 B를 차단한 상태 → B가 A 곡에 반응해도 A에게 알림 없음
+db.execute("reset role"); db.execute("update tracks set hidden = false, report_count = 0 where id = %s", (t1,))
+as_user(B); ok("차단당한 B가 추천 시도", "select 1")
+before = scalar("select count(*) from notifications where user_id = %s", (A,))
+db.execute("reset role"); db.execute("insert into recommends (track_id, user_id) values (%s, %s)", (t1, B))
+assert scalar("select count(*) from notifications where user_id = %s", (A,)) == before, "차단 관계면 알림 없음"
+
 print(f"\n전체 {passed}개 통과")

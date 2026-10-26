@@ -88,9 +88,9 @@ fun ChatListScreen(onOpen: (String) -> Unit) {
 }
 
 @Composable
-fun ChatListContent(list: List<Conversation>?, onOpen: (String) -> Unit = {}) {
+fun ChatListContent(list: List<Conversation>?, onOpen: (String) -> Unit = {}, showHeader: Boolean = true) {
     LazyColumn(Modifier.fillMaxSize().stageGlow(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
+        if (showHeader) item {
             Column(Modifier.padding(top = 16.dp, start = 4.dp, bottom = 4.dp)) {
                 Text("메시지", style = MaterialTheme.typography.headlineLarge)
                 Text("곡 제작자와 협업·가사·피드백을 나눠요", color = Neon.TextMid, style = MaterialTheme.typography.bodyMedium)

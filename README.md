@@ -2,22 +2,45 @@
 
 **흥얼거리면 노래가 되고, 사람들과 나누는** 안드로이드 앱. 떠오르는 멜로디를 흥얼거리면 악보·코드·반주가 자동으로 만들어지고, 멜로딜에 공유해 평가를 받고 제작자와 대화할 수 있습니다. 만든 곡으로 노래방 채점과 파티 대결도 됩니다.
 
-<p>
-<img src="docs/screenshots/02_home.png" width="16%">
-<img src="docs/screenshots/12_recording.png" width="16%">
-<img src="docs/screenshots/13_editor.png" width="16%">
-<img src="docs/screenshots/14_feed.png" width="16%">
-<img src="docs/screenshots/16_track_detail.png" width="16%">
-<img src="docs/screenshots/18_chat_room.png" width="16%">
-</p>
+<img src="docs/screenshots/overview.png" width="100%">
 
-## 커뮤니티 (공유 · 평가 · 대화)
+## 메뉴 구조
+
+```
+[홈]        [차트]        [＋ 만들기]        [활동]          [MY]
+추천|팔로잉   이번 주·급상승   흥얼거려 만들기    알림|메시지       내 노래(공개 상태)
+세로로 넘기며  신인·지난주     이어서 편집        좋아요·추천·      받은 좋아요·추천·팔로워
+하이라이트 듣기 장르 필터       노래방·파티        댓글·팔로우 소식   노래방·파티·랭킹·설정
+```
+
+| 탭 | 내용 |
+|---|---|
+| **홈** | 한 곡씩 세로로 넘기는 피드, 넘기면 하이라이트 자동 재생. 오른쪽에 좋아요·추천·댓글·부르기. 추천(반응·최신 섞음) / 팔로잉(팔로우한 제작자 새 곡) |
+| **차트** | 이번 주 TOP · 급상승(24시간) · 신인(첫 곡 30일 이내) · 지난주 최종, 장르별, 1~3위 큰 카드, 순위 규칙 공개 |
+| **＋ 만들기** | 가운데 버튼 → 바텀시트: 흥얼거려 새 노래 / 최근 노래 이어서 편집 / 노래방 / 파티 |
+| **활동** | 내 곡에 온 좋아요·추천·댓글·팔로우 알림(실시간, 오늘·이번 주·이전) + 1:1 메시지 |
+| **MY** | 내 노래와 공개 상태 배지(비공개·전체·링크·부분 공개·차트 순위), 받은 반응 통계, 차트 진입 소식, 노래방·파티 |
+
+둘러보기는 닉네임 없이 바로 되고, 좋아요·추천·팔로우할 때만 닉네임을 묻습니다.
+
+## 공유 · 반응 · 차트
 
 | 기능 | 내용 |
 |---|---|
-| **공유** | 편집 화면의 '공유' → 곡 소개와 함께 피드에 올림 (악보 데이터만 올라가고 재생은 각자 앱에서 합성) |
-| **둘러보기** | 최신 / 이번 주 인기(이번 주 받은 좋아요 순) / 별점 높은 순, 장르 필터, 바로 듣기 |
-| **평가** | 좋아요, 별점 1~5 (내 곡 제외), 댓글 |
+| **공개 범위** | 전체 공개 / 링크 공개(차트 제외) / 비공개(서버에 올리지 않음) |
+| **어디까지 공개** | 마디 범위 슬라이더, '하이라이트 추천'(음이 몰린 4마디 자동 선택), 공개 부분 미리 듣기. **고른 구간만 잘라서 서버에 올리고 원본 전체는 내 폰에만** 남음 |
+| **함께 공개 · 허용** | 가사 공개 · 코드(반주) 공개 · 리믹스 허용 · 부르기 허용. 공유한 뒤에도 바꿀 수 있음 |
+| **반응** | 좋아요(1점, 곡마다 한 번) · 추천(5점, 하루 3번) · 끝까지 듣기(0.5점, 하루 한 번) · 별점 · 댓글 |
+| **차트 점수** | 위 점수 합 × 가입 7일 이내 계정 0.5배(부계정 몰아주기 방지) × 오래된 반응일수록 최대 절반까지 감소. 내 곡에 내가 한 반응·링크 공개 곡 제외. 매주 월요일 0시(한국 시간) 새 시즌 |
+| **팔로우** | 제작자 팔로우 → 홈 '팔로잉'에 새 곡, 팔로워·팔로잉 수 |
+| **디자인** | 곡마다 자동 커버 아트(장르별 무늬 + 실제 멜로디 물결), 좋아요·추천 누르면 튀는 효과와 진동, 첫 공유 축하 화면 |
+
+> 참고: 공개한 구간의 멜로디는 듣는 사람 앱에서 합성해야 하므로 그 구간 데이터는 전송됩니다. 리믹스·부르기 비허용은 앱 화면에서 막는 방식이고, 진짜 보호는 "필요한 구간만 올리기"입니다.
+
+## 커뮤니티 (평가 · 대화 · 안전)
+
+| 기능 | 내용 |
+|---|---|
 | **활용** | 다른 사람 곡을 **부르기**(노래방 채점) · **리믹스**(내 노래로 가져와 편집) |
 | **프로필** | 닉네임·소개, 공유한 곡, 받은 좋아요·평균 별점 |
 | **메시지** | 곡 상세·프로필에서 1:1 대화, 어떤 곡을 보고 시작한 대화인지 표시, 실시간 수신, 읽음 표시, 안 읽은 메시지 배지 |
@@ -36,7 +59,7 @@
    SUPABASE_ANON_KEY=<publishable(anon) 키>
    ```
 
-DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (58개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지 불가, 신고 누적 숨김, 도우미·트리거 함수 외부 호출 차단 등).
+DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (109개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지·팔로우·알림 불가, 신고 누적 숨김, 하루 추천 3번 제한·내 곡 추천 불가, 청취 하루 1번 집계, 차트에서 링크 공개·숨김 곡 제외, 알림은 받는 사람만 조회, 도우미·트리거 함수 외부 호출 차단 등).
 
 ```bash
 python3 supabase/tests/test_rls.py "host=<소켓 경로> port=<포트> user=postgres"
@@ -119,19 +142,19 @@ MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest 
 
 ```
 app/src/main/java/com/melodeal/
-├── community/  CommunityRepository · SupabaseCommunity · DemoCommunity · ContentFilter
+├── community/  CommunityRepository · SupabaseCommunity · DemoCommunity · ShareSettings(공개 구간) · ChartScoring · ContentFilter
 ├── studio/     Transcriber(허밍→악보) · Harmonizer(자동 코드) · LyricsFitter · MelodyGenerator · Composition · MusicTheory
 ├── audio/      Synth · Arranger(장르별 편곡) · PitchDetector(YIN) · MicCapture · SongPlayer · WavWriter · LatencyCalibrator
 ├── scoring/    Scorer (음정·박자·안정감, 판정·콤보, MR용 참고 점수)
 ├── party/      PartySession (순서 규칙 · 예약 · 순위, 순수 로직)
 ├── data/       곡 파서 · Room DB · 설정
-└── ui/         home · studio(녹음·편집) · community(피드·상세·프로필·채팅) · party · songs · sing · result · ranking · settings
+└── ui/         discover(홈) · chart · create · activity · my · studio(녹음·편집) · community(상세·공유 설정·프로필·채팅) · party · songs · sing · result · ranking · settings
 ```
 
 ## 빌드 & 테스트
 
 ```bash
-./gradlew testDebugUnitTest   # 단위·화면 테스트 67개 (허밍→악보 복원·자동 코드·가사·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
+./gradlew testDebugUnitTest   # 단위·화면 테스트 84개 (허밍→악보 복원·자동 코드·가사·공개 구간 자르기·차트 점수·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ```
 

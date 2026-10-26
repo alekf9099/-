@@ -37,7 +37,19 @@ import java.util.UUID
 // ───────── PostgREST 행 (DB 컬럼 이름 그대로) ─────────
 
 @Serializable
-internal data class ProfileRow(val id: String, val nickname: String, val bio: String = "")
+internal data class ProfileRow(
+    val id: String,
+    val nickname: String,
+    val bio: String = "",
+    @SerialName("follower_count") val followerCount: Int = 0,
+    @SerialName("following_count") val followingCount: Int = 0,
+    @SerialName("created_at") val createdAt: String? = null,
+) {
+    fun toProfile() = Profile(id, nickname, bio, followerCount, followingCount, parseTime(createdAt))
+}
+
+@Serializable
+internal data class ProfileUpsert(val id: String, val nickname: String, val bio: String)
 
 @Serializable
 internal data class NicknameRef(val nickname: String)
@@ -57,6 +69,13 @@ internal data class TrackRow(
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("play_count") val playCount: Int = 0,
     @SerialName("created_at") val createdAt: String,
+    @SerialName("recommend_count") val recommendCount: Int = 0,
+    val visibility: String = "public",
+    @SerialName("allow_remix") val allowRemix: Boolean = true,
+    @SerialName("allow_sing") val allowSing: Boolean = true,
+    @SerialName("is_partial") val isPartial: Boolean = false,
+    @SerialName("highlight_start_bar") val highlightStartBar: Int = 0,
+    @SerialName("full_bars") val fullBars: Int = 0,
     val profiles: NicknameRef? = null,
 )
 
@@ -68,6 +87,34 @@ internal data class TrackInsert(
     val genre: String,
     val composition: JsonElement,
     @SerialName("remix_of") val remixOf: String?,
+    val visibility: String,
+    @SerialName("allow_remix") val allowRemix: Boolean,
+    @SerialName("allow_sing") val allowSing: Boolean,
+    @SerialName("is_partial") val isPartial: Boolean,
+    @SerialName("highlight_start_bar") val highlightStartBar: Int,
+    @SerialName("full_bars") val fullBars: Int,
+)
+
+@Serializable
+internal data class RecommendRow(@SerialName("track_id") val trackId: String, @SerialName("user_id") val userId: String)
+
+@Serializable
+internal data class ChartRow(@SerialName("track_id") val trackId: String, val score: Double)
+
+@Serializable
+internal data class FollowRow(@SerialName("follower_id") val followerId: String, @SerialName("followee_id") val followeeId: String)
+
+@Serializable
+internal data class NotificationRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("actor_id") val actorId: String? = null,
+    val kind: String,
+    @SerialName("track_id") val trackId: String? = null,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("read_at") val readAt: String? = null,
+    val actor: ProfileRow? = null,
+    val tracks: TitleRef? = null,
 )
 
 @Serializable
@@ -109,6 +156,9 @@ internal data class ReportInsert(
 internal data class TitleRef(val title: String)
 
 @Serializable
+internal data class OwnerRef(@SerialName("owner_id") val ownerId: String)
+
+@Serializable
 internal data class ConversationRow(
     val id: String,
     @SerialName("user_a") val userA: String,
@@ -145,6 +195,13 @@ internal fun TrackRow.toTrack(liked: Boolean = false, myRating: Int? = null, nic
     composition = Composition.fromJson(composition.toString()),
     likeCount = likeCount, ratingSum = ratingSum, ratingCount = ratingCount, commentCount = commentCount, playCount = playCount,
     createdAt = parseTime(createdAt), remixOf = remixOf, likedByMe = liked, myRating = myRating,
+    recommendCount = recommendCount, visibility = Visibility.of(visibility), allowRemix = allowRemix, allowSing = allowSing,
+    isPartial = isPartial, highlightStartBar = highlightStartBar, fullBars = fullBars,
+)
+
+internal fun NotificationRow.toNotification(actorProfile: Profile? = actor?.toProfile()) = AppNotification(
+    id = id, kind = NotificationKind.entries.firstOrNull { it.dbValue == kind } ?: NotificationKind.LIKE,
+    actor = actorProfile, trackId = trackId, trackTitle = tracks?.title, createdAt = parseTime(createdAt), read = readAt != null,
 )
 
 internal fun MessageRow.toMessage() = Message(id, conversationId, senderId, body, parseTime(createdAt), readAt?.let(::parseTime))
@@ -171,6 +228,7 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
     } catch (e: RestException) {
         val msg = (e.error + " " + (e.description ?: "") + " " + (e.message ?: "")).lowercase()
         throw when {
+            "daily_recommend_limit" in msg -> CommunityException.RecommendLimit()
             "anonymous" in msg -> CommunityException.ServerConfig("익명 로그인이 꺼져 있어요 (Supabase 대시보드에서 켜야 해요)")
             "profiles_nickname_key" in msg || ("duplicate" in msg && "nickname" in msg) -> CommunityException.NicknameTaken()
             "blocked" in msg || "row-level security" in msg -> CommunityException.Blocked()
@@ -187,14 +245,13 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
         client.auth.awaitInitialization()
         if (client.auth.currentUserOrNull() == null) client.auth.signInAnonymously()
         val p = client.from("profiles").select { filter { eq("id", uid()) } }.decodeSingleOrNull<ProfileRow>()
-        p?.let { Profile(it.id, it.nickname, it.bio) }.also { _me.value = it }
+        p?.toProfile().also { _me.value = it }
     }
 
     override suspend fun saveProfile(nickname: String, bio: String): Profile = call {
         val n = Nickname.validate(nickname)
-        val row = ProfileRow(uid(), n, bio.take(80))
-        client.from("profiles").upsert(row) { onConflict = "id" }
-        Profile(row.id, row.nickname, row.bio).also { _me.value = it }
+        client.from("profiles").upsert(ProfileUpsert(uid(), n, bio.take(80))) { onConflict = "id" }
+        client.from("profiles").select { filter { eq("id", uid()) } }.decodeSingle<ProfileRow>().toProfile().also { _me.value = it }
     }
 
     private suspend fun decorate(rows: List<TrackRow>, nicknames: Map<String, String> = emptyMap()): List<Track> {
@@ -205,7 +262,19 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
             client.from("likes").select { filter { eq("user_id", me); isIn("track_id", ids) } }.decodeList<LikeRow>().map { it.trackId }.toSet()
         val rated = if (me == null) emptyMap() else
             client.from("ratings").select { filter { eq("user_id", me); isIn("track_id", ids) } }.decodeList<RatingRow>().associate { it.trackId to it.stars }
-        return rows.map { it.toTrack(it.id in liked, rated[it.id], nicknames[it.ownerId]) }
+        val recommended = if (me == null) emptySet() else
+            client.from("recommends").select { filter { eq("user_id", me); eq("day", kstToday()); isIn("track_id", ids) } }
+                .decodeList<RecommendRow>().map { it.trackId }.toSet()
+        return rows.map { it.toTrack(it.id in liked, rated[it.id], nicknames[it.ownerId]).copy(recommendedByMe = it.id in recommended) }
+    }
+
+    private fun kstToday() = java.time.LocalDate.now(ChartScoring.KST).toString()
+
+    /** RPC 결과처럼 닉네임이 없는 행에 닉네임을 채운다 */
+    private suspend fun nicknames(rows: List<TrackRow>): Map<String, String> {
+        val owners = rows.filter { it.profiles == null }.map { it.ownerId }.distinct()
+        return if (owners.isEmpty()) emptyMap() else
+            client.from("profiles").select { filter { isIn("id", owners) } }.decodeList<ProfileRow>().associate { it.id to it.nickname }
     }
 
     override suspend fun feed(sort: FeedSort, genre: Genre?): List<Track> = call {
@@ -213,15 +282,14 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
             FeedSort.WEEKLY -> {
                 val rows = client.postgrest.rpc("weekly_top", buildJsonObject { put("p_limit", 30) }).decodeList<TrackRow>()
                     .filter { genre == null || it.genre == genre.name }
-                // RPC 결과에는 닉네임이 없으므로 따로 가져온다
-                val owners = rows.map { it.ownerId }.distinct()
-                val names = if (owners.isEmpty()) emptyMap() else
-                    client.from("profiles").select { filter { isIn("id", owners) } }.decodeList<ProfileRow>().associate { it.id to it.nickname }
-                decorate(rows, names)
+                decorate(rows, nicknames(rows))
             }
             else -> decorate(
                 client.from("tracks").select(trackColumns) {
-                    filter { if (genre != null) eq("genre", genre.name) }
+                    filter {
+                        eq("visibility", Visibility.PUBLIC.dbValue)
+                        if (genre != null) eq("genre", genre.name)
+                    }
                     if (sort == FeedSort.TOP_RATED) {
                         filter { gt("rating_count", 0) }
                         order("rating_sum", Order.DESCENDING)
@@ -239,21 +307,93 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
     }
 
     override suspend fun tracksBy(userId: String): List<Track> = call {
-        decorate(client.from("tracks").select(trackColumns) { filter { eq("owner_id", userId) }; order("created_at", Order.DESCENDING) }.decodeList())
+        val mine = client.auth.currentUserOrNull()?.id == userId
+        decorate(
+            client.from("tracks").select(trackColumns) {
+                filter {
+                    eq("owner_id", userId)
+                    if (!mine) eq("visibility", Visibility.PUBLIC.dbValue)
+                }
+                order("created_at", Order.DESCENDING)
+            }.decodeList(),
+        )
     }
 
     override suspend fun profile(userId: String): Profile? = call {
-        client.from("profiles").select { filter { eq("id", userId) } }.decodeSingleOrNull<ProfileRow>()?.let { Profile(it.id, it.nickname, it.bio) }
+        client.from("profiles").select { filter { eq("id", userId) } }.decodeSingleOrNull<ProfileRow>()?.toProfile()
     }
 
-    override suspend fun publish(composition: Composition, description: String, remixOf: String?): Track = call {
+    override suspend fun publish(original: Composition, description: String, settings: ShareSettings, remixOf: String?): Track = call {
         val me = requireProfile()
+        val st = settings.coerceTo(original)
+        val shared = ShareCut.apply(original, st)
         val row = client.from("tracks").insert(
-            TrackInsert(me.id, composition.title.take(30), description.take(200), composition.genre.name, Json.parseToJsonElement(composition.toJson()), remixOf),
+            TrackInsert(
+                me.id, shared.title.take(30), description.take(200), shared.genre.name, Json.parseToJsonElement(shared.toJson()), remixOf,
+                st.visibility.dbValue, st.allowRemix, st.allowSing, st.isPartial(original.bars), st.startBar, original.bars,
+            ),
         ) { select(trackColumns) }.decodeSingle<TrackRow>()
         row.toTrack(nickname = me.nickname)
     }
 
+    override suspend fun updateShare(trackId: String, settings: ShareSettings, original: Composition?, description: String?): Track = call {
+        requireProfile()
+        val body = buildJsonObject {
+            put("visibility", settings.visibility.dbValue)
+            put("allow_remix", settings.allowRemix)
+            put("allow_sing", settings.allowSing)
+            if (description != null) put("description", description.take(200))
+            if (original != null) {
+                val st = settings.coerceTo(original)
+                put("composition", Json.parseToJsonElement(ShareCut.apply(original, st).toJson()))
+                put("title", original.title.take(30))
+                put("genre", original.genre.name)
+                put("is_partial", st.isPartial(original.bars))
+                put("highlight_start_bar", st.startBar)
+                put("full_bars", original.bars)
+            }
+        }
+        client.from("tracks").update(body) { filter { eq("id", trackId) } }
+        track(trackId) ?: throw CommunityException.Network("곡을 찾지 못했어요")
+    }
+
+    override suspend fun discover(): List<Track> = call {
+        val now = System.currentTimeMillis()
+        decorate(
+            client.from("tracks").select(trackColumns) {
+                filter { eq("visibility", Visibility.PUBLIC.dbValue) }
+                order("created_at", Order.DESCENDING)
+                limit(60)
+            }.decodeList(),
+        ).sortedByDescending { ChartScoring.hot(it, now) }
+    }
+
+    override suspend fun followingFeed(): List<Track> = call {
+        val me = client.auth.currentUserOrNull()?.id ?: return@call emptyList()
+        val ids = client.from("follows").select { filter { eq("follower_id", me) } }.decodeList<FollowRow>().map { it.followeeId }
+        if (ids.isEmpty()) return@call emptyList()
+        decorate(
+            client.from("tracks").select(trackColumns) {
+                filter { isIn("owner_id", ids); eq("visibility", Visibility.PUBLIC.dbValue) }
+                order("created_at", Order.DESCENDING)
+                limit(50)
+            }.decodeList(),
+        )
+    }
+
+    override suspend fun chart(kind: ChartKind, genre: Genre?): List<ChartEntry> = call {
+        val scores = client.postgrest.rpc("chart", buildJsonObject {
+            put("p_kind", kind.dbValue)
+            if (genre != null) put("p_genre", genre.name)
+            put("p_limit", 50)
+        }).decodeList<ChartRow>()
+        if (scores.isEmpty()) return@call emptyList()
+        // 곡 내용은 내 권한(RLS)으로 다시 읽는다: 내가 차단한 사람의 곡은 빠진다
+        val byId = decorate(client.from("tracks").select(trackColumns) { filter { isIn("id", scores.map { it.trackId }) } }.decodeList())
+            .associateBy { it.id }
+        scores.mapNotNull { r -> byId[r.trackId]?.let { it to r.score } }
+            .mapIndexed { i, (t, sc) -> ChartEntry(i + 1, t, sc) }
+    }
     override suspend fun deleteTrack(id: String) = call { client.from("tracks").delete { filter { eq("id", id) } }; Unit }
 
     override suspend fun setLiked(trackId: String, liked: Boolean) = call {
@@ -263,15 +403,80 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
         Unit
     }
 
+    override suspend fun recommend(trackId: String) = call {
+        val me = requireProfile().id
+        val owner = client.from("tracks").select(Columns.list("owner_id")) { filter { eq("id", trackId) } }.decodeSingleOrNull<OwnerRef>()?.ownerId
+            ?: throw CommunityException.Blocked()
+        if (owner == me) throw CommunityException.OwnTrack()
+        val already = client.from("recommends").select { filter { eq("track_id", trackId); eq("user_id", me); eq("day", kstToday()) } }
+            .decodeList<RecommendRow>().isNotEmpty()
+        if (!already) client.from("recommends").insert(RecommendRow(trackId, me))
+        Unit
+    }
+
+    override suspend fun recommendsLeft(): Int = call {
+        if (client.auth.currentUserOrNull() == null) return@call ChartScoring.DAILY_RECOMMENDS
+        client.postgrest.rpc("recommends_left").decodeAs<Int>()
+    }
+
     override suspend fun rate(trackId: String, stars: Int) = call {
         require(stars in 1..5)
         client.from("ratings").upsert(RatingRow(trackId, requireProfile().id, stars)) { onConflict = "track_id,user_id" }
         Unit
     }
 
-    override suspend fun recordPlay(trackId: String) = call {
-        client.postgrest.rpc("increment_play", buildJsonObject { put("p_track", trackId) })
+    override suspend fun recordListen(trackId: String, completed: Boolean) = call {
+        if (_me.value == null) return@call
+        client.postgrest.rpc("record_listen", buildJsonObject { put("p_track", trackId); put("p_completed", completed) })
         Unit
+    }
+
+    override suspend fun setFollowing(userId: String, follow: Boolean) = call {
+        val me = requireProfile().id
+        if (follow) client.from("follows").upsert(FollowRow(me, userId)) { onConflict = "follower_id,followee_id"; ignoreDuplicates = true }
+        else client.from("follows").delete { filter { eq("follower_id", me); eq("followee_id", userId) } }
+        Unit
+    }
+
+    override suspend fun isFollowing(userId: String): Boolean = call {
+        val me = client.auth.currentUserOrNull()?.id ?: return@call false
+        client.from("follows").select { filter { eq("follower_id", me); eq("followee_id", userId) } }.decodeList<FollowRow>().isNotEmpty()
+    }
+
+    private val notificationColumns = Columns.raw("*, actor:profiles!notifications_actor_id_fkey(id, nickname, bio), tracks(title)")
+
+    override suspend fun notifications(): List<AppNotification> = call {
+        if (client.auth.currentUserOrNull() == null) return@call emptyList()
+        client.from("notifications").select(notificationColumns) { order("created_at", Order.DESCENDING); limit(100) }
+            .decodeList<NotificationRow>().map { it.toNotification() }
+    }
+
+    override suspend fun markNotificationsRead() = call {
+        client.from("notifications").update(buildJsonObject { put("read_at", Instant.now().toString()) }) {
+            filter { filter("read_at", FilterOperator.IS, "null") }
+        }
+        Unit
+    }
+
+    override fun notificationEvents(): Flow<AppNotification> = flow {
+        val me = client.auth.currentUserOrNull()?.id ?: return@flow
+        val channel = client.channel("notif-$me-${UUID.randomUUID()}")
+        val changes = channel.postgresChangeFlow<PostgresAction.Insert>(schema = "public") {
+            table = "notifications"
+            filter("user_id", FilterOperator.EQ, me)
+        }
+        channel.subscribe()
+        try {
+            emitAll(changes.map { change ->
+                val row = change.decodeRecord<NotificationRow>()
+                // 실시간 행에는 이름·곡 제목이 없어서 다시 읽는다
+                runCatching {
+                    client.from("notifications").select(notificationColumns) { filter { eq("id", row.id) } }.decodeSingle<NotificationRow>().toNotification()
+                }.getOrElse { row.toNotification() }
+            })
+        } finally {
+            withContext(NonCancellable) { client.realtime.removeChannel(channel) }
+        }
     }
 
     override suspend fun comments(trackId: String): List<Comment> = call {
@@ -307,7 +512,7 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
 
     override suspend fun blockedUsers(): List<Profile> = call {
         client.from("blocks").select(Columns.raw("*, profiles!blocks_blocked_id_fkey(id, nickname, bio)")) { filter { eq("blocker_id", uid()) } }
-            .decodeList<BlockRow>().mapNotNull { it.profiles?.let { p -> Profile(p.id, p.nickname, p.bio) } }
+            .decodeList<BlockRow>().mapNotNull { it.profiles?.toProfile() }
     }
 
     override suspend fun conversations(): List<Conversation> = call {
@@ -320,7 +525,7 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
         }.decodeList<UnreadRow>().groupingBy { it.conversationId }.eachCount()
         rows.mapNotNull { r ->
             val other = (if (r.userA == me) r.b else r.a) ?: return@mapNotNull null
-            Conversation(r.id, Profile(other.id, other.nickname, other.bio), r.trackId, r.tracks?.title, r.lastMessage, parseTime(r.lastMessageAt), unread[r.id] ?: 0)
+            Conversation(r.id, other.toProfile(), r.trackId, r.tracks?.title, r.lastMessage, parseTime(r.lastMessageAt), unread[r.id] ?: 0)
         }
     }
 
