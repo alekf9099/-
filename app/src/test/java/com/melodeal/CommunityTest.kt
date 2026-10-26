@@ -25,6 +25,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 class CommunityTest {
+    private val lenient = Json { ignoreUnknownKeys = true }
     private fun demo() = DemoCommunity(replyDelayMs = 10)
 
     private inline fun <reified E : Throwable> assertThrows(block: () -> Unit) {
@@ -153,7 +154,7 @@ class CommunityTest {
              "comment_count":1,"play_count":10,"report_count":0,"hidden":false,
              "created_at":"2026-10-26T05:19:46.335+00:00","profiles":{"nickname":"하늘"}}
         """.trimIndent()
-        val t = Json { ignoreUnknownKeys = true }.decodeFromString<TrackRow>(json).toTrack(liked = true, myRating = 4)
+        val t = lenient.decodeFromString<TrackRow>(json).toTrack(liked = true, myRating = 4)
         assertEquals("하늘", t.ownerNickname)
         assertEquals(4.5, t.ratingAvg, 1e-9)
         assertEquals(comp, t.composition)

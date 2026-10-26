@@ -70,6 +70,10 @@ class ScreenshotTest {
 
     private val app get() = RuntimeEnvironment.getApplication() as MelodealApp
 
+    /** 서버 설정이 있어도 스크린샷은 항상 체험 모드 예시 데이터로 */
+    @org.junit.Before
+    fun useDemoCommunity() = app.useCommunity(com.melodeal.community.DemoCommunity())
+
     /** waitForText: DB에서 비동기로 읽어오는 화면은 이 글자가 나타날 때까지 기다린 뒤 찍는다 */
     private fun shot(name: String, waitForText: String? = null, content: @Composable () -> Unit) {
         compose.setContent {

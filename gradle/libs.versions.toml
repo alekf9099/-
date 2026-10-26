@@ -14,6 +14,7 @@ junit = "4.13.2"
 robolectric = "4.14.1"
 supabase = "3.0.0"
 ktor = "3.0.0"
+settings = "1.2.0"
 roborazzi = "1.32.2"
 
 [libraries]
@@ -43,6 +44,7 @@ supabase-bom = { group = "io.github.jan-tennert.supabase", name = "bom", version
 supabase-auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
 supabase-postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
 supabase-realtime = { group = "io.github.jan-tennert.supabase", name = "realtime-kt" }
+multiplatform-settings = { group = "com.russhwolf", name = "multiplatform-settings", version.ref = "settings" }
 ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }

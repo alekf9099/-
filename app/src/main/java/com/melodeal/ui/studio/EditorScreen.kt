@@ -27,8 +27,8 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
@@ -267,8 +267,8 @@ fun EditorContent(s: EditorUiState, a: EditorActions) {
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                             ToolButton(Icons.Filled.KeyboardArrowUp, "음 올리기") { a.onPitch(1) }
                             ToolButton(Icons.Filled.KeyboardArrowDown, "음 내리기") { a.onPitch(-1) }
-                            ToolButton(Icons.Filled.KeyboardArrowLeft, "앞으로") { a.onTime(-1) }
-                            ToolButton(Icons.Filled.KeyboardArrowRight, "뒤로") { a.onTime(1) }
+                            ToolButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞으로") { a.onTime(-1) }
+                            ToolButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "뒤로") { a.onTime(1) }
                             ToolButton(Icons.Filled.Remove, "짧게") { a.onResize(-1) }
                             ToolButton(Icons.Filled.Add, "길게") { a.onResize(1) }
                             ToolButton(Icons.Filled.Delete, "삭제", Neon.Red, a.onDeleteNote)
