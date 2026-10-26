@@ -171,6 +171,7 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
     } catch (e: RestException) {
         val msg = (e.error + " " + (e.description ?: "") + " " + (e.message ?: "")).lowercase()
         throw when {
+            "anonymous" in msg -> CommunityException.ServerConfig("익명 로그인이 꺼져 있어요 (Supabase 대시보드에서 켜야 해요)")
             "profiles_nickname_key" in msg || ("duplicate" in msg && "nickname" in msg) -> CommunityException.NicknameTaken()
             "blocked" in msg || "row-level security" in msg -> CommunityException.Blocked()
             else -> CommunityException.Network(e.error)

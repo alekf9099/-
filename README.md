@@ -36,10 +36,11 @@
    SUPABASE_ANON_KEY=<publishable(anon) 키>
    ```
 
-DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (53개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지 불가, 신고 누적 숨김 등).
+DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (58개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지 불가, 신고 누적 숨김, 도우미·트리거 함수 외부 호출 차단 등).
 
 ```bash
 python3 supabase/tests/test_rls.py "host=<소켓 경로> port=<포트> user=postgres"
+MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest --rerun   # 실서버 두 사용자 통합 테스트
 ```
 
 ## 만드는 흐름

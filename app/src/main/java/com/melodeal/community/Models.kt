@@ -60,5 +60,6 @@ sealed class CommunityException(message: String) : Exception(message) {
     class InvalidNickname : CommunityException("닉네임은 2~12글자로 정해 주세요")
     class Blocked : CommunityException("차단 관계라 이용할 수 없어요")
     class NeedProfile : CommunityException("먼저 닉네임을 정해 주세요")
+    class ServerConfig(detail: String) : CommunityException("서버 설정 문제로 이용할 수 없어요: $detail")
     class Network(detail: String?) : CommunityException("서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요" + (detail?.let { " ($it)" } ?: ""))
 }

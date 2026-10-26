@@ -140,4 +140,11 @@ assert scalar("select hidden from tracks where id = %s", (t1,)) is True
 as_user(B); ok("숨겨진 곡은 다른 사람에게 안 보임", "select id from tracks where id = %s", (t1,), expect_rows=0)
 as_user(A); ok("곡 주인에겐 보임 (숨김 상태 확인용)", "select id from tracks where id = %s", (t1,), expect_rows=1)
 
+print("외부 노출 차단")
+as_user(B); denied("public 에는 도우미 함수가 없음 (차단 여부 엿보기 불가)", "select public.is_blocked(%s, %s)", (A, C))
+denied("트리거 함수 직접 호출 불가", "select public.on_like_change()")
+as_user(None); denied("비로그인은 대화 열기 불가", "select open_conversation(%s)", (A,))
+denied("비로그인은 재생 수 조작 불가", "select increment_play(%s)", (t1,))
+as_user(C); ok("로그인 사용자는 재생 수 +1 가능", "select increment_play(gen_random_uuid())")
+
 print(f"\n전체 {passed}개 통과")
