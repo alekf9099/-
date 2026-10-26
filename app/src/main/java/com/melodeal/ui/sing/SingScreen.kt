@@ -83,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.melodeal.ui.components.rememberMicPermission
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -101,16 +102,9 @@ fun SingScreen(songId: String, playerName: String, onClose: () -> Unit, onFinish
     val s by vm.state.collectAsState()
     val context = LocalContext.current
     var askExit by remember { mutableStateOf(false) }
-    var permissionDenied by remember { mutableStateOf(false) }
     val headset = remember { headsetKind(context) }
 
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.start() else permissionDenied = true
-    }
-    val start = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.start()
-        else permission.launch(Manifest.permission.RECORD_AUDIO)
-    }
+    val start = rememberMicPermission("노래를 듣고 점수를 매기려면", vm::start)
 
     // 앱이 백그라운드로 가면 일시정지
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -159,15 +153,6 @@ fun SingScreen(songId: String, playerName: String, onClose: () -> Unit, onFinish
                     TextButton(onClick = { askExit = false; vm.resume() }) { Text("계속 부르기") }
                 }
             },
-        )
-    }
-    if (permissionDenied) {
-        AlertDialog(
-            onDismissRequest = { permissionDenied = false },
-            title = { Text("마이크 권한이 필요해요") },
-            text = { Text("노래를 듣고 채점하려면 마이크가 필요해요. 녹음 내용은 저장되거나 전송되지 않아요.") },
-            confirmButton = { TextButton(onClick = { permissionDenied = false; start() }) { Text("다시 요청") } },
-            dismissButton = { TextButton(onClick = { permissionDenied = false }) { Text("닫기") } },
         )
     }
 }

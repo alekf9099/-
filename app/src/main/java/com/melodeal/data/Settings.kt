@@ -11,6 +11,12 @@ data class AppSettings(
     val latencyCalibrated: Boolean = false,
     val guideVolume: Float = 0.5f,
     val myName: String = "나",
+    /** 첫 실행 안내를 봤는지 */
+    val onboarded: Boolean = false,
+    /** 편집 화면 사용 힌트를 닫았는지 */
+    val editorHintSeen: Boolean = false,
+    /** 마이크 권한을 한 번이라도 요청했는지 (영구 거부 판별용) */
+    val micAsked: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -21,6 +27,9 @@ class SettingsStore(context: Context) {
             latencyCalibrated = prefs.getBoolean("latencyCalibrated", false),
             guideVolume = prefs.getFloat("guideVolume", 0.5f),
             myName = prefs.getString("myName", "나") ?: "나",
+            onboarded = prefs.getBoolean("onboarded", false),
+            editorHintSeen = prefs.getBoolean("editorHintSeen", false),
+            micAsked = prefs.getBoolean("micAsked", false),
         ),
     )
     val state: StateFlow<AppSettings> = _state.asStateFlow()
@@ -33,6 +42,9 @@ class SettingsStore(context: Context) {
             .putBoolean("latencyCalibrated", s.latencyCalibrated)
             .putFloat("guideVolume", s.guideVolume)
             .putString("myName", s.myName)
+            .putBoolean("onboarded", s.onboarded)
+            .putBoolean("editorHintSeen", s.editorHintSeen)
+            .putBoolean("micAsked", s.micAsked)
             .apply()
     }
 }

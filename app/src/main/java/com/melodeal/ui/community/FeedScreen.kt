@@ -31,6 +31,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -118,7 +119,7 @@ fun FeedContent(
                     val on = s.sort == sort
                     Text(
                         sort.label, style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Neon.TextMid,
-                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Neon.Hero else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Neon.Surface, Neon.Surface)))
+                        modifier = Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(50)).background(if (on) Neon.Hero else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Neon.Surface, Neon.Surface)))
                             .border(1.dp, if (on) Color.Transparent else Neon.Outline, RoundedCornerShape(50))
                             .clickable { onSort(sort) }.padding(horizontal = 14.dp, vertical = 8.dp),
                     )

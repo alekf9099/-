@@ -132,6 +132,24 @@ class EditorViewModel(private val app: MelodealApp, val id: Long) : ViewModel() 
         if (beats < GRID - 1e-9 || n.startBeat + beats > nextStart + 1e-9) null else n.copy(beats = beats)
     }
 
+    /** 끌어서 옮기기: 다른 음과 겹치면 높이만 바꾸고, 그것도 안 되면 그대로 둔다 */
+    fun moveNote(index: Int, dBeats: Double, dSemis: Int) {
+        val notes = _state.value.comp.notes
+        val n = notes.getOrNull(index) ?: return
+        val others = notes.filterIndexed { i, _ -> i != index }
+        fun free(start: Double) = start >= 0 && others.none { start < it.endBeat - 1e-9 && start + n.beats > it.startBeat + 1e-9 }
+        val midi = (n.midi + dSemis).coerceIn(36, 96)
+        val start = (n.startBeat + dBeats).coerceAtLeast(0.0)
+        val moved = when {
+            free(start) -> n.copy(startBeat = start, midi = midi)
+            dSemis != 0 -> n.copy(midi = midi)
+            else -> return
+        }
+        edit(keepSelection = moved) { c -> c.copy(notes = c.notes.toMutableList().also { it[index] = moved }) }
+    }
+
+    fun dismissHint() = app.settings.update { it.copy(editorHintSeen = true) }
+
     fun deleteSelected() {
         val i = _state.value.selected ?: return
         edit { c -> c.copy(notes = c.notes.filterIndexed { idx, _ -> idx != i }) }

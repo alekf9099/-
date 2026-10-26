@@ -184,7 +184,7 @@ fun PartyQueueScreen(
                                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                                         fontWeight = if (r.id == upNext?.id) FontWeight.Bold else FontWeight.Normal,
                                     )
-                                    IconButton(onClick = { vm.cancel(r.id) }, modifier = Modifier.size(36.dp)) {
+                                    IconButton(onClick = { vm.cancel(r.id) }) {
                                         Icon(Icons.Filled.Close, contentDescription = "예약 취소", tint = Neon.TextLow, modifier = Modifier.size(18.dp))
                                     }
                                 }

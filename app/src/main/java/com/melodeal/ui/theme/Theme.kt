@@ -35,12 +35,13 @@ object Neon {
 
     val TextHigh = Color(0xFFF5F3FF)
     val TextMid = Color(0xFFA9A3C2)
-    val TextLow = Color(0xFF6E6888)
+    /** 보조 글씨: 가장 밝은 패널(SurfaceHigh) 위에서도 대비 5.3:1 (WCAG AA 4.5:1 이상) */
+    val TextLow = Color(0xFF938DAF)
 
-    /** 메인 액션 (아이콘과 같은 그라디언트) */
-    val Hero = Brush.linearGradient(listOf(Color(0xFFFF5FD9), Color(0xFFB24DFF), Violet))
-    val Cool = Brush.linearGradient(listOf(Color(0xFF3D7BFF), Cyan))
-    val Warm = Brush.linearGradient(listOf(Color(0xFFFF9150), Gold))
+    /** 메인 액션 (아이콘과 같은 계열). 흰 글씨 대비가 모든 지점에서 4.5:1 이상이 되도록 채도를 조금 낮춤 */
+    val Hero = Brush.linearGradient(listOf(Color(0xFFD12F9E), Color(0xFF9440E0), Color(0xFF6638DC)))
+    val Cool = Brush.linearGradient(listOf(Color(0xFF2F62E0), Color(0xFF1A75A0)))
+    val Warm = Brush.linearGradient(listOf(Color(0xFFC2541A), Color(0xFF946206)))
 
     val MedalGold = Brush.linearGradient(listOf(Color(0xFFFFE7A3), Color(0xFFE2A52B)))
     val MedalSilver = Brush.linearGradient(listOf(Color(0xFFF1F4FA), Color(0xFFA3ADBF)))

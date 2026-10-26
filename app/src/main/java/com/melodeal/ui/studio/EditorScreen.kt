@@ -47,6 +47,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +71,9 @@ import com.melodeal.data.song.Genre
 import com.melodeal.studio.ChordSymbol
 import com.melodeal.studio.LyricsFitter
 import com.melodeal.studio.noteName
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Close
+import com.melodeal.ui.app
 import com.melodeal.ui.appViewModel
 import com.melodeal.ui.community.PublishDialog
 import com.melodeal.ui.components.GradientButton
@@ -102,12 +106,15 @@ class EditorActions(
     val onSing: () -> Unit = {},
     val onExport: () -> Unit = {},
     val onPublish: () -> Unit = {},
+    val onMoveNote: (Int, Double, Int) -> Unit = { _, _, _ -> },
+    val onDismissHint: () -> Unit = {},
 )
 
 @Composable
 fun EditorScreen(id: Long, onBack: () -> Unit, onSing: (songId: String) -> Unit, onPublished: (trackId: String) -> Unit = {}) {
     val vm = appViewModel("editor:$id") { EditorViewModel(it, id) }
     val s by vm.state.collectAsState()
+    val settings by app().settings.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var chordSlot by remember { mutableStateOf<Int?>(null) }
@@ -143,7 +150,10 @@ fun EditorScreen(id: Long, onBack: () -> Unit, onSing: (songId: String) -> Unit,
             onSing = { vm.stopPreview(); scope.launch { onSing(vm.songId) } },
             onExport = { exporting = true },
             onPublish = { vm.stopPreview(); publishing = true },
+            onMoveNote = vm::moveNote,
+            onDismissHint = vm::dismissHint,
         ),
+        showHint = !settings.editorHintSeen,
     )
 
     if (publishing) {
@@ -219,7 +229,7 @@ private fun ChordOption(chord: ChordSymbol, current: Boolean, modifier: Modifier
 
 /** 상태만으로 그리는 편집 화면 (스크린샷 테스트에서도 사용) */
 @Composable
-fun EditorContent(s: EditorUiState, a: EditorActions) {
+fun EditorContent(s: EditorUiState, a: EditorActions, showHint: Boolean = false) {
     val comp = s.comp
     Column(Modifier.fillMaxSize()) {
         // 상단 바
@@ -256,28 +266,32 @@ fun EditorContent(s: EditorUiState, a: EditorActions) {
             }
 
             SectionTitle("멜로디 · 코드")
-            PianoRoll(comp, s.selected, s.playheadBeat, a.onTapNote, a.onTapEmpty, a.onTapChord)
+            if (showHint) EditorHint(a.onDismissHint)
+            PianoRoll(comp, s.selected, s.playheadBeat, a.onTapNote, a.onTapEmpty, a.onTapChord, a.onMoveNote)
 
-            // 선택한 음표 편집 도구
+            // 선택한 음표 편집 도구: 높이 · 위치 · 길이를 묶어서 이름표와 함께
             val sel = s.selectedNote
             if (sel != null) {
                 NeonCard(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), background = Neon.SurfaceHigh, border = Neon.Pink.copy(alpha = 0.4f)) {
-                    Column {
-                        Text("${noteName(sel.midi)} · ${formatBeats(sel.beats)}", style = MaterialTheme.typography.titleSmall, color = Neon.Pink)
-                        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            ToolButton(Icons.Filled.KeyboardArrowUp, "음 올리기") { a.onPitch(1) }
-                            ToolButton(Icons.Filled.KeyboardArrowDown, "음 내리기") { a.onPitch(-1) }
-                            ToolButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞으로") { a.onTime(-1) }
-                            ToolButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "뒤로") { a.onTime(1) }
-                            ToolButton(Icons.Filled.Remove, "짧게") { a.onResize(-1) }
-                            ToolButton(Icons.Filled.Add, "길게") { a.onResize(1) }
-                            ToolButton(Icons.Filled.Delete, "삭제", Neon.Red, a.onDeleteNote)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(noteName(sel.midi), style = MaterialTheme.typography.titleMedium, color = Neon.Pink)
+                            Text(
+                                "  ${formatBeats(sel.beats)} · ${(sel.startBeat / comp.beatsPerBar).toInt() + 1}마디 ${"%.1f".format(sel.startBeat % comp.beatsPerBar + 1).removeSuffix(".0")}박",
+                                color = Neon.TextMid, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
+                            )
+                            IconButton(onClick = a.onDeleteNote) { Icon(Icons.Filled.Delete, contentDescription = "음표 삭제", tint = Neon.Red) }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StepGroup("높이", Icons.Filled.KeyboardArrowDown, "음 내리기", Icons.Filled.KeyboardArrowUp, "음 올리기", Modifier.weight(1f), { a.onPitch(-1) }, { a.onPitch(1) })
+                            StepGroup("위치", Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞으로", Icons.AutoMirrored.Filled.KeyboardArrowRight, "뒤로", Modifier.weight(1f), { a.onTime(-1) }, { a.onTime(1) })
+                            StepGroup("길이", Icons.Filled.Remove, "짧게", Icons.Filled.Add, "길게", Modifier.weight(1f), { a.onResize(-1) }, { a.onResize(1) })
                         }
                     }
                 }
             } else {
                 Text(
-                    "빈 칸을 누르면 음표가 생기고, 음표를 누르면 높이·길이를 바꿀 수 있어요. 아래 코드를 누르면 다른 코드로 바꿀 수 있어요.",
+                    "빈 칸을 누르면 음표가 생기고, 음표를 끌면 옮겨져요. 아래 코드를 누르면 다른 코드로 바꿀 수 있어요.",
                     color = Neon.TextLow, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp, start = 4.dp),
                 )
             }
@@ -297,7 +311,7 @@ fun EditorContent(s: EditorUiState, a: EditorActions) {
                         val on = comp.chordBeats == b
                         Text(
                             label, style = MaterialTheme.typography.labelMedium, color = if (on) Color.White else Neon.TextMid,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) Neon.Violet.copy(alpha = 0.5f) else Neon.SurfaceHigh)
+                            modifier = Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(8.dp)).background(if (on) Neon.Violet.copy(alpha = 0.5f) else Neon.SurfaceHigh)
                                 .clickable { a.onChordBeats(b) }.padding(horizontal = 10.dp, vertical = 7.dp),
                         )
                     }
@@ -368,19 +382,48 @@ private fun InfoStepper(label: String, value: String, modifier: Modifier, onMinu
         modifier.clip(RoundedCornerShape(16.dp)).background(Neon.Surface).border(1.dp, Neon.Outline, RoundedCornerShape(16.dp)).padding(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onMinus, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.Remove, contentDescription = "$label 내리기", tint = Neon.TextMid, modifier = Modifier.size(18.dp)) }
+        IconButton(onClick = onMinus) { Icon(Icons.Filled.Remove, contentDescription = "$label 내리기", tint = Neon.TextMid, modifier = Modifier.size(18.dp)) }
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(label, color = Neon.TextLow, style = MaterialTheme.typography.labelSmall)
             Text(value, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         }
-        IconButton(onClick = onPlus, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.Add, contentDescription = "$label 올리기", tint = Neon.TextMid, modifier = Modifier.size(18.dp)) }
+        IconButton(onClick = onPlus) { Icon(Icons.Filled.Add, contentDescription = "$label 올리기", tint = Neon.TextMid, modifier = Modifier.size(18.dp)) }
     }
 }
 
+/** 이름표가 붙은 −/+ 한 쌍 (각 버튼 48dp) */
 @Composable
-private fun ToolButton(icon: ImageVector, label: String, tint: Color = Neon.TextHigh, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(4.dp)) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+private fun StepGroup(
+    label: String,
+    minusIcon: ImageVector, minusDesc: String,
+    plusIcon: ImageVector, plusDesc: String,
+    modifier: Modifier,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).background(Neon.Surface).padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, color = Neon.TextLow, style = MaterialTheme.typography.labelSmall)
+        Row {
+            IconButton(onClick = onMinus) { Icon(minusIcon, contentDescription = "$label $minusDesc") }
+            IconButton(onClick = onPlus) { Icon(plusIcon, contentDescription = "$label $plusDesc") }
+        }
     }
 }
+
+/** 처음 편집 화면을 열었을 때 한 번 보여주는 사용법 */
+@Composable
+private fun EditorHint(onDismiss: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(16.dp)).background(Neon.Cyan.copy(alpha = 0.1f))
+            .border(1.dp, Neon.Cyan.copy(alpha = 0.3f), RoundedCornerShape(16.dp)).padding(start = 14.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.TouchApp, contentDescription = null, tint = Neon.Cyan)
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text("이렇게 다듬어 보세요", style = MaterialTheme.typography.titleSmall)
+            Text("음표를 끌면 높이·위치가 바뀌고, 빈 칸을 누르면 새 음표가 생겨요. 위아래로 밀면 더 높고 낮은 음이 보여요.", color = Neon.TextMid, style = MaterialTheme.typography.bodySmall)
+        }
+        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "안내 닫기", tint = Neon.TextMid) }
+    }
+}
+

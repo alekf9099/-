@@ -46,6 +46,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.melodeal.ui.AppViewModel
 import com.melodeal.ui.home.HomeScreen
+import com.melodeal.ui.onboarding.OnboardingScreen
 import com.melodeal.ui.party.PartyQueueScreen
 import com.melodeal.ui.party.PartySetupScreen
 import com.melodeal.ui.ranking.RankingScreen
@@ -76,6 +77,7 @@ class MainActivity : ComponentActivity() {
 
 object Routes {
     const val HOME = "home"
+    const val ONBOARDING = "onboarding"
     const val PARTY_SETUP = "party/setup"
     const val PARTY_QUEUE = "party/queue"
     const val RANKING = "ranking"
@@ -120,7 +122,14 @@ private fun AppNav(appVm: AppViewModel) {
         restoreState = true
     }
     Column(Modifier.fillMaxSize()) {
-    NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.weight(1f)) {
+    val start = remember { if (settings.state.value.onboarded) Routes.HOME else Routes.ONBOARDING }
+    NavHost(nav, startDestination = start, modifier = Modifier.weight(1f)) {
+        composable(Routes.ONBOARDING) {
+            OnboardingScreen(onFinish = {
+                settings.update { it.copy(onboarded = true) }
+                nav.navigate(Routes.HOME) { popUpTo(Routes.ONBOARDING) { inclusive = true } }
+            })
+        }
         composable(Routes.HOME) {
             HomeScreen(
                 onParty = { nav.navigate(if (appVm.party.value.players.isEmpty()) Routes.PARTY_SETUP else Routes.PARTY_QUEUE) },

@@ -26,6 +26,7 @@ import com.melodeal.ui.sing.SingContent
 import com.melodeal.ui.sing.SingUiState
 import com.melodeal.ui.sing.TracePoint
 import com.melodeal.ui.songs.SongListScreen
+import com.melodeal.ui.onboarding.OnboardingScreen
 import com.melodeal.community.FeedSort
 import com.melodeal.ui.community.ChatListScreen
 import com.melodeal.ui.community.ChatRoomScreen
@@ -160,7 +161,7 @@ class ScreenshotTest {
     @Test fun editor() {
         val c = sampleComposition()
         shot("13_editor") {
-            EditorContent(EditorUiState(loaded = true, comp = c, selected = 4, canUndo = true), EditorActions())
+            EditorContent(EditorUiState(loaded = true, comp = c, selected = 4, canUndo = true), EditorActions(), showHint = true)
         }
     }
 
@@ -270,6 +271,10 @@ class ScreenshotTest {
     }
 
     @Test fun nicknameSetup() = shot("20_nickname_setup", waitForText = "환영해요") { FeedScreen({}, {}) }
+
+    @Test fun onboarding1() = shot("21_onboarding_1") { OnboardingScreen(onFinish = {}, startPage = 0) }
+    @Test fun onboarding2() = shot("22_onboarding_2") { OnboardingScreen(onFinish = {}, startPage = 1) }
+    @Test fun onboarding3() = shot("23_onboarding_3") { OnboardingScreen(onFinish = {}, startPage = 2) }
 
     @Test fun settings() = shot("10_settings") { SettingsScreen({}) }
 }

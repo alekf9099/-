@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.melodeal.ui.components.rememberMicPermission
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.melodeal.data.song.Genre
@@ -77,11 +78,7 @@ fun RecordScreen(onBack: () -> Unit, onCreated: (Long) -> Unit) {
     val vm = appViewModel("record") { RecordViewModel(it) }
     val s by vm.state.collectAsState()
     val context = LocalContext.current
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) vm.start() }
-    val start = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) vm.start()
-        else permission.launch(Manifest.permission.RECORD_AUDIO)
-    }
+    val start = rememberMicPermission("흥얼거린 멜로디를 악보로 바꾸려면", vm::start)
     LaunchedEffect(s.createdId) { s.createdId?.let(onCreated) }
     BackHandler { if (s.phase == RecPhase.RECORDING) vm.cancel() else onBack() }
 

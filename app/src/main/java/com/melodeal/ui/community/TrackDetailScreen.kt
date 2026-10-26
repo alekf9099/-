@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -340,7 +342,7 @@ private fun ActionTile(icon: androidx.compose.ui.graphics.vector.ImageVector, la
 private fun CommentRow(c: Comment, canDelete: Boolean, canReport: Boolean, onProfile: () -> Unit, onDelete: () -> Unit, onReport: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-        Box(Modifier.clickable(onClick = onProfile)) { PlayerAvatar(c.nickname, Neon.Cyan, 34) }
+        Box(Modifier.minimumInteractiveComponentSize().clip(CircleShape).clickable(onClick = onProfile), contentAlignment = Alignment.Center) { PlayerAvatar(c.nickname, Neon.Cyan, 34) }
         Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(c.nickname, style = MaterialTheme.typography.titleSmall)
@@ -350,7 +352,7 @@ private fun CommentRow(c: Comment, canDelete: Boolean, canReport: Boolean, onPro
         }
         if (canDelete || canReport) {
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, contentDescription = "댓글 메뉴", tint = Neon.TextLow, modifier = Modifier.size(18.dp)) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "댓글 메뉴", tint = Neon.TextLow, modifier = Modifier.size(18.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (canDelete) DropdownMenuItem(text = { Text("삭제") }, onClick = { menu = false; onDelete() })
                     if (canReport) DropdownMenuItem(text = { Text("신고") }, onClick = { menu = false; onReport() })

@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.melodeal.ui.components.rememberMicPermission
 import androidx.core.content.ContextCompat
 import com.melodeal.audio.LatencyCalibrator
 import com.melodeal.ui.app
@@ -74,7 +75,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
     }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) runCalibration() }
+    val withMic = rememberMicPermission("지연 시간을 재려면") { runCalibration() }
 
     Column(Modifier.fillMaxSize()) {
         SingTopBar("설정", onBack)
@@ -108,8 +109,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         }
                     } else {
                         GradientButton("자동 측정 (약 6초)", Neon.Cool, modifier = Modifier.fillMaxWidth()) {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) runCalibration()
-                            else permission.launch(Manifest.permission.RECORD_AUDIO)
+                            withMic()
                         }
                     }
                     message?.let { Text(it, color = Neon.Gold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp)) }

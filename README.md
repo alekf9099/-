@@ -104,6 +104,9 @@ MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest 
 | 글꼴 | Pretendard (SIL OFL 1.1), 한글 2,350자 서브셋으로 용량 1.6MB |
 | 색 | 아이콘의 마젠타→바이올렛 그라디언트를 메인으로, 바탕은 차분한 남보라 |
 | 이모지 제거 | 메달·왕관·마이크 등은 이모지 대신 그라디언트 배지와 Material 아이콘으로 표현 |
+| 접근성 | 보조 글씨 대비 5.3:1 이상, 그라디언트 위 흰 글씨 4.5:1 이상 (WCAG AA), 누르는 곳 최소 48dp |
+| 첫 실행 | 3장 안내(흥얼거리기 → 자동 반주 → 공유·대화), 마이크 권한은 이유를 먼저 설명하고 요청, 거부 시 설정으로 안내 |
+| 편집 | 음표 크게(8분음표 28dp), 끌어서 높이·위치 이동(반음·8분음표 단위로 맞춤, 진동 피드백), 높이·위치·길이 묶음 도구, 첫 사용 힌트 |
 
 화면 스크린샷은 `./gradlew recordRoborazziDebug`로 다시 만들 수 있습니다 (`docs/screenshots/`).
 
@@ -128,7 +131,7 @@ app/src/main/java/com/melodeal/
 ## 빌드 & 테스트
 
 ```bash
-./gradlew testDebugUnitTest   # 단위·화면 테스트 63개 (허밍→악보 복원·자동 코드·가사·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
+./gradlew testDebugUnitTest   # 단위·화면 테스트 67개 (허밍→악보 복원·자동 코드·가사·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ```
 
