@@ -1,5 +1,5 @@
 """
-멜로딜 DB 보안 규칙(RLS)·트리거 테스트.
+튠업 DB 보안 규칙(RLS)·트리거 테스트.
 로컬 PostgreSQL에 Supabase 흉내 구성 + 마이그레이션을 적용하고, 여러 사용자로 바꿔가며 허용/거부를 확인한다.
 실행: python3 supabase/tests/test_rls.py "host=... port=... user=postgres"
 """
@@ -10,9 +10,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DSN = sys.argv[1]
 
 admin = psycopg.connect(DSN + " dbname=postgres", autocommit=True)
-admin.execute("drop database if exists melodeal_test")
-admin.execute("create database melodeal_test")
-db = psycopg.connect(DSN + " dbname=melodeal_test", autocommit=True)
+admin.execute("drop database if exists tuneup_test")
+admin.execute("create database tuneup_test")
+db = psycopg.connect(DSN + " dbname=tuneup_test", autocommit=True)
 db.execute((ROOT / "tests/supabase_stub.sql").read_text())
 for f in sorted((ROOT / "migrations").glob("*.sql")):
     db.execute(f.read_text())
@@ -205,6 +205,16 @@ ok("지난주 차트는 비어 있음", "select track_id from chart('last_week')
 ok("급상승 차트", "select track_id from chart('rising')", expect_rows=3)
 denied("모르는 차트 종류", "select * from chart('monthly')")
 as_user(None); ok("비로그인도 차트 조회", "select track_id from chart('weekly')", expect_rows=3)
+
+print("리믹스")
+as_user(D)
+rx = ok("허용된 곡 리믹스", "insert into tracks (owner_id, title, genre, composition, remix_of) values (%s, '리믹스', 'POP', %s, %s) returning id", (D, comp, pub[1]))[0][0]
+denied("리믹스 비허용 곡은 서버도 거부", "insert into tracks (owner_id, title, genre, composition, remix_of) values (%s, '몰래', 'POP', %s, %s)", (D, comp, pub[0]))
+denied("나중에 원곡을 비허용 곡으로 바꿔치기도 거부", "update tracks set remix_of = %s where id = %s", (pub[0], rx))
+as_user(C); ok("자기 곡은 비허용이어도 리믹스 가능", "insert into tracks (owner_id, title, genre, composition, remix_of) values (%s, '셀프', 'POP', %s, %s)", (C, comp, pub[0]))
+as_user(D); denied("트리거 함수 직접 호출 불가", "select public.guard_remix()")
+ok("제목 검색", "select id from tracks where title ilike %s", ("%곡%",))
+db.execute("reset role"); db.execute("delete from tracks where title in ('리믹스', '셀프')")
 
 print("팔로우 · 알림")
 as_user(D); ok("D가 C 팔로우", "insert into follows (follower_id, followee_id) values (%s, %s)", (D, C))

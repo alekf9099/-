@@ -16,17 +16,20 @@ val localProps = Properties().apply {
 fun prop(name: String) = (localProps.getProperty(name) ?: System.getenv(name) ?: "").trim()
 
 android {
-    namespace = "com.melodeal"
+    namespace = "com.tuneup"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.melodeal"
+        applicationId = "com.tuneup.music"
         minSdk = 26
         targetSdk = 35
         versionCode = 4
         versionName = "3.0.0"
         buildConfigField("String", "SUPABASE_URL", "\"${prop("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY")}\"")
+        // 공유 메시지에 붙일 앱 받는 곳 (플레이스토어 출시 후에는 스토어 주소로 바꾼다)
+        val download = prop("DOWNLOAD_URL").ifBlank { "https://github.com/alekf9099/-/raw/ccr-ba3dce21-owty4p/dist/tuneup.apk" }
+        buildConfigField("String", "DOWNLOAD_URL", "\"$download\"")
     }
 
     buildTypes {

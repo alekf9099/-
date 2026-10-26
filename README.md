@@ -1,8 +1,10 @@
-# 멜로딜 (Melodeal)
+# 튠업 (TuneUp)
 
-**흥얼거리면 노래가 되고, 사람들과 나누는** 안드로이드 앱. 떠오르는 멜로디를 흥얼거리면 악보·코드·반주가 자동으로 만들어지고, 멜로딜에 공유해 평가를 받고 제작자와 대화할 수 있습니다. 만든 곡으로 노래방 채점과 파티 대결도 됩니다.
+**흥얼거리면 노래가 되고, 사람들과 나누는** 안드로이드 앱. 떠오르는 멜로디를 흥얼거리면 악보·코드·반주가 자동으로 만들어지고, 튠업에 공유해 평가를 받고 제작자와 대화할 수 있습니다. 만든 곡으로 노래방 채점과 파티 대결도 됩니다.
 
 <img src="docs/screenshots/overview.png" width="100%">
+
+**설치 (안드로이드)**: [tuneup.apk 받기](https://github.com/alekf9099/-/raw/ccr-ba3dce21-owty4p/dist/tuneup.apk) → 크롬에서 받고 "출처를 알 수 없는 앱" 허용 후 설치
 
 ## 메뉴 구조
 
@@ -23,6 +25,12 @@
 
 둘러보기는 닉네임 없이 바로 되고, 좋아요·추천·팔로우할 때만 닉네임을 묻습니다.
 
+| 더 | 내용 |
+|---|---|
+| **검색** | 홈·차트 오른쪽 위 돋보기: 곡 제목·제작자 닉네임, 입력하면서 바로 결과, 최근 검색어, 지금 뜨는 곡 |
+| **공유 링크** | 곡·프로필의 공유 버튼 → 카카오톡·문자로 `tuneup://track/…` 링크 + 앱 받는 곳. 링크를 누르면 튠업에서 그 곡이 바로 열림 (링크 공개 곡도 이 링크로 들을 수 있음) |
+| **리믹스 원곡** | 다른 사람 곡을 리믹스해 공유하면 곡 상세에 "원곡 「제목」 · 제작자"가 붙고 눌러서 원곡으로 이동. 원곡이 리믹스를 허용하지 않으면 서버에서도 거부 |
+
 ## 공유 · 반응 · 차트
 
 | 기능 | 내용 |
@@ -35,7 +43,7 @@
 | **팔로우** | 제작자 팔로우 → 홈 '팔로잉'에 새 곡, 팔로워·팔로잉 수 |
 | **디자인** | 곡마다 자동 커버 아트(장르별 무늬 + 실제 멜로디 물결), 좋아요·추천 누르면 튀는 효과와 진동, 첫 공유 축하 화면 |
 
-> 참고: 공개한 구간의 멜로디는 듣는 사람 앱에서 합성해야 하므로 그 구간 데이터는 전송됩니다. 리믹스·부르기 비허용은 앱 화면에서 막는 방식이고, 진짜 보호는 "필요한 구간만 올리기"입니다.
+> 참고: 공개한 구간의 멜로디는 듣는 사람 앱에서 합성해야 하므로 그 구간 데이터는 전송됩니다. 부르기 비허용은 앱 화면에서 막는 방식이고(리믹스 비허용은 공유 단계에서 서버도 거부), 진짜 보호는 "필요한 구간만 올리기"입니다.
 
 ## 커뮤니티 (평가 · 대화 · 안전)
 
@@ -59,11 +67,11 @@
    SUPABASE_ANON_KEY=<publishable(anon) 키>
    ```
 
-DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (110개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지·팔로우·알림 불가, 신고 누적 숨김, 하루 추천 3번 제한·내 곡 추천 불가, 청취 하루 1번 집계, 차트에서 링크 공개·숨김 곡 제외, 알림은 받는 사람만 조회, 도우미·트리거 함수 외부 호출 차단 등).
+DB 보안 규칙(RLS)은 로컬 PostgreSQL에서 검증합니다 (116개 항목: 사칭·집계 조작·남의 대화 열람 차단, 차단 시 댓글·메시지·팔로우·알림 불가, 신고 누적 숨김, 하루 추천 3번 제한·내 곡 추천 불가, 리믹스 비허용 곡 리믹스 거부, 청취 하루 1번 집계, 차트에서 링크 공개·숨김 곡 제외, 알림은 받는 사람만 조회, 도우미·트리거 함수 외부 호출 차단 등).
 
 ```bash
 python3 supabase/tests/test_rls.py "host=<소켓 경로> port=<포트> user=postgres"
-MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest --rerun   # 실서버 두 사용자 통합 테스트 (WebSocket이 막힌 망에서는 MELODEAL_E2E_REALTIME=0 추가)
+TUNEUP_E2E=1 ./gradlew testDebugUnitTest --tests com.tuneup.SupabaseE2ETest --rerun   # 실서버 두 사용자 통합 테스트 (WebSocket이 막힌 망에서는 TUNEUP_E2E_REALTIME=0 추가)
 ```
 
 ## 만드는 흐름
@@ -123,7 +131,7 @@ MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest 
 
 | 요소 | 내용 |
 |---|---|
-| 앱 아이콘 | Canva AI 시안(8분음표의 꼬리가 말풍선으로 이어진 모양 = 멜로디 + 대화)을 벡터로 재작업 (어댑티브·테마 아이콘 지원) |
+| 앱 아이콘 | Canva AI 시안(계단처럼 오르는 이퀄라이저 막대 + 기둥이 위쪽 화살표가 되는 음표 = 내 노래가 차트로 "튠업")을 벡터로 재작업 (어댑티브·테마 아이콘 지원) |
 | 글꼴 | Pretendard (SIL OFL 1.1), 한글 2,350자 서브셋으로 용량 1.6MB |
 | 색 | 아이콘의 마젠타→바이올렛 그라디언트를 메인으로, 바탕은 차분한 남보라 |
 | 이모지 제거 | 메달·왕관·마이크 등은 이모지 대신 그라디언트 배지와 Material 아이콘으로 표현 |
@@ -141,20 +149,20 @@ MELODEAL_E2E=1 ./gradlew testDebugUnitTest --tests com.melodeal.SupabaseE2ETest 
 - AudioTrack 스트리밍(합성 반주) · MediaPlayer(내 MR) · AudioRecord + 에코 캔슬러(마이크)
 
 ```
-app/src/main/java/com/melodeal/
+app/src/main/java/com/tuneup/
 ├── community/  CommunityRepository · SupabaseCommunity · DemoCommunity · ShareSettings(공개 구간) · ChartScoring · ContentFilter
 ├── studio/     Transcriber(허밍→악보) · Harmonizer(자동 코드) · LyricsFitter · MelodyGenerator · Composition · MusicTheory
 ├── audio/      Synth · Arranger(장르별 편곡) · PitchDetector(YIN) · MicCapture · SongPlayer · WavWriter · LatencyCalibrator
 ├── scoring/    Scorer (음정·박자·안정감, 판정·콤보, MR용 참고 점수)
 ├── party/      PartySession (순서 규칙 · 예약 · 순위, 순수 로직)
 ├── data/       곡 파서 · Room DB · 설정
-└── ui/         discover(홈) · chart · create · activity · my · studio(녹음·편집) · community(상세·공유 설정·프로필·채팅) · party · songs · sing · result · ranking · settings
+└── ui/         discover(홈) · search · chart · create · activity · my · studio(녹음·편집) · community(상세·공유 설정·프로필·채팅) · party · songs · sing · result · ranking · settings
 ```
 
 ## 빌드 & 테스트
 
 ```bash
-./gradlew testDebugUnitTest   # 단위·화면 테스트 84개 (허밍→악보 복원·자동 코드·가사·공개 구간 자르기·차트 점수·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
+./gradlew testDebugUnitTest   # 단위·화면 테스트 91개 (허밍→악보 복원·자동 코드·가사·공개 구간 자르기·차트 점수·공유 링크·검색·리믹스 권한·커뮤니티·채점·순서 규칙·장르 합성·화면 스크린샷)
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ```
 
