@@ -215,7 +215,8 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
     private val _me = MutableStateFlow<Profile?>(null)
     override val me: StateFlow<Profile?> = _me
 
-    private val trackColumns = Columns.raw("*, profiles(nickname)")
+    // 곡↔프로필은 주인 외에도 좋아요·추천·청취로 여러 번 이어져 있어서, 주인 관계를 이름으로 지정한다
+    private val trackColumns = Columns.raw("*, profiles!tracks_owner_id_fkey(nickname)")
 
     private fun uid(): String = client.auth.currentUserOrNull()?.id ?: throw CommunityException.NeedProfile()
     private fun requireProfile(): Profile = _me.value ?: throw CommunityException.NeedProfile()
@@ -233,7 +234,7 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
             "profiles_nickname_key" in msg || ("duplicate" in msg && "nickname" in msg) -> CommunityException.NicknameTaken()
             "blocked" in msg || "row-level security" in msg -> CommunityException.Blocked()
             else -> CommunityException.Network(e.error)
-        }
+        }.also { it.initCause(e) } // 원래 서버 오류는 로그에서 볼 수 있게 남긴다
     } catch (e: IOException) {
         throw CommunityException.Network(e.message)
     } catch (e: Exception) {
@@ -494,8 +495,12 @@ class SupabaseCommunity(private val client: SupabaseClient) : CommunityRepositor
     override suspend fun deleteComment(commentId: String) = call { client.from("comments").delete { filter { eq("id", commentId) } }; Unit }
 
     override suspend fun report(target: ReportTarget, targetId: String, reason: ReportReason, detail: String) = call {
-        client.from("reports").upsert(ReportInsert(requireProfile().id, target.dbValue, targetId, reason.dbValue, detail.take(300))) {
-            onConflict = "reporter_id,target_type,target_id"; ignoreDuplicates = true
+        // 신고 내역은 아무도 읽을 수 없어서(RLS) upsert(ON CONFLICT)를 쓸 수 없다. 그냥 넣고, 이미 신고했으면 성공으로 본다
+        try {
+            client.from("reports").insert(ReportInsert(requireProfile().id, target.dbValue, targetId, reason.dbValue, detail.take(300)))
+        } catch (e: RestException) {
+            val m = (e.error + " " + e.message).lowercase()
+            if ("duplicate" !in m && "23505" !in m) throw e
         }
         Unit
     }

@@ -1,6 +1,12 @@
 package com.melodeal
 
 import com.melodeal.community.FeedSort
+import com.melodeal.community.ChartKind
+import com.melodeal.community.CommunityException
+import com.melodeal.community.NotificationKind
+import com.melodeal.community.ShareCut
+import com.melodeal.community.ShareSettings
+import com.melodeal.community.Visibility
 import com.melodeal.community.ReportReason
 import com.melodeal.community.ReportTarget
 import com.melodeal.community.SupabaseCommunity
@@ -79,10 +85,16 @@ class SupabaseE2ETest {
         // 실시간 채팅: 밥이 곡을 보고 대화를 열고, 앨리스는 실시간으로 받는다
         val conv = bob.openConversation(a.id, t.id)
         assertEquals(conv, alice.openConversation(b.id))
-        val incoming = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { withTimeout(15_000) { alice.incoming(conv).first() } }
-        delay(2500) // 실시간 구독이 붙을 시간
-        bob.sendMessage(conv, "가사 붙여봐도 될까요?")
-        assertEquals("가사 붙여봐도 될까요?", incoming.await().body)
+        // 실시간(WebSocket)이 막힌 네트워크에서는 MELODEAL_E2E_REALTIME=0 으로 실시간 수신 확인만 건너뛴다
+        if (System.getenv("MELODEAL_E2E_REALTIME") != "0") {
+            val incoming = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { withTimeout(15_000) { alice.incoming(conv).first() } }
+            delay(2500) // 실시간 구독이 붙을 시간
+            bob.sendMessage(conv, "가사 붙여봐도 될까요?")
+            assertEquals("가사 붙여봐도 될까요?", incoming.await().body)
+        } else {
+            bob.sendMessage(conv, "가사 붙여봐도 될까요?")
+            assertEquals("가사 붙여봐도 될까요?", alice.messages(conv).last().body)
+        }
         val list = alice.conversations()
         assertEquals(1, list.single { it.id == conv }.unread)
         assertEquals(comp.title, list.single { it.id == conv }.trackTitle)
@@ -97,6 +109,34 @@ class SupabaseE2ETest {
         assertTrue("차단 후 메시지 불가", runCatching { bob.sendMessage(conv, "...") }.isFailure)
         alice.unblock(b.id)
         assertTrue(bob.feed(FeedSort.LATEST).any { it.id == t.id })
+
+        // 부분 공개 · 추천 · 팔로우 · 알림 · 차트
+        val part = alice.publish(comp, "하이라이트만", ShareSettings(startBar = 1, bars = 2))
+        assertTrue(part.isPartial)
+        assertEquals(comp.bars, part.fullBars)
+        assertEquals(ShareCut.apply(comp, ShareSettings(startBar = 1, bars = 2)).notes, bob.track(part.id)!!.composition.notes)
+        assertTrue("내 곡 추천은 거부", runCatching { alice.recommend(part.id) }.exceptionOrNull() is CommunityException.OwnTrack)
+        val left = bob.recommendsLeft()
+        bob.recommend(part.id)
+        assertEquals(left - 1, bob.recommendsLeft())
+        assertTrue(bob.track(part.id)!!.recommendedByMe)
+        assertEquals(1, alice.track(part.id)!!.recommendCount)
+        bob.setFollowing(a.id, true)
+        assertTrue(bob.isFollowing(a.id))
+        assertEquals(1, bob.profile(a.id)!!.followerCount)
+        assertTrue(bob.followingFeed().any { it.id == part.id })
+        val kinds = alice.notifications().map { it.kind }.toSet()
+        assertTrue("알림: $kinds", kinds.containsAll(setOf(NotificationKind.LIKE, NotificationKind.COMMENT, NotificationKind.RECOMMEND, NotificationKind.FOLLOW)))
+        assertTrue(bob.notifications().none { it.actor?.id == b.id })
+        alice.markNotificationsRead()
+        assertTrue(alice.notifications().all { it.read })
+        val unlisted = alice.updateShare(part.id, ShareSettings(visibility = Visibility.UNLISTED, bars = 2), null)
+        assertEquals(Visibility.UNLISTED, unlisted.visibility)
+        assertTrue("링크 공개는 차트 제외", bob.chart(ChartKind.WEEKLY).none { it.track.id == part.id })
+        assertTrue(bob.discover().none { it.id == part.id })
+        assertTrue(bob.chart(ChartKind.RISING).all { it.rank > 0 })
+        bob.setFollowing(a.id, false)
+        alice.deleteTrack(part.id)
 
         // 정리: 곡 삭제 (프로필·대화는 운영 DB에서 e2e 접두사로 정리)
         alice.deleteTrack(t.id)

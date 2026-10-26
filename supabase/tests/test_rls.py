@@ -128,6 +128,7 @@ print("신고")
 as_user(B); ok("B가 곡 신고", "insert into reports (reporter_id, target_type, target_id, reason) values (%s, 'track', %s, 'plagiarism')", (B, t1))
 denied("같은 대상 중복 신고", "insert into reports (reporter_id, target_type, target_id, reason) values (%s, 'track', %s, 'spam')", (B, t1))
 ok("신고 내역은 조회 불가", "select * from reports", expect_rows=0)
+denied("신고는 ON CONFLICT(upsert)로 못 넣음 → 앱은 그냥 insert", "insert into reports (reporter_id, target_type, target_id, reason) values (%s, 'user', %s, 'spam') on conflict (reporter_id, target_type, target_id) do nothing", (B, A))
 # 신고 5건이면 자동 숨김
 db.execute("reset role")
 for _ in range(4):
