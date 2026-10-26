@@ -1,6 +1,6 @@
 # kotlinx.serialization
 -keepattributes *Annotation*, InnerClasses
--keepclassmembers class com.singturn.data.song.** {
+-keepclassmembers class com.melodeal.data.song.** {
     *** Companion;
     kotlinx.serialization.KSerializer serializer(...);
 }

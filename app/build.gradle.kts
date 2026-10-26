@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,16 +9,24 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+// 서버 설정: local.properties 에 SUPABASE_URL / SUPABASE_ANON_KEY 를 넣으면 실서버, 비우면 체험 모드
+val localProps = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun prop(name: String) = (localProps.getProperty(name) ?: System.getenv(name) ?: "").trim()
+
 android {
-    namespace = "com.singturn"
+    namespace = "com.melodeal"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.singturn"
+        applicationId = "com.melodeal"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.0.0"
+        versionCode = 4
+        versionName = "3.0.0"
+        buildConfigField("String", "SUPABASE_URL", "\"${prop("SUPABASE_URL")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("SUPABASE_ANON_KEY")}\"")
     }
 
     buildTypes {
@@ -32,6 +42,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -75,6 +86,12 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.kotlinx.serialization.json)
+
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.realtime)
+    implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
