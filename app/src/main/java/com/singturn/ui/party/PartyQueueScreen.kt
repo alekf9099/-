@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.WorkspacePremium
+import com.singturn.ui.components.RankBadge
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -131,15 +133,20 @@ fun PartyQueueScreen(
                         val rank = standings.indexOf(s) + 1
                         NeonCard(modifier = Modifier.fillMaxWidth(), border = if (rank == 1 && s.sung > 0) Neon.Gold else Neon.Outline) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    if (s.sung == 0) "-" else "$rank",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = if (rank == 1 && s.sung > 0) Neon.Gold else Neon.TextMid,
-                                    modifier = Modifier.width(32.dp),
-                                )
+                                if (s.sung == 0) {
+                                    Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { Text("-", color = Neon.TextLow) }
+                                } else {
+                                    RankBadge(rank)
+                                }
+                                Spacer(Modifier.width(10.dp))
                                 PlayerAvatar(s.player.name, Neon.PlayerColors[s.player.colorIndex], 36)
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                    Text(s.player.name + if (rank == 1 && s.sung > 0) "  👑" else "", style = MaterialTheme.typography.titleMedium)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(s.player.name, style = MaterialTheme.typography.titleMedium)
+                                        if (rank == 1 && s.sung > 0) {
+                                            Icon(Icons.Filled.WorkspacePremium, contentDescription = "1위", tint = Neon.Gold, modifier = Modifier.padding(start = 4.dp).size(18.dp))
+                                        }
+                                    }
                                     Text("${s.sung}곡 · 최고 ${s.best}점", color = Neon.TextMid, style = MaterialTheme.typography.bodyMedium)
                                 }
                                 Text(

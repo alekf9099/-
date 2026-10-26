@@ -193,7 +193,7 @@ private fun ImportDialog(uri: Uri, onDismiss: () -> Unit, onConfirm: (title: Str
                 OutlinedButton(onClick = { lrcPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.FileOpen, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (lrc == null) "가사 파일(.lrc) 추가 (선택)" else "가사 파일 추가됨 ✓")
+                    Text(if (lrc == null) "가사 파일(.lrc) 추가 (선택)" else "가사 파일 추가됨")
                 }
                 Text(
                     "직접 작성했거나 이용 허락을 받은 가사 파일만 사용해 주세요.",

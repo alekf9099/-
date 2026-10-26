@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 브랜드 마크: 마이크를 감싸며 도는 두 개의 호 = "번갈아 부르기". Canva 생성 시안을 벡터로 다시 그림 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="1.1" android:scaleY="1.1" android:pivotX="54" android:pivotY="53">
+
+    <!-- 왼쪽 호 (아래 → 위) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M41,74.52 A26,26 0,0 1,37.29 32.08">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="41" android:startY="75" android:endX="37" android:endY="32">
+                <item android:offset="0" android:color="#00F048D8" />
+                <item android:offset="1" android:color="#FFF048D8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 오른쪽 호 (위 → 아래) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M67,29.48 A26,26 0,0 1,70.71 71.92">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="67" android:startY="29" android:endX="71" android:endY="72">
+                <item android:offset="0" android:color="#0045D9F5" />
+                <item android:offset="1" android:color="#FF45D9F5" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 받침대 호 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M41.5,51 A12.5,12.5 0,0 0,66.5 51">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="41" android:startY="51" android:endX="67" android:endY="64">
+                <item android:offset="0" android:color="#FFB86BFF" />
+                <item android:offset="1" android:color="#FF7B4DFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 기둥 + 받침 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF8F5BFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M54,64v8M47,74h14" />
+
+    <!-- 마이크 헤드 -->
+    <path android:pathData="M54,29a9,9 0,0 1,9 9v13a9,9 0,0 1,-18 0v-13a9,9 0,0 1,9 -9z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="45" android:startY="29" android:endX="63" android:endY="60">
+                <item android:offset="0" android:color="#FFFF6FE0" />
+                <item android:offset="0.55" android:color="#FFB24DFF" />
+                <item android:offset="1" android:color="#FF6A3CFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 그릴 띠 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#66FFFFFF"
+        android:strokeWidth="1.2"
+        android:pathData="M45.2,44.5h17.6" />
+    <!-- 하이라이트 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#8CFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M49,35.5v5" />
+    </group>
+</vector>

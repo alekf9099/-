@@ -1,6 +1,18 @@
 package com.singturn.ui.ranking
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import com.singturn.ui.components.PlayerAvatar
+import com.singturn.ui.components.RankBadge
+import com.singturn.ui.components.medalColor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,7 +42,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.singturn.ui.app
@@ -43,12 +54,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 
-private fun medal(rank: Int): Color = when (rank) {
-    1 -> Neon.Gold; 2 -> Color(0xFFC9D1E0); 3 -> Color(0xFFE09A62); else -> Neon.TextMid
-}
-
 /** 이번 주 월요일 0시 (주간 시즌 시작) */
-private fun weekStartMillis(): Long =
+fun weekStartMillis(): Long =
     LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
@@ -101,18 +108,56 @@ private fun RankList(rows: List<RankRow>) {
         return
     }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        itemsIndexed(rows) { i, r ->
-            val rank = i + 1
-            NeonCard(modifier = Modifier.fillMaxWidth(), border = if (rank <= 3) medal(rank).copy(alpha = 0.6f) else Neon.Outline) {
+        item { Podium(rows.take(3)) }
+        itemsIndexed(rows.drop(3)) { i, r ->
+            val rank = i + 4
+            NeonCard(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (rank <= 3) listOf("🥇", "🥈", "🥉")[rank - 1] else "$rank", style = MaterialTheme.typography.titleLarge, color = medal(rank), modifier = Modifier.width(40.dp))
-                    Column(Modifier.weight(1f)) {
+                    RankBadge(rank)
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(r.name, style = MaterialTheme.typography.titleMedium)
-                        Text(r.detail, color = Neon.TextMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.detail, color = Neon.TextMid, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("${r.score}", style = MaterialTheme.typography.headlineMedium, color = medal(rank))
-                        Text(r.unit, color = Neon.TextLow, style = MaterialTheme.typography.labelMedium)
+                    Text("${r.score}", style = MaterialTheme.typography.headlineMedium)
+                    Text(r.unit, color = Neon.TextLow, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 3.dp, top = 6.dp))
+                }
+            }
+        }
+    }
+}
+
+/** 1·2·3위 시상대: 가운데가 1위, 단 높이로 순위를 보여준다 */
+@Composable
+private fun Podium(top: List<RankRow>) {
+    val order = listOf(1, 0, 2).filter { it < top.size }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        order.forEach { idx ->
+            val r = top[idx]
+            val rank = idx + 1
+            val height = when (rank) { 1 -> 112.dp; 2 -> 84.dp; else -> 68.dp }
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (rank == 1) {
+                    Icon(Icons.Filled.WorkspacePremium, contentDescription = "1위", tint = Neon.Gold, modifier = Modifier.size(24.dp))
+                }
+                PlayerAvatar(r.name, medalColor(rank), if (rank == 1) 60 else 48)
+                Text(r.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                Text(r.detail, color = Neon.TextLow, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Box(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                        .height(height)
+                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                        .background(Brush.verticalGradient(listOf(medalColor(rank).copy(alpha = 0.32f), medalColor(rank).copy(alpha = 0.04f)))),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 10.dp)) {
+                        RankBadge(rank, 26.dp)
+                        Text("${r.score}", style = MaterialTheme.typography.headlineSmall, color = medalColor(rank), modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }

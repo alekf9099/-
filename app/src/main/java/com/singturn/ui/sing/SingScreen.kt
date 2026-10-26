@@ -16,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +67,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
+import com.singturn.ui.theme.Pretendard
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.SpanStyle
@@ -89,6 +93,7 @@ import com.singturn.ui.appViewModel
 import com.singturn.ui.components.GradientButton
 import com.singturn.ui.theme.Neon
 import kotlin.math.ceil
+import kotlin.math.abs
 
 @Composable
 fun SingScreen(songId: String, playerName: String, onClose: () -> Unit, onFinished: (scoreId: Long, total: Int) -> Unit) {
@@ -123,62 +128,24 @@ fun SingScreen(songId: String, playerName: String, onClose: () -> Unit, onFinish
     }
 
     val playing = s.phase == Phase.PLAYING || s.phase == Phase.PAUSED
-    BackHandler { if (playing) { vm.pause(); askExit = true } else onClose() }
+    val requestExit = { if (playing) { vm.pause(); askExit = true } else onClose() }
+    BackHandler { requestExit() }
 
-    Column(Modifier.fillMaxSize()) {
-        // 상단: 곡 정보 + 실시간 점수
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (playing) { vm.pause(); askExit = true } else onClose() }) {
-                Icon(Icons.Filled.Close, contentDescription = "닫기")
-            }
-            Column(Modifier.weight(1f)) {
-                Text(s.song?.title ?: "", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("🎤 $playerName" + if (s.keyShift != 0) " · 키 ${"%+d".format(s.keyShift)}" else "", color = Neon.TextMid, style = MaterialTheme.typography.labelMedium)
-            }
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(end = 12.dp)) {
-                Text("${s.liveScore}", style = MaterialTheme.typography.headlineMedium, color = Neon.Gold)
-                Text(if (s.song?.hasReference == false) "참고용" else "점", color = Neon.TextLow, style = MaterialTheme.typography.labelMedium)
-            }
-        }
-        if (s.durationSec > 0) {
-            LinearProgressIndicator(
-                progress = { (s.t / s.durationSec).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(3.dp),
-                color = Neon.Pink, trackColor = Neon.Surface,
-            )
-        }
-
-        // 음정 레인
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            s.song?.let { PitchLane(it, s.t, s.trace, Modifier.fillMaxSize()) }
-            JudgementPopup(s, Modifier.align(Alignment.TopCenter).padding(top = 20.dp))
-            if (s.phase == Phase.PLAYING && s.t < 0) {
-                val beats = s.song?.let { ceil(-s.t / it.secPerBeat).toInt() } ?: 0
-                Text("$beats", fontSize = 96.sp, fontWeight = FontWeight.Black, color = Neon.Pink.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.Center))
-            }
-            if (s.phase == Phase.PREPARING || s.phase == Phase.LOADING || s.phase == Phase.SAVING) {
-                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Neon.Pink)
-                    Text(if (s.phase == Phase.SAVING) "채점 중…" else "반주 준비 중…", color = Neon.TextMid, modifier = Modifier.padding(top = 12.dp))
-                }
-            }
-            if (s.phase == Phase.ERROR) {
-                Text(s.error ?: "오류가 발생했어요", color = Neon.Red, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(24.dp))
-            }
-        }
-
-        // 가사
-        s.song?.let { Lyrics(it, s.t, Modifier.fillMaxWidth().heightIn(min = 120.dp).padding(horizontal = 16.dp, vertical = 8.dp)) }
-
-        // 하단 컨트롤
-        Box(Modifier.fillMaxWidth().background(Neon.Surface).padding(16.dp)) {
-            when (s.phase) {
-                Phase.READY -> ReadyControls(s, headset, vm, onStart = start)
-                Phase.PLAYING, Phase.PAUSED -> PlayingControls(s, vm, onStop = { vm.pause(); askExit = true })
-                else -> Spacer(Modifier.height(56.dp))
-            }
-        }
-    }
+    SingContent(
+        s = s,
+        playerName = playerName,
+        headset = headset,
+        actions = SingActions(
+            onClose = requestExit,
+            onStart = start,
+            onChangeKey = vm::changeKey,
+            onGuide = vm::setGuide,
+            onGuideVolume = vm::setGuideVolume,
+            onPause = vm::pause,
+            onResume = vm::resume,
+            onStop = { vm.pause(); askExit = true },
+        ),
+    )
 
     if (askExit) {
         AlertDialog(
@@ -205,7 +172,88 @@ fun SingScreen(songId: String, playerName: String, onClose: () -> Unit, onFinish
     }
 }
 
-private enum class Headset { NONE, WIRED, BLUETOOTH }
+class SingActions(
+    val onClose: () -> Unit = {},
+    val onStart: () -> Unit = {},
+    val onChangeKey: (Int) -> Unit = {},
+    val onGuide: (Boolean) -> Unit = {},
+    val onGuideVolume: (Float) -> Unit = {},
+    val onPause: () -> Unit = {},
+    val onResume: () -> Unit = {},
+    val onStop: () -> Unit = {},
+)
+
+/** 상태만으로 그리는 노래 화면 (스크린샷 테스트에서도 사용) */
+@Composable
+fun SingContent(s: SingUiState, playerName: String, headset: Headset, actions: SingActions) {
+    Column(Modifier.fillMaxSize().background(Neon.Bg)) {
+        // 상단: 곡 정보 + 실시간 점수
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = actions.onClose) { Icon(Icons.Filled.Close, contentDescription = "닫기") }
+            Column(Modifier.weight(1f)) {
+                Text(s.song?.title ?: "", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                    Icon(Icons.Filled.Mic, contentDescription = null, tint = Neon.Pink, modifier = Modifier.size(14.dp))
+                    Text(
+                        " $playerName" + if (s.keyShift != 0) " · 키 ${"%+d".format(s.keyShift)}" else "",
+                        color = Neon.TextMid, style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+            Column(
+                Modifier.clip(RoundedCornerShape(14.dp)).background(Neon.Surface).border(1.dp, Neon.Outline, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.End,
+            ) {
+                Text(if (s.song?.hasReference == false) "참고 점수" else "SCORE", color = Neon.TextLow, style = MaterialTheme.typography.labelSmall)
+                Text("${s.liveScore}", style = MaterialTheme.typography.headlineMedium, color = Neon.TextHigh)
+            }
+        }
+        if (s.durationSec > 0) {
+            LinearProgressIndicator(
+                progress = { (s.t / s.durationSec).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = Neon.Pink, trackColor = Neon.SurfaceHigh, drawStopIndicator = {},
+            )
+        }
+
+        // 음정 레인
+        Box(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
+            s.song?.let { PitchLane(it, s.t, s.trace, Modifier.fillMaxSize()) }
+            JudgementPopup(s, Modifier.align(Alignment.TopCenter).padding(top = 20.dp))
+            if (s.phase == Phase.PLAYING && s.t < 0) {
+                val beats = s.song?.let { ceil(-s.t / it.secPerBeat).toInt() } ?: 0
+                Text("$beats", fontSize = 96.sp, fontWeight = FontWeight.Black, color = Neon.Pink.copy(alpha = 0.85f), modifier = Modifier.align(Alignment.Center))
+            }
+            if (s.phase == Phase.PREPARING || s.phase == Phase.LOADING || s.phase == Phase.SAVING) {
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Neon.Pink)
+                    Text(if (s.phase == Phase.SAVING) "채점 중…" else "반주 준비 중…", color = Neon.TextMid, modifier = Modifier.padding(top = 12.dp))
+                }
+            }
+            if (s.phase == Phase.ERROR) {
+                Text(s.error ?: "오류가 발생했어요", color = Neon.Red, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(24.dp))
+            }
+        }
+
+        // 가사
+        s.song?.let { Lyrics(it, s.t, Modifier.fillMaxWidth().heightIn(min = 128.dp).padding(horizontal = 20.dp, vertical = 12.dp)) }
+
+        // 하단 컨트롤
+        Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)).background(Neon.Surface)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+        ) {
+            when (s.phase) {
+                Phase.READY -> ReadyControls(s, headset, actions)
+                Phase.PLAYING, Phase.PAUSED -> PlayingControls(s, actions)
+                else -> Spacer(Modifier.height(56.dp))
+            }
+        }
+    }
+}
+
+enum class Headset { NONE, WIRED, BLUETOOTH }
 
 private fun headsetKind(context: Context): Headset {
     val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -218,7 +266,7 @@ private fun headsetKind(context: Context): Headset {
 }
 
 @Composable
-private fun ReadyControls(s: SingUiState, headset: Headset, vm: SingViewModel, onStart: () -> Unit) {
+private fun ReadyControls(s: SingUiState, headset: Headset, actions: SingActions) {
     val song = s.song ?: return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val tip = when (headset) {
@@ -238,23 +286,23 @@ private fun ReadyControls(s: SingUiState, headset: Headset, vm: SingViewModel, o
         if (song.hasReference) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("키", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(56.dp))
-                FilledTonalIconButton(onClick = { vm.changeKey(-1) }) { Icon(Icons.Filled.Remove, contentDescription = "키 내리기") }
+                FilledTonalIconButton(onClick = { actions.onChangeKey(-1) }) { Icon(Icons.Filled.Remove, contentDescription = "키 내리기") }
                 Text("%+d".format(s.keyShift), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.width(56.dp))
-                FilledTonalIconButton(onClick = { vm.changeKey(1) }) { Icon(Icons.Filled.Add, contentDescription = "키 올리기") }
+                FilledTonalIconButton(onClick = { actions.onChangeKey(1) }) { Icon(Icons.Filled.Add, contentDescription = "키 올리기") }
                 Spacer(Modifier.weight(1f))
                 Text("가이드", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(end = 8.dp))
-                Switch(checked = s.guideOn, onCheckedChange = vm::setGuide)
+                Switch(checked = s.guideOn, onCheckedChange = actions.onGuide)
             }
         }
-        GradientButton("노래 시작", Neon.Hero, icon = Icons.Filled.Mic, onClick = onStart, modifier = Modifier.fillMaxWidth())
+        GradientButton("노래 시작", Neon.Hero, icon = Icons.Filled.Mic, onClick = actions.onStart, modifier = Modifier.fillMaxWidth())
     }
 }
 
 @Composable
-private fun PlayingControls(s: SingUiState, vm: SingViewModel, onStop: () -> Unit) {
+private fun PlayingControls(s: SingUiState, actions: SingActions) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         FilledIconButton(
-            onClick = { if (s.phase == Phase.PLAYING) vm.pause() else vm.resume() },
+            onClick = { if (s.phase == Phase.PLAYING) actions.onPause() else actions.onResume() },
             modifier = Modifier.size(56.dp),
             colors = IconButtonDefaults.filledIconButtonColors(containerColor = Neon.Pink),
         ) {
@@ -264,13 +312,13 @@ private fun PlayingControls(s: SingUiState, vm: SingViewModel, onStop: () -> Uni
         if (s.song?.hasReference == true) {
             Column(Modifier.weight(1f)) {
                 Text("가이드 멜로디 ${if (s.guideOn) "${(s.guideVolume * 100).toInt()}%" else "꺼짐"}", color = Neon.TextMid, style = MaterialTheme.typography.labelMedium)
-                Slider(value = if (s.guideOn) s.guideVolume else 0f, onValueChange = { vm.setGuide(it > 0f); if (it > 0f) vm.setGuideVolume(it) })
+                Slider(value = if (s.guideOn) s.guideVolume else 0f, onValueChange = { actions.onGuide(it > 0f); if (it > 0f) actions.onGuideVolume(it) })
             }
         } else {
             Spacer(Modifier.weight(1f))
         }
         Spacer(Modifier.width(12.dp))
-        FilledTonalIconButton(onClick = onStop, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Stop, contentDescription = "그만 부르기") }
+        FilledTonalIconButton(onClick = actions.onStop, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Stop, contentDescription = "그만 부르기") }
     }
 }
 
@@ -311,47 +359,72 @@ private fun PitchLane(song: Song, t: Double, trace: List<TracePoint>, modifier: 
             45.0 to 80.0
         }
     }
-    val before = 2.5
-    val after = 4.5
-    Canvas(modifier.background(Neon.Bg)) {
+    val before = 2.0
+    val after = 3.6
+    Canvas(modifier) {
         val (lo, hi) = range
         val playX = size.width * before.toFloat() / (before + after).toFloat()
         fun x(time: Double) = playX + ((time - t) / (before + after) * size.width).toFloat()
         fun y(midi: Double) = (size.height * (1 - (midi - lo) / (hi - lo))).toFloat()
         val rowH = (size.height / (hi - lo)).toFloat()
 
-        // 반음 격자
+        // 옥타브(도) 기준선
         for (m in lo.toInt()..hi.toInt()) {
-            if (m % 12 == 0) drawLine(Neon.Outline.copy(alpha = 0.6f), Offset(0f, y(m.toDouble())), Offset(size.width, y(m.toDouble())), 1f)
+            if (m % 12 == 0) drawLine(Neon.Outline, Offset(0f, y(m.toDouble())), Offset(size.width, y(m.toDouble())), 1f)
         }
+        // 이미 지나간 구간은 살짝 어둡게
+        drawRect(Color.Black.copy(alpha = 0.22f), size = Size(playX, size.height))
 
         // 목표 음
         for (n in song.notes) {
             if (n.endSec < t - before || n.startSec > t + after) continue
             val active = t >= n.startSec && t < n.endSec
             val past = n.endSec <= t
-            val color = when { active -> Neon.Pink; past -> Neon.Outline; else -> Neon.Cyan.copy(alpha = 0.55f) }
-            val top = y(n.midi + 0.5)
             val left = x(n.startSec)
-            val w = (x(n.endSec) - left - 2f).coerceAtLeast(4f)
-            drawRoundRect(color, Offset(left, top), Size(w, rowH * 0.9f), CornerRadius(rowH / 2))
+            val w = (x(n.endSec) - left - 3f).coerceAtLeast(4f)
+            // 반음 칸이 넓어도 막대는 얇고 길게: 둥근 "방울"이 아닌 노래방식 음정 바
+            val h = minOf(rowH * 0.8f, 13.dp.toPx())
+            val top = y(n.midi.toDouble()) - h / 2
+            val r = CornerRadius(h / 2)
+            when {
+                active -> {
+                    drawRoundRect(Neon.Pink.copy(alpha = 0.22f), Offset(left - 5f, top - 5f), Size(w + 10f, h + 10f), CornerRadius(h))
+                    drawRoundRect(Brush.horizontalGradient(listOf(Neon.Pink, Neon.Violet), startX = left, endX = left + w), Offset(left, top), Size(w, h), r)
+                }
+                past -> drawRoundRect(Neon.SurfaceHigh, Offset(left, top), Size(w, h), r)
+                else -> {
+                    drawRoundRect(Neon.Cyan.copy(alpha = 0.16f), Offset(left, top), Size(w, h), r)
+                    drawRoundRect(Neon.Cyan.copy(alpha = 0.7f), Offset(left, top), Size(w, h), r, style = Stroke(2f))
+                }
+            }
             // drawText는 남은 폭이 음수면 예외를 던지므로 화면 안쪽일 때만 그린다
-            if (n.lyric.isNotEmpty() && w > 18f && left + 4f < size.width - 48f && top - 34f < size.height) {
-                drawText(measurer, n.lyric, Offset(left + 4f, top - 34f), TextStyle(color = if (past) Neon.TextLow else Neon.TextMid, fontSize = 12.sp))
+            if (n.lyric.isNotEmpty() && w > 18f && left + 4f < size.width - 48f && top - 40f < size.height) {
+                drawText(measurer, n.lyric, Offset(left + 2f, top - 40f), TextStyle(color = if (past) Neon.TextLow else Neon.TextMid, fontSize = 12.sp, fontFamily = Pretendard))
             }
         }
 
-        // 내 목소리 궤적
-        for (p in trace) {
-            val px = x(p.t)
-            if (px < 0 || px > playX + 4) continue
-            drawCircle(if (p.hit) Neon.Lime else Neon.Gold.copy(alpha = 0.7f), radius = 5f, center = Offset(px, y(p.midi)))
+        // 내 목소리 궤적: 이어진 점은 선으로 연결해 부드럽게
+        val visible = trace.filter { x(it.t) in 0f..(playX + 4f) }
+        visible.zipWithNext().forEach { (a, b) ->
+            val color = if (b.hit) Neon.Lime else Neon.Gold.copy(alpha = 0.75f)
+            if (b.t - a.t < 0.07 && abs(b.midi - a.midi) < 1.5) {
+                drawLine(color, Offset(x(a.t), y(a.midi)), Offset(x(b.t), y(b.midi)), strokeWidth = 7f, cap = StrokeCap.Round)
+            } else {
+                drawCircle(color, radius = 3.5f, center = Offset(x(b.t), y(b.midi)))
+            }
         }
 
         // 재생선
-        drawLine(Color.White.copy(alpha = 0.8f), Offset(playX, 0f), Offset(playX, size.height), 3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+        drawRect(
+            Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.06f)), startX = playX - 40f, endX = playX),
+            topLeft = Offset(playX - 40f, 0f), size = Size(40f, size.height),
+        )
+        drawLine(Color.White.copy(alpha = 0.75f), Offset(playX, 0f), Offset(playX, size.height), 2f)
         trace.lastOrNull()?.takeIf { t - it.t < 0.25 }?.let {
-            drawCircle(if (it.hit) Neon.Lime else Neon.Gold, radius = 11f, center = Offset(playX, y(it.midi)))
+            val c = if (it.hit) Neon.Lime else Neon.Gold
+            drawCircle(c.copy(alpha = 0.25f), radius = 20f, center = Offset(playX, y(it.midi)))
+            drawCircle(c, radius = 9f, center = Offset(playX, y(it.midi)))
+            drawCircle(Color.White, radius = 3.5f, center = Offset(playX, y(it.midi)))
         }
     }
 }
