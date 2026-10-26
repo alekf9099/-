@@ -142,7 +142,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             }
             Text(
-                "버전 1.1.0 · 글꼴 Pretendard (SIL Open Font License 1.1)",
+                "버전 2.0.0 · 글꼴 Pretendard (SIL Open Font License 1.1)",
                 color = Neon.TextLow, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(vertical = 16.dp),
             )
         }

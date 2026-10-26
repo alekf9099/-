@@ -65,6 +65,7 @@ fun SongListScreen(reserveFor: Player?, onBack: () -> Unit, onPick: (Song, myNam
     val repo = app.songs
     val settings by app.settings.state.collectAsState()
     val imported by repo.imported.collectAsState(initial = emptyList())
+    val mine by repo.mine.collectAsState(initial = emptyList())
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var pendingImport by remember { mutableStateOf<Uri?>(null) }
@@ -80,7 +81,8 @@ fun SongListScreen(reserveFor: Player?, onBack: () -> Unit, onPick: (Song, myNam
         }
     }
 
-    val list = (if (tab == 0) repo.builtin else imported).filter {
+    // 탭: 0 내 노래 · 1 샘플곡 · 2 내 MR
+    val list = (when (tab) { 0 -> mine; 1 -> repo.builtin; else -> imported }).filter {
         query.isBlank() || it.title.contains(query.trim(), ignoreCase = true)
     }
 
@@ -95,15 +97,16 @@ fun SongListScreen(reserveFor: Player?, onBack: () -> Unit, onPick: (Song, myNam
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         )
         SecondaryTabRow(selectedTabIndex = tab, containerColor = Neon.Bg, modifier = Modifier.padding(top = 8.dp)) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("내장곡 ${repo.builtin.size}") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("내 MR ${imported.size}") })
+            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("내 노래 ${mine.size}") })
+            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("샘플곡 ${repo.builtin.size}") })
+            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("내 MR ${imported.size}") })
         }
         LazyColumn(
             Modifier.weight(1f).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Spacer(Modifier.height(4.dp)) }
-            if (tab == 1) {
+            if (tab == 2) {
                 item {
                     NeonCard(modifier = Modifier.fillMaxWidth(), border = Neon.Cyan.copy(alpha = 0.4f)) {
                         Column {
@@ -121,7 +124,13 @@ fun SongListScreen(reserveFor: Player?, onBack: () -> Unit, onPick: (Song, myNam
                 }
             }
             if (list.isEmpty()) {
-                item { EmptyState(Icons.Filled.LibraryMusic, if (query.isBlank()) "곡이 없어요" else "검색 결과가 없어요", if (tab == 1) "위 버튼으로 MR을 추가해 보세요" else "다른 검색어를 입력해 보세요") }
+                item {
+                    EmptyState(
+                        Icons.Filled.LibraryMusic,
+                        if (query.isNotBlank()) "검색 결과가 없어요" else if (tab == 0) "아직 만든 노래가 없어요" else "곡이 없어요",
+                        when { query.isNotBlank() -> "다른 검색어를 입력해 보세요"; tab == 0 -> "홈에서 '새 노래 만들기'로 첫 곡을 만들어 보세요"; else -> "위 버튼으로 MR을 추가해 보세요" },
+                    )
+                }
             }
             items(list, key = { it.id }) { song ->
                 NeonCard(onClick = { onPick(song, settings.myName.ifBlank { "나" }) }, modifier = Modifier.fillMaxWidth()) {
@@ -131,11 +140,12 @@ fun SongListScreen(reserveFor: Player?, onBack: () -> Unit, onPick: (Song, myNam
                             Text(song.credit, color = Neon.TextMid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (song.hasReference) Tag("정식 채점", Neon.Lime) else Tag("참고용 채점", Neon.Gold)
-                                if (tab == 0) Tag("퍼블릭 도메인", Neon.Cyan)
+                                if (tab == 0) Tag("${song.genre.label} · 내가 만든 곡", Neon.Pink)
+                                if (tab == 1) Tag("퍼블릭 도메인", Neon.Cyan)
                                 if (song.lines.isEmpty()) Tag("가사 없음", Neon.TextLow)
                             }
                         }
-                        if (tab == 1) {
+                        if (tab == 2) {
                             IconButton(onClick = { toDelete = song }) { Icon(Icons.Filled.Delete, contentDescription = "삭제", tint = Neon.TextLow) }
                         }
                     }

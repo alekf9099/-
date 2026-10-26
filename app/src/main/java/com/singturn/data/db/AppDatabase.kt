@@ -1,6 +1,7 @@
 package com.singturn.data.db
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -39,6 +40,16 @@ data class ImportedSongEntity(
     val uri: String,
     val lrc: String?,
     val createdAt: Long,
+)
+
+/** 사용자가 만든 곡. 곡 내용(멜로디·코드·가사)은 Composition JSON으로 저장 */
+@Entity(tableName = "creations")
+data class CreationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val json: String,
+    val createdAt: Long,
+    val updatedAt: Long,
 )
 
 data class PlayerStat(val playerName: String, val plays: Int, val avgScore: Double, val bestScore: Int)
@@ -90,10 +101,37 @@ interface ImportedSongDao {
     suspend fun delete(id: Long)
 }
 
-@Database(entities = [ScoreEntity::class, ImportedSongEntity::class], version = 1, exportSchema = true)
+@Dao
+interface CreationDao {
+    @Insert
+    suspend fun insert(c: CreationEntity): Long
+
+    @Query("UPDATE creations SET title = :title, json = :json, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun update(id: Long, title: String, json: String, updatedAt: Long)
+
+    @Query("SELECT * FROM creations ORDER BY updatedAt DESC")
+    fun all(): Flow<List<CreationEntity>>
+
+    @Query("SELECT * FROM creations WHERE id = :id")
+    suspend fun byId(id: Long): CreationEntity?
+
+    @Query("SELECT COUNT(*) FROM creations")
+    suspend fun count(): Int
+
+    @Query("DELETE FROM creations WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
+@Database(
+    entities = [ScoreEntity::class, ImportedSongEntity::class, CreationEntity::class],
+    version = 2,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scores(): ScoreDao
     abstract fun importedSongs(): ImportedSongDao
+    abstract fun creations(): CreationDao
 
     companion object {
         fun create(context: Context) =

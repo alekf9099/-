@@ -28,6 +28,8 @@ import com.singturn.ui.result.ResultScreen
 import com.singturn.ui.settings.SettingsScreen
 import com.singturn.ui.sing.SingScreen
 import com.singturn.ui.songs.SongListScreen
+import com.singturn.ui.studio.EditorScreen
+import com.singturn.ui.studio.RecordScreen
 import com.singturn.ui.theme.Neon
 import com.singturn.ui.theme.SingTurnTheme
 
@@ -53,6 +55,8 @@ object Routes {
     const val PARTY_QUEUE = "party/queue"
     const val RANKING = "ranking"
     const val SETTINGS = "settings"
+    const val RECORD = "studio/record"
+    fun editor(id: Long) = "studio/edit/$id"
 
     /** reservePlayer >= 0 이면 해당 참가자 예약용으로 곡을 고른다 */
     fun songs(reservePlayer: Int = -1) = "songs?player=$reservePlayer"
@@ -64,6 +68,8 @@ object Routes {
 @Composable
 private fun AppNav(appVm: AppViewModel) {
     val nav = rememberNavController()
+    val settings = (androidx.compose.ui.platform.LocalContext.current.applicationContext as SingTurnApp).settings
+    val singerName = { settings.state.value.myName.ifBlank { "나" } }
     NavHost(nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
@@ -71,6 +77,20 @@ private fun AppNav(appVm: AppViewModel) {
                 onSolo = { nav.navigate(Routes.songs()) },
                 onRanking = { nav.navigate(Routes.RANKING) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
+                onCreate = { nav.navigate(Routes.RECORD) },
+                onOpenSong = { nav.navigate(Routes.editor(it)) },
+            )
+        }
+        composable(Routes.RECORD) {
+            RecordScreen(onBack = { nav.popBackStack() }, onCreated = { id ->
+                nav.navigate(Routes.editor(id)) { popUpTo(Routes.RECORD) { inclusive = true } }
+            })
+        }
+        composable("studio/edit/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            EditorScreen(
+                id = entry.arguments!!.getLong("id"),
+                onBack = { nav.popBackStack() },
+                onSing = { songId -> nav.navigate(Routes.sing(songId, singerName())) },
             )
         }
         composable(Routes.PARTY_SETUP) {

@@ -18,7 +18,7 @@ class RenderedSong(val sampleRate: Int, val backing: FloatArray, val guide: Floa
 object Synth {
     const val SAMPLE_RATE = 44100
 
-    private fun midiToHz(m: Int) = 440.0 * 2.0.pow((m - 69) / 12.0)
+    internal fun midiToHz(m: Int) = 440.0 * 2.0.pow((m - 69) / 12.0)
 
     fun render(song: Song, sampleRate: Int = SAMPLE_RATE): RenderedSong {
         val start = song.countInSec
@@ -32,36 +32,7 @@ object Synth {
             click(backing, (b * spb * sampleRate).toInt(), if (b == 0) 0.55f else 0.35f, if (b == 0) 1600.0 else 1100.0, sampleRate)
         }
 
-        // 리듬: 박마다 가벼운 하이햇, 마디 첫 박에 킥
-        val beats = (song.durationSec / spb).toInt()
-        val rnd = Random(7)
-        for (b in 0 until beats) {
-            val at = ((start + b * spb) * sampleRate).toInt()
-            hat(backing, at, 0.06f, sampleRate, rnd)
-            if (b % song.beatsPerBar == 0) kick(backing, at, 0.35f, sampleRate)
-        }
-
-        // 코드 패드 + 베이스
-        for (c in song.chords) {
-            val root = c.rootMidi ?: continue
-            val third = root + if (c.minor) 3 else 4
-            val chordTones = buildList {
-                add(root + 12); add(third + 12); add(root + 19)
-                if (c.seventh) add(root + 22)
-            }
-            val from = start + c.startSec
-            for (m in chordTones) tone(backing, from, c.durSec, midiToHz(m), 0.06f, sampleRate, Wave.PAD)
-            // 베이스: 박마다 근음/5음 교대
-            var t = 0.0
-            var alt = false
-            while (t < c.durSec - 1e-6) {
-                val len = minOf(spb, c.durSec - t)
-                val bassNote = if (alt) root + 7 - 12 else root - 12
-                tone(backing, from + t, len * 0.9, midiToHz(bassNote + 12), 0.16f, sampleRate, Wave.BASS)
-                t += spb
-                alt = !alt
-            }
-        }
+        Arranger(song, backing, sampleRate, start).arrange()
 
         // 가이드 멜로디
         for (n in song.notes) {
@@ -79,9 +50,9 @@ object Synth {
         return out
     }
 
-    private enum class Wave { PAD, BASS, LEAD }
+    internal enum class Wave { PAD, BASS, LEAD }
 
-    private fun tone(buf: FloatArray, startSec: Double, durSec: Double, hz: Double, amp: Float, sr: Int, wave: Wave) {
+    internal fun tone(buf: FloatArray, startSec: Double, durSec: Double, hz: Double, amp: Float, sr: Int, wave: Wave) {
         val s0 = (startSec * sr).toInt()
         val len = (durSec * sr).toInt()
         val attack = (sr * if (wave == Wave.PAD) 0.06 else 0.012).toInt()
@@ -112,7 +83,7 @@ object Synth {
         }
     }
 
-    private fun click(buf: FloatArray, at: Int, amp: Float, hz: Double, sr: Int) {
+    internal fun click(buf: FloatArray, at: Int, amp: Float, hz: Double, sr: Int) {
         val len = (sr * 0.03).toInt()
         for (i in 0 until len) {
             val idx = at + i
@@ -121,7 +92,7 @@ object Synth {
         }
     }
 
-    private fun hat(buf: FloatArray, at: Int, amp: Float, sr: Int, rnd: Random) {
+    internal fun hat(buf: FloatArray, at: Int, amp: Float, sr: Int, rnd: Random) {
         val len = (sr * 0.04).toInt()
         var prev = 0.0
         for (i in 0 until len) {
@@ -134,7 +105,7 @@ object Synth {
         }
     }
 
-    private fun kick(buf: FloatArray, at: Int, amp: Float, sr: Int) {
+    internal fun kick(buf: FloatArray, at: Int, amp: Float, sr: Int) {
         val len = (sr * 0.18).toInt()
         var phase = 0.0
         for (i in 0 until len) {
@@ -144,6 +115,20 @@ object Synth {
             phase += 2 * PI * f / sr
             buf[idx] += (amp * exp(-i / (sr * 0.06)) * sin(phase)).toFloat()
         }
+    }
+
+    /** 녹음용 메트로놈: 카운트인 한 마디 + bars 마디 (첫 박 강세) */
+    fun metronome(bpm: Double, beatsPerBar: Int, bars: Int, sampleRate: Int = SAMPLE_RATE): RenderedSong {
+        val spb = 60.0 / bpm
+        val countIn = beatsPerBar * spb
+        val total = ((countIn + bars * beatsPerBar * spb + 0.5) * sampleRate).toInt()
+        val clicks = FloatArray(total)
+        for (b in 0 until (bars + 1) * beatsPerBar) {
+            val accent = b % beatsPerBar == 0
+            val amp = if (b < beatsPerBar) (if (accent) 0.6f else 0.4f) else (if (accent) 0.32f else 0.2f)
+            click(clicks, (b * spb * sampleRate).toInt(), amp, if (accent) 1600.0 else 1100.0, sampleRate)
+        }
+        return RenderedSong(sampleRate, clicks, FloatArray(total), countIn)
     }
 
     private fun normalize(a: FloatArray, b: FloatArray) {

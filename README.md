@@ -1,39 +1,51 @@
-# 싱턴 노래방 (SingTurn)
+# 싱턴 (SingTurn)
 
-한 폰으로 **돌아가며 부르고, 실시간 채점으로 겨루는** 안드로이드 노래방 앱
+**흥얼거리면 노래가 되는** 안드로이드 작곡 앱. 떠오르는 멜로디를 흥얼거리면 악보·코드·반주가 자동으로 만들어지고, 그 곡으로 바로 노래방 채점과 친구들과의 파티 대결까지 할 수 있습니다.
 
 <p>
 <img src="docs/screenshots/02_home.png" width="19%">
-<img src="docs/screenshots/04_party_queue.png" width="19%">
+<img src="docs/screenshots/12_recording.png" width="19%">
+<img src="docs/screenshots/13_editor.png" width="19%">
 <img src="docs/screenshots/07_sing_playing.png" width="19%">
 <img src="docs/screenshots/08_result.png" width="19%">
-<img src="docs/screenshots/09_ranking.png" width="19%">
 </p>
 
-## 핵심 기능
+## 만드는 흐름
+
+```
+흥얼거리기 → 악보 자동 변환 → 코드·반주 자동 생성 → 멜로디·가사 다듬기 → 부르기 · 파티 · 음원 내보내기
+```
+
+| 단계 | 기능 |
+|---|---|
+| **녹음** | 장르·빠르기·박자 선택 → 메트로놈 카운트인 → 최대 16마디, 실시간 음높이 궤적과 입력 레벨 |
+| **악보 변환** | 끊김 메우기·중앙값 필터로 비브라토 제거 → 음 단위 분할 → 전체 음정 치우침 보정 → 조성 찾기(Krumhansl) → 음계·8분음표 격자에 맞추기 |
+| **자동 코드** | 반 마디(또는 한 마디)마다 멜로디에 맞는 다이어토닉 코드, 자연스러운 진행을 비터비 알고리즘으로 선택 |
+| **편집** | 피아노 롤(음계 줄 강조) · 음 추가/높이/위치/길이/삭제 · 되돌리기 · 곡 전체 키 바꾸기 · 코드 직접 고르기 · 자동 저장 |
+| **가사** | 한 글자 = 한 음, 영어는 단어(하이픈으로 음절 나누기), 줄바꿈 = 노래방 줄바꿈, 음표 수와 맞는지 안내 |
+| **반주** | 발라드(피아노 아르페지오) · 팝(블록 코드) · 댄스(4비트·신스) · 어쿠스틱(Karplus–Strong 통기타 스트럼) |
+| **완성** | 이 곡으로 노래방 채점·랭킹·파티 모드, WAV 내보내기(멜로디 포함 / 반주만 MR) |
+
+## 노래방 · 파티 기능 (그대로 유지)
 
 | 기능 | 내용 |
 |---|---|
-| **파티 모드** | 참가자 등록 → 각자 곡 예약 → 순서 자동 진행 (차례대로 / 랜덤 / 꼴찌 먼저), 넘기기, 3·2·1 카운트다운, 차례 진동 알림, 오늘의 순위, 벌칙 룰렛 |
-| **실시간 채점** | YIN 음정 검출로 기준 멜로디와 비교 → 음정·박자·안정감 점수, PERFECT/GREAT/GOOD/MISS 판정, 콤보 |
-| **랭킹** | 곡별 TOP(플레이어별 최고점) · 이번 주 시즌(매주 월요일 초기화) · 플레이어 평균 순위, 개인 최고 기록 배지 |
-| **합성 반주** | 악보 데이터(멜로디+코드)로 반주를 앱에서 직접 합성 → 가이드 멜로디 볼륨 조절, 키 ±6 |
-| **내 MR 불러오기** | 기기의 음원 파일 + 선택적 LRC 가사. 업로드 없음, 참고용 점수(랭킹 제외) |
-| **지연 보정** | 스피커 클릭 → 마이크 왕복 지연 자동 측정, 블루투스용 수동 조절 |
+| **파티 모드** | 참가자 등록 → 곡 예약 → 순서 자동 진행 (차례대로 / 랜덤 / 꼴찌 먼저), 넘기기, 카운트다운, 오늘의 순위, 벌칙 룰렛 |
+| **실시간 채점** | YIN 음정 검출 → 음정·박자·안정감, PERFECT~MISS 판정, 콤보 |
+| **랭킹** | 곡별(내 노래 포함) · 이번 주 · 플레이어 |
+| **샘플곡 · 내 MR** | 퍼블릭 도메인 7곡, 기기의 MR 파일 재생 |
 
-## 저작권 설계
+## 저작권
 
 | 구성 요소 | 처리 방식 |
 |---|---|
-| 내장곡 (작사·작곡) | 저작자 사후 70년이 지난 **퍼블릭 도메인** 곡만 수록 |
-| 반주 | 녹음 음원 없이 **앱이 실시간 합성** → 반주 녹음물 권리 문제 없음 |
-| 사용자 MR | 기기에서 **재생만**, 업로드·공유 기능 없음 |
-| 마이크 | 실시간 분석에만 사용, **녹음·저장·전송 안 함** |
-| 신고 창구 | 설정 > 권리침해 신고 (출시 전 `SettingsScreen.kt`의 `RIGHTS_EMAIL` 교체 필요) |
+| 내가 만든 곡 | 사용자가 직접 만든 멜로디·가사 → 사용자 소유 |
+| 반주 | 녹음 음원 없이 앱이 실시간 합성 |
+| 샘플곡 | 저작자 사후 70년이 지난 퍼블릭 도메인 곡만 수록 |
+| 내 MR | 기기에서 재생만, 업로드·공유 없음 |
+| 마이크 | 실시간 분석에만 사용, 녹음 파일로 저장·전송하지 않음 |
 
-> 저작권이 있는 인기곡을 넣으려면 한국음악저작권협회(KOMCA) 이용허락과, 반주를 쓰는 경우 반주 제작사 계약이 필요합니다.
-
-## 곡 추가하기
+## 샘플곡 추가하기
 
 `app/src/main/assets/songs.json`에 다음 형식으로 추가합니다.
 
@@ -69,17 +81,18 @@
 
 ```
 app/src/main/java/com/singturn/
-├── audio/      Synth(반주 합성) · PitchDetector(YIN) · MicCapture · SongPlayer · LatencyCalibrator
+├── studio/     Transcriber(허밍→악보) · Harmonizer(자동 코드) · LyricsFitter · Composition · MusicTheory
+├── audio/      Synth · Arranger(장르별 편곡) · PitchDetector(YIN) · MicCapture · SongPlayer · WavWriter · LatencyCalibrator
 ├── scoring/    Scorer (음정·박자·안정감, 판정·콤보, MR용 참고 점수)
 ├── party/      PartySession (순서 규칙 · 예약 · 순위, 순수 로직)
 ├── data/       곡 파서 · Room DB · 설정
-└── ui/         home · party · songs · sing · result · ranking · settings
+└── ui/         home · studio(녹음·편집) · party · songs · sing · result · ranking · settings
 ```
 
 ## 빌드 & 테스트
 
 ```bash
-./gradlew testDebugUnitTest   # 단위·화면 테스트 36개 (채점·순서 규칙·파서·음정 검출·합성→채점 통합)
+./gradlew testDebugUnitTest   # 단위·화면 테스트 47개 (허밍→악보 복원·자동 코드·가사·채점·순서 규칙·장르 합성·화면 스크린샷)
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ```
 

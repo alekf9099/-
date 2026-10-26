@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 내보낸 WAV 파일 공유용 -->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>

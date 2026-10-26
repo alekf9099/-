@@ -39,6 +39,7 @@ data class Song(
     val lines: List<LyricLine> = emptyList(),
     val chords: List<Chord> = emptyList(),
     val durationSec: Double = notes.lastOrNull()?.endSec ?: 0.0,
+    val genre: Genre = Genre.POP,
 ) {
     /** 기준 멜로디가 있어야 음정·박자 채점이 가능하다. 없으면 참고용 점수만 매긴다. */
     val hasReference get() = notes.isNotEmpty()

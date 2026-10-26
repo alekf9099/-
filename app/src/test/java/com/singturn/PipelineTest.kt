@@ -2,6 +2,8 @@ package com.singturn
 
 import com.singturn.audio.PitchDetector
 import com.singturn.audio.Synth
+import com.singturn.audio.WavWriter
+import com.singturn.data.song.Genre
 import com.singturn.data.song.SongParser
 import com.singturn.scoring.Scorer
 import org.junit.Assert.assertTrue
@@ -15,8 +17,8 @@ class PipelineTest {
     @Test
     fun guideMelodyScoresNearPerfect() {
         for (song in songs) {
-            for (key in listOf(0, -5)) {
-                val s = song.transposed(key)
+            for ((key, genre) in listOf(0 to Genre.POP, -5 to Genre.entries[song.id.length % Genre.entries.size])) {
+                val s = song.transposed(key).copy(genre = genre)
                 val rendered = Synth.render(s)
                 val detector = PitchDetector(rendered.sampleRate)
                 val scorer = Scorer(s.notes)
@@ -42,11 +44,26 @@ class PipelineTest {
     }
 
     @Test
-    fun backingTrackIsNotClipped() {
-        for (song in songs) {
-            val r = Synth.render(song)
+    fun everyGenreRendersCleanly() {
+        for (song in songs) for (genre in Genre.entries) {
+            val g = song.copy(genre = genre)
+            val started = System.nanoTime()
+            val r = Synth.render(g)
+            val ms = (System.nanoTime() - started) / 1_000_000
             val peak = r.backing.indices.maxOf { kotlin.math.abs(r.backing[it] + r.guide[it]) }
-            assertTrue("${song.id} peak=$peak", peak <= 1.0f)
+            val rms = kotlin.math.sqrt(r.backing.sumOf { it.toDouble() * it } / r.backing.size)
+            assertTrue("${song.id}/$genre peak=$peak", peak <= 1.0f)
+            assertTrue("${song.id}/$genre 반주가 너무 작음 rms=$rms", rms > 0.02)
+            assertTrue("${song.id}/$genre 합성이 너무 느림 ${ms}ms", ms < 3000)
         }
+    }
+
+    @Test
+    fun wavHeaderIsValid() {
+        val bytes = java.io.ByteArrayOutputStream().also { WavWriter.write(it, FloatArray(1000) { 0.5f }, 44100) }.toByteArray()
+        assertTrue(String(bytes, 0, 4) == "RIFF" && String(bytes, 8, 4) == "WAVE")
+        assertTrue(bytes.size == 44 + 2000)
+        val dataLen = java.nio.ByteBuffer.wrap(bytes, 40, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+        assertTrue(dataLen == 2000)
     }
 }

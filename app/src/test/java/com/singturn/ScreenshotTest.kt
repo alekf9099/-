@@ -26,6 +26,17 @@ import com.singturn.ui.sing.SingContent
 import com.singturn.ui.sing.SingUiState
 import com.singturn.ui.sing.TracePoint
 import com.singturn.ui.songs.SongListScreen
+import com.singturn.data.song.Genre
+import com.singturn.studio.Composition
+import com.singturn.studio.MelodyNote
+import com.singturn.studio.MusicKey
+import com.singturn.studio.PitchFrame
+import com.singturn.ui.studio.EditorActions
+import com.singturn.ui.studio.EditorContent
+import com.singturn.ui.studio.EditorUiState
+import com.singturn.ui.studio.RecPhase
+import com.singturn.ui.studio.RecordContent
+import com.singturn.ui.studio.RecordUiState
 import com.singturn.ui.theme.Neon
 import com.singturn.ui.theme.SingTurnTheme
 import kotlinx.coroutines.runBlocking
@@ -95,11 +106,50 @@ class ScreenshotTest {
         upNext.value?.let { complete(it.id, 85) }
     }
 
+    /** 트윙클 멜로디로 만든 예시 곡 */
+    private fun sampleComposition(): Composition {
+        val twinkle = app.songs.builtin.first { it.id == "twinkle" }
+        val spb = twinkle.secPerBeat
+        return Composition(
+            title = "밤하늘 산책", genre = Genre.BALLAD, bpm = 84, key = MusicKey(0, false),
+            notes = twinkle.notes.take(14).map { MelodyNote(it.startSec / spb, it.durSec / spb, it.midi) },
+            lyrics = "반짝이는 별빛 아래 우리\n함께 걷던 그 밤 길을",
+        ).autoChords()
+    }
+
+    private fun seedCompositions(): Long = runBlocking {
+        val base = sampleComposition()
+        app.studio.create(base.copy(title = "퇴근길 멜로디", genre = Genre.POP, notes = base.notes.map { it.copy(midi = it.midi + 2) }))
+        app.studio.create(base.copy(title = "주말 아침", genre = Genre.ACOUSTIC))
+        app.studio.create(base)
+    }
+
     @Test fun home_empty() = shot("01_home_empty") { HomeScreen({}, {}, {}, {}) }
 
     @Test fun home() {
         seedScores()
-        shot("02_home", waitForText = "96") { HomeScreen({}, {}, {}, {}) }
+        seedCompositions()
+        shot("02_home", waitForText = "밤하늘 산책") { HomeScreen({}, {}, {}, {}) }
+    }
+
+    @Test fun recordSetup() = shot("11_record_setup") { RecordContent(RecordUiState(genre = Genre.BALLAD, bpm = 84)) }
+
+    @Test fun recording() {
+        val notes = sampleComposition().notes
+        val spb = 60.0 / 84
+        val t = 5.2
+        val trace = generateSequence(0.0) { it + 0.023 }.takeWhile { it < t }.map { time ->
+            val n = notes.firstOrNull { time >= it.startBeat * spb + 0.04 && time < it.endBeat * spb - 0.07 }
+            PitchFrame(time, n?.let { it.midi + 0.3 + 0.12 * sin(time * 12) })
+        }.toList()
+        shot("12_recording") { RecordContent(RecordUiState(phase = RecPhase.RECORDING, genre = Genre.BALLAD, bpm = 84, t = t, trace = trace, level = 0.6f)) }
+    }
+
+    @Test fun editor() {
+        val c = sampleComposition()
+        shot("13_editor") {
+            EditorContent(EditorUiState(loaded = true, comp = c, selected = 4, canUndo = true), EditorActions())
+        }
     }
 
     @Test fun partySetup() {

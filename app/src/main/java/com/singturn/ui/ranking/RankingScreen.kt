@@ -64,9 +64,10 @@ fun weekStartMillis(): Long =
 fun RankingScreen(onBack: () -> Unit) {
     val app = app()
     val dao = app.db.scores()
-    val songs = app.songs.builtin
+    val mine by app.songs.mine.collectAsState(initial = emptyList())
+    val songs = mine + app.songs.builtin
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var songId by rememberSaveable { mutableStateOf(songs.first().id) }
+    var songId by rememberSaveable { mutableStateOf(app.songs.builtin.first().id) }
 
     Column(Modifier.fillMaxSize()) {
         SingTopBar("랭킹", onBack)
@@ -83,7 +84,7 @@ fun RankingScreen(onBack: () -> Unit) {
                     }
                 }
                 val rows by remember(songId) { dao.topForSong(songId) }.collectAsState(initial = emptyList())
-                RankList(rows.map { RankRow(it.playerName, "키 ${"%+d".format(it.keyShift)}", it.total) })
+                RankList(rows.map { RankRow(it.playerName, "키 ${"%+d".format(it.keyShift)}", it.total) }, emptyHint = "이 곡을 불러 첫 번째 랭커가 되어 보세요")
             }
             1 -> {
                 val since = remember { weekStartMillis() }
@@ -102,9 +103,9 @@ fun RankingScreen(onBack: () -> Unit) {
 private data class RankRow(val name: String, val detail: String, val score: Int, val unit: String = "점")
 
 @Composable
-private fun RankList(rows: List<RankRow>) {
+private fun RankList(rows: List<RankRow>, emptyHint: String = "노래를 불러 첫 번째 랭커가 되어 보세요") {
     if (rows.isEmpty()) {
-        EmptyState(Icons.Filled.EmojiEvents, "아직 기록이 없어요", "내장곡을 불러 첫 번째 랭커가 되어 보세요")
+        EmptyState(Icons.Filled.EmojiEvents, "아직 기록이 없어요", emptyHint)
         return
     }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
