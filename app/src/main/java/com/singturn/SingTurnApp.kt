@@ -1,0 +1,13 @@
+package com.singturn
+
+import android.app.Application
+import com.singturn.data.SettingsStore
+import com.singturn.data.db.AppDatabase
+import com.singturn.data.song.SongRepository
+
+/** 간단한 수동 DI 컨테이너 */
+class SingTurnApp : Application() {
+    val db by lazy { AppDatabase.create(this) }
+    val songs by lazy { SongRepository(this, db.importedSongs()) }
+    val settings by lazy { SettingsStore(this) }
+}

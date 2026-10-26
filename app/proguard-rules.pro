@@ -1,6 +1,6 @@
--keep class com.aishotmaker.data.api.** { *; }
--keep class com.aishotmaker.domain.model.** { *; }
--keepattributes Signature
--keepattributes *Annotation*
--dontwarn okhttp3.**
--dontwarn retrofit2.**
+# kotlinx.serialization
+-keepattributes *Annotation*, InnerClasses
+-keepclassmembers class com.singturn.data.song.** {
+    *** Companion;
+    kotlinx.serialization.KSerializer serializer(...);
+}

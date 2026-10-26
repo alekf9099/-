@@ -1,0 +1,116 @@
+{
+  "_format": "lines: '음이름/박자/가사' 토큰을 공백으로 구분. 가사 끝의 '-'는 다음 음절과 붙여 표시. 'R/박자'는 쉼표. chords: '코드/박자' (N = 코드 없음)",
+  "songs": [
+    {
+      "id": "birthday-ko",
+      "title": "생일 축하합니다",
+      "credit": "작곡 Mildred J. Hill · 작사 Patty S. Hill",
+      "license": "퍼블릭 도메인 (저작자 사후 70년 경과)",
+      "bpm": 100,
+      "beatsPerBar": 3,
+      "lines": [
+        "G4/0.75/생- G4/0.25/일 A4/1/축- G4/1/하- C5/1/합- B4/1/니- B4/1/다",
+        "G4/0.75/생- G4/0.25/일 A4/1/축- G4/1/하- D5/1/합- C5/1/니- C5/1/다",
+        "G4/0.75/사- G4/0.25/랑- G5/1/하- E5/1/는 C5/1/친- B4/1/구- A4/1/의",
+        "F5/0.75/생- F5/0.25/일 E5/1/축- C5/1/하- D5/1/합- C5/1/니- C5/2/다"
+      ],
+      "chords": "N/1 C/3 G/3 G/3 C/3 C/3 F/3 C/2 G/1 C/3"
+    },
+    {
+      "id": "happy-birthday",
+      "title": "Happy Birthday to You",
+      "credit": "작곡 Mildred J. Hill · 작사 Patty S. Hill",
+      "license": "퍼블릭 도메인 (저작자 사후 70년 경과)",
+      "bpm": 100,
+      "beatsPerBar": 3,
+      "lines": [
+        "G4/0.75/Hap- G4/0.25/py A4/1/birth- G4/1/day C5/1/to B4/2/you",
+        "G4/0.75/Hap- G4/0.25/py A4/1/birth- G4/1/day D5/1/to C5/2/you",
+        "G4/0.75/Hap- G4/0.25/py G5/1/birth- E5/1/day C5/1/dear B4/1/my A4/1/friend",
+        "F5/0.75/Hap- F5/0.25/py E5/1/birth- C5/1/day D5/1/to C5/3/you"
+      ],
+      "chords": "N/1 C/3 G/3 G/3 C/3 C/3 F/3 C/2 G/1 C/3"
+    },
+    {
+      "id": "twinkle",
+      "title": "Twinkle Twinkle Little Star",
+      "credit": "작사 Jane Taylor (1806) · 프랑스 민요",
+      "license": "퍼블릭 도메인 (전래 · 19세기 작품)",
+      "bpm": 96,
+      "beatsPerBar": 4,
+      "lines": [
+        "C4/1/Twin- C4/1/kle G4/1/twin- G4/1/kle A4/1/lit- A4/1/tle G4/2/star",
+        "F4/1/How F4/1/I E4/1/won- E4/1/der D4/1/what D4/1/you C4/2/are",
+        "G4/1/Up G4/1/a- F4/1/bove F4/1/the E4/1/world E4/1/so D4/2/high",
+        "G4/1/Like G4/1/a F4/1/dia- F4/1/mond E4/1/in E4/1/the D4/2/sky",
+        "C4/1/Twin- C4/1/kle G4/1/twin- G4/1/kle A4/1/lit- A4/1/tle G4/2/star",
+        "F4/1/How F4/1/I E4/1/won- E4/1/der D4/1/what D4/1/you C4/2/are"
+      ],
+      "chords": "C/4 F/2 C/2 F/2 C/2 G/2 C/2 C/2 F/2 C/2 G/2 C/2 F/2 C/2 G/2 C/4 F/2 C/2 F/2 C/2 G/2 C/2"
+    },
+    {
+      "id": "mary-lamb",
+      "title": "Mary Had a Little Lamb",
+      "credit": "작사 Sarah J. Hale (1830) · 전래 동요",
+      "license": "퍼블릭 도메인 (19세기 작품)",
+      "bpm": 108,
+      "beatsPerBar": 4,
+      "lines": [
+        "E4/1/Ma- D4/1/ry C4/1/had D4/1/a E4/1/lit- E4/1/tle E4/2/lamb",
+        "D4/1/lit- D4/1/tle D4/2/lamb E4/1/lit- G4/1/tle G4/2/lamb",
+        "E4/1/Ma- D4/1/ry C4/1/had D4/1/a E4/1/lit- E4/1/tle E4/1/lamb E4/1/its",
+        "D4/1/fleece D4/1/was E4/1/white D4/1/as C4/4/snow"
+      ],
+      "chords": "C/8 G/4 C/4 C/8 G/4 C/4"
+    },
+    {
+      "id": "london-bridge",
+      "title": "London Bridge Is Falling Down",
+      "credit": "영국 전래 동요",
+      "license": "퍼블릭 도메인 (전래)",
+      "bpm": 104,
+      "beatsPerBar": 4,
+      "lines": [
+        "G4/1.5/Lon- A4/0.5/don G4/1/bridge F4/1/is E4/1/fall- F4/1/ing G4/2/down",
+        "D4/1/fall- E4/1/ing F4/2/down E4/1/fall- F4/1/ing G4/2/down",
+        "G4/1.5/Lon- A4/0.5/don G4/1/bridge F4/1/is E4/1/fall- F4/1/ing G4/2/down",
+        "D4/2/my G4/2/fair E4/2/la- C4/2/dy"
+      ],
+      "chords": "C/8 G/4 C/4 C/8 G/4 C/4"
+    },
+    {
+      "id": "row-boat",
+      "title": "Row, Row, Row Your Boat",
+      "credit": "작자 미상 (1852 출판)",
+      "license": "퍼블릭 도메인 (19세기 작품)",
+      "bpm": 220,
+      "beatsPerBar": 6,
+      "lines": [
+        "C4/3/Row, C4/3/row, C4/2/row D4/1/your E4/3/boat",
+        "E4/2/gent- D4/1/ly E4/2/down F4/1/the G4/6/stream",
+        "C5/1/Mer- C5/1/ri- C5/1/ly G4/1/mer- G4/1/ri- G4/1/ly E4/1/mer- E4/1/ri- E4/1/ly C4/1/mer- C4/1/ri- C4/1/ly",
+        "G4/2/Life F4/1/is E4/2/but D4/1/a C4/6/dream"
+      ],
+      "chords": "C/36 G7/6 C/6"
+    },
+    {
+      "id": "jingle-bells",
+      "title": "Jingle Bells (후렴)",
+      "credit": "작사·작곡 James Lord Pierpont (1857)",
+      "license": "퍼블릭 도메인 (19세기 작품)",
+      "bpm": 120,
+      "beatsPerBar": 4,
+      "lines": [
+        "E4/1/Jin- E4/1/gle E4/2/bells, E4/1/jin- E4/1/gle E4/2/bells,",
+        "E4/1/jin- G4/1/gle C4/1.5/all D4/0.5/the E4/4/way",
+        "F4/1/Oh F4/1/what F4/1.5/fun F4/0.5/it F4/1/is E4/1/to E4/1/ride E4/0.5/in E4/0.5/a",
+        "E4/1/one- D4/1/horse D4/1/o- E4/1/pen D4/2/sleigh, G4/2/hey!",
+        "E4/1/Jin- E4/1/gle E4/2/bells, E4/1/jin- E4/1/gle E4/2/bells,",
+        "E4/1/jin- G4/1/gle C4/1.5/all D4/0.5/the E4/4/way",
+        "F4/1/Oh F4/1/what F4/1.5/fun F4/0.5/it F4/1/is E4/1/to E4/1/ride E4/0.5/in E4/0.5/a",
+        "G4/1/one- G4/1/horse F4/1/o- D4/1/pen C4/4/sleigh"
+      ],
+      "chords": "C/16 F/4 C/4 D7/4 G7/4 C/16 F/4 C/4 G7/4 C/4"
+    }
+  ]
+}

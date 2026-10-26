@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AIShotMaker"
+rootProject.name = "SingTurn"
 include(":app")
