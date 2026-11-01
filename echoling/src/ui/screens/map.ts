@@ -13,6 +13,7 @@ import { sfx } from '../fx';
 import { charmIcon, elChips, expBar, monRow, moveCard, resonanceChips, statBars, statusChip } from '../components';
 import { monSprite } from '../sprite';
 import { enterNode, processGrowth, run } from '../flow';
+import { ACT_BG, ITEM_ICON, NODE_ICON, ico, img } from '../assets';
 
 const ROW_H = 86;
 
@@ -53,7 +54,7 @@ register('map', () => {
           sfx('tap');
           enterNode(n.id);
         },
-      }, n.type === 'boss' ? h('span', { class: 'boss-face', html: monSpriteBoss(r.act) }) : meta.icon);
+      }, n.type === 'boss' ? h('span', { class: 'boss-face', html: monSpriteBoss(r.act) }) : img(NODE_ICON[n.type], 40, 'node-ico'));
     }),
   );
 
@@ -77,16 +78,16 @@ register('map', () => {
     scroller.scrollTop = Math.max(0, target - scroller.clientHeight * 0.65);
   });
 
-  const legend = h('div', { class: 'legend' }, (['battle', 'trainer', 'elite', 'event', 'shop', 'rest', 'treasure'] as const).map((t) => h('span', null, `${NODE_META[t].icon} ${NODE_META[t].name}`)));
+  const legend = h('div', { class: 'legend' }, (['battle', 'trainer', 'elite', 'event', 'shop', 'rest', 'treasure', 'boss'] as const).map((t) => h('span', { class: 'row gap-s' }, img(NODE_ICON[t], 32), NODE_META[t].name)));
 
-  return h('div', { class: 'map-screen', style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]}` },
+  return h('div', { class: 'map-screen', style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]};--bgimg:url(${ACT_BG[r.act]})` },
     hud,
     scroller,
     h('nav', { class: 'bottom-nav' },
-      h('button', { onclick: () => openParty(() => go('map')) }, h('div', { class: 'party-mini' }, r.party.map((m) => h('i', { class: m.hp <= 0 ? 'dead' : m.hp / maxHp(m) < 0.35 ? 'low' : '' }))), h('span', null, `파티 ${r.party.length}/${MAX_PARTY}`)),
-      h('button', { onclick: () => openBag() }, h('b', null, '🎒'), h('span', null, '가방')),
-      h('button', { onclick: () => openSheet('범례 · 도움말', [legend, h('p', { class: 'muted small pad' }, '아래에서 위로 경로를 선택하세요. 빛나는 노드만 이동할 수 있어요. 9층 캠프 후 보스가 기다립니다.')]) }, h('b', null, '❔'), h('span', null, '도움말')),
-      h('button', { onclick: () => go('title') }, h('b', null, '🏠'), h('span', null, '메뉴')),
+      h('button', { onclick: () => openParty(() => go('map')) }, ico('party', 22), h('div', { class: 'party-mini' }, r.party.map((m) => h('i', { class: m.hp <= 0 ? 'dead' : m.hp / maxHp(m) < 0.35 ? 'low' : '' }))), h('span', null, `파티 ${r.party.length}/${MAX_PARTY}`)),
+      h('button', { onclick: () => openBag() }, ico('bag', 22), h('span', null, '가방')),
+      h('button', { onclick: () => openSheet('범례 · 도움말', [legend, h('p', { class: 'muted small pad' }, '아래에서 위로 경로를 선택하세요. 빛나는 노드만 이동할 수 있어요. 9층 캠프 후 보스가 기다립니다.')]) }, ico('help', 22), h('span', null, '도움말')),
+      h('button', { onclick: () => go('title') }, ico('home', 22), h('span', null, '메뉴')),
     ),
   );
 });
@@ -168,7 +169,7 @@ export function openMon(m: Monster, refresh: () => void, inBattle = false): void
         toast(msg, 'good');
         sheet.close();
         refresh();
-      } }, `${ITEMS[id].icon} ${ITEMS[id].name} ×${n}`));
+      } }, img(ITEM_ICON[id], 22), ` ${ITEMS[id].name} ×${n}`));
     }
     if (r.party.length + r.box.length > 1) actions.appendChild(h('button', { class: 'btn ghost danger-text', onclick: async () => {
       if (!(await confirmSheet('놓아주기', `${displayName(m)}을(를) 자연으로 돌려보낼까요? 되돌릴 수 없어요.`, '놓아주기', true))) return;
@@ -201,7 +202,7 @@ export function openBag(): void {
   openSheet('🎒 가방', h('div', { class: 'list' },
     entries.length ? entries.map(([id, n]) => {
       const it = ITEMS[id];
-      return h('div', { class: 'card row between' }, h('div', null, h('b', null, `${it.icon} ${it.name}`), h('div', { class: 'muted small' }, it.desc)), h('span', { class: 'pill' }, `×${n}`));
+      return h('div', { class: 'card row gap' }, img(ITEM_ICON[id], 48, 'item-ico'), h('div', { class: 'grow' }, h('b', null, it.name), h('div', { class: 'muted small' }, it.desc)), h('span', { class: 'pill' }, `×${n}`));
     }) : h('p', { class: 'muted pad' }, '가방이 비어 있어요.'),
     h('p', { class: 'muted small pad-x' }, '회복 아이템은 파티 화면에서 에코링을 탭해 사용하세요.'),
   ));

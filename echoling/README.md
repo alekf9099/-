@@ -30,13 +30,24 @@
   - 흰 배경 자동 제거(테두리 flood fill + 경계 알파 + halo 제거), 자동 크롭·하단 정렬
 - 일러스트가 없는 종은 `src/ui/sprite.ts`의 벡터 렌더러로 자동 폴백
 
+### UI 에셋 (v0.3) — 직접 그린 그래픽 없이 도구로 제작
+| 영역 | 도구 | 산출물 |
+|---|---|---|
+| 배경 일러스트 (액트 3 + 타이틀) | Canva AI `generate-image` | `public/ui/bg_*.webp` (720×1280) |
+| 맵 노드 아이콘 8 · 아이템 아이콘 8 · 속성 엠블럼 8 | Canva AI `generate-image` | `public/ui/{node,item,el}_*.webp` (투명) |
+| UI 컨트롤 아이콘 (뒤로·닫기·가방·파티 등) | [Lucide](https://lucide.dev) (ISC) | `src/ui/assets.ts` `ico()` |
+| 서체 | Pretendard(본문) · Jua(제목) · Lilita One(숫자/로고), OFL | `src/fonts/*.woff2` — **fonttools**로 게임 글자만 서브셋 (총 240KB) |
+
+- 원본 시트(3072px)는 `art/`에 보관, Canva 미디어 ID는 `art/canva-ui-media.json`
+- 재생성: `npm run assets:ui` (시트 → 아이콘 배경 제거·리사이즈), `npm run assets:fonts` (텍스트 변경 시 서브셋 재생성)
+
 ## 빠른 시작
 ```bash
 cd echoling
 npm install
 npm run dev        # http://localhost:5173 (폰에서 같은 와이파이로 접속 가능: --host)
 npm test           # 단위 테스트 + 300런 밸런스 시뮬레이션
-npm run build      # dist/ 생성 (gzip ~46KB)
+npm run build      # dist/ 생성 (코드 ~51KB gzip + 일러스트·폰트 ~2.2MB)
 ```
 
 ## 📦 안드로이드 APK/AAB 빌드 (Capacitor)

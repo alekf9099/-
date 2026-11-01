@@ -1,0 +1,11 @@
+{
+  "icons": {
+    "node_battle": "MAHZtpE_tc0", "node_trainer": "MAHZtikAA8k", "node_elite": "MAHZtjndjIk", "node_event": "MAHZtoaWsRE",
+    "node_shop": "MAHZtimA_f0", "node_rest": "MAHZtl9dCes", "node_treasure": "MAHZtmwyFYQ", "node_boss": "MAHZttZ1smU",
+    "item_potion": "MAHZtt5pvII", "item_superPotion": "MAHZtr_Yglk", "item_revive": "MAHZtjJN4ac", "item_capsule": "MAHZtnJ0NLw",
+    "item_hyperCapsule": "MAHZttG6a4Y", "item_cleanser": "MAHZtp2s-C4", "item_candy": "MAHZtgRYgio", "item_energyDrink": "MAHZtsURBCo",
+    "el_blaze": "MAHZtpjxPgE", "el_tide": "MAHZthxb12s", "el_bloom": "MAHZtlJptcE", "el_volt": "MAHZtpYVg00",
+    "el_terra": "MAHZtm2qRiU", "el_gale": "MAHZtrjej-w", "el_umbra": "MAHZtmOaMbo", "el_lumen": "MAHZtsrTOOM"
+  },
+  "backgrounds": { "bg_act0": "MAHZtgGzLVQ", "bg_act1": "MAHZti9ywKk", "bg_act2": "MAHZtg6Ir2A", "bg_title": "MAHZttugXZU" }
+}

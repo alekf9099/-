@@ -14,6 +14,7 @@ import { bindSettings, haptic, sfx } from '../fx';
 import { elChips, rarityName, resonanceChips } from '../components';
 import { spriteSvg, monSprite } from '../sprite';
 import { proceedAfterActClear, resume, startRun } from '../flow';
+import { NODE_ICON, TITLE_BG, ico, img } from '../assets';
 
 function todaysModifier() {
   return DAILY_MODIFIERS[hashString(todayKey()) % DAILY_MODIFIERS.length];
@@ -32,7 +33,7 @@ register('title', () => {
     saveAll();
     go('starter', mode);
   };
-  return h('div', { class: 'title-screen' },
+  return h('div', { class: 'title-screen', style: `--bgimg:url(${TITLE_BG})` },
     h('div', { class: 'title-hero' },
       h('div', { class: 'hero-sprites' },
         h('div', { class: 'hs l', html: spriteSvg('puddlo', { size: 96 }) }),
@@ -44,15 +45,15 @@ register('title', () => {
     ),
     h('div', { class: 'title-actions' },
       r ? h('button', { class: 'btn primary xl block', onclick: () => { sfx('tap'); resume(); } },
-        h('span', null, '▶ 이어하기'), h('small', null, `${ACTS[r.act].name} · ${r.floorsCleared}층 · 파티 ${r.party.length}`)) : null,
-      h('button', { class: 'btn xl block ' + (r ? 'ghost' : 'primary'), onclick: () => newRun('normal') }, h('span', null, '⚔️ 새 모험'), h('small', null, '스타터를 고르고 3개의 액트를 돌파하라')),
+        h('span', { class: 'btn-label' }, ico('play', 22), '이어하기'), h('small', null, `${ACTS[r.act].name} · ${r.floorsCleared}층 · 파티 ${r.party.length}`)) : null,
+      h('button', { class: 'btn xl block ' + (r ? 'ghost' : 'primary'), onclick: () => newRun('normal') }, h('span', { class: 'btn-label' }, img(NODE_ICON.battle, 30), '새 모험'), h('small', null, '스타터를 고르고 3개의 액트를 돌파하라')),
       h('button', { class: 'btn xl block daily', onclick: () => newRun('daily') },
-        h('span', null, `📅 데일리 챌린지 ${playedToday ? '· 재도전' : ''}`),
+        h('span', { class: 'btn-label' }, img(NODE_ICON.event, 28), `데일리 챌린지 ${playedToday ? '· 재도전' : ''}`),
         h('small', null, `오늘의 규칙: ${mod.name} — ${mod.desc}`)),
       h('div', { class: 'grid3' },
-        h('button', { class: 'btn tile', onclick: () => go('dex') }, h('b', null, '📖'), h('span', null, '도감'), h('small', null, `${m.caught.length}/${SPECIES_LIST.filter((s) => s.rarity !== 'legend').length}`)),
-        h('button', { class: 'btn tile', onclick: () => go('lab') }, h('b', null, '🔬'), h('span', null, '연구소'), h('small', null, `💎 ${m.shards}`)),
-        h('button', { class: 'btn tile', onclick: () => go('settings') }, h('b', null, '⚙️'), h('span', null, '설정'), h('small', null, `x${m.settings.speed} 속도`)),
+        h('button', { class: 'btn tile', onclick: () => go('dex') }, ico('dex', 26), h('span', null, '도감'), h('small', null, `${m.caught.length}/${SPECIES_LIST.filter((s) => s.rarity !== 'legend').length}`)),
+        h('button', { class: 'btn tile', onclick: () => go('lab') }, ico('lab', 26), h('span', null, '연구소'), h('small', null, `💎 ${m.shards}`)),
+        h('button', { class: 'btn tile', onclick: () => go('settings') }, ico('settings', 26), h('span', null, '설정'), h('small', null, `x${m.settings.speed} 속도`)),
       ),
       h('p', { class: 'muted small center' }, `총 ${m.totalRuns}런 · 클리어 ${m.wins}회 · v0.1`),
     ),
@@ -152,7 +153,7 @@ register('starter', (mode: 'normal' | 'daily' = 'normal') => {
   renderDetail();
 
   return h('div', { class: 'page' },
-    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, '←'), h('h2', null, mode === 'daily' ? '📅 데일리 · 스타터' : '파트너 선택'), h('span', { class: 'spacer' })),
+    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, ico('back', 22)), h('h2', null, mode === 'daily' ? '📅 데일리 · 스타터' : '파트너 선택'), h('span', { class: 'spacer' })),
     mode === 'daily' ? h('div', { class: 'banner daily' }, `오늘의 규칙: ${todaysModifier().name} — ${todaysModifier().desc}`) : null,
     cards,
     detail,
@@ -166,7 +167,7 @@ register('dex', () => {
   const m = app.meta;
   const list = SPECIES_LIST;
   return h('div', { class: 'page' },
-    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, '←'), h('h2', null, '📖 에코 도감'), h('span', { class: 'pill' }, `${m.caught.length}/${list.length}`)),
+    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, ico('back', 22)), h('h2', null, '📖 에코 도감'), h('span', { class: 'pill' }, `${m.caught.length}/${list.length}`)),
     h('div', { class: 'dex-grid' }, list.map((sp, i) => {
       const caught = m.caught.includes(sp.id);
       const seenIt = m.seen.includes(sp.id);
@@ -212,7 +213,7 @@ register('lab', () => {
   };
   render();
   return h('div', { class: 'page' },
-    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, '←'), h('h2', null, '🔬 연구소'), head),
+    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, ico('back', 22)), h('h2', null, '🔬 연구소'), head),
     h('p', { class: 'muted pad-x' }, '런에서 얻은 에코 결정으로 영구 강화를 연구하세요. 실패한 런도 결정을 남깁니다.'),
     wrap,
   );
@@ -234,7 +235,7 @@ register('settings', () => {
     (e.currentTarget as HTMLElement).parentElement!.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 === v));
   } }, `x${v}`)));
   return h('div', { class: 'page' },
-    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, '←'), h('h2', null, '⚙️ 설정'), h('span', { class: 'spacer' })),
+    h('header', { class: 'topbar' }, h('button', { class: 'icon-btn', 'aria-label': '뒤로', onclick: () => go('title') }, ico('back', 22)), h('h2', null, '⚙️ 설정'), h('span', { class: 'spacer' })),
     h('div', { class: 'list' },
       h('div', { class: 'card row between' }, h('div', null, h('b', null, '전투 속도'), h('div', { class: 'muted small' }, '연출 재생 속도')), speedSeg),
       toggle('haptics', '진동 (햅틱)', '타격·포획 시 진동 피드백'),

@@ -1,3 +1,8 @@
+/* 게임 전용 서브셋 폰트 (tools/fonts.py 로 생성 — 게임 텍스트에 쓰인 글자만 포함) */
+@font-face { font-family: 'Pretendard Variable'; src: url('./fonts/pretendard-game.woff2') format('woff2'); font-weight: 45 920; font-display: swap; }
+@font-face { font-family: 'Jua'; src: url('./fonts/jua-game.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Lilita One'; src: url('./fonts/lilita-game.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+
 /* ═══════════════════════════════════════════════════════════
    ECHOLING Design System — "Neon Pastel Night"
    모바일 세로(360~430dp) 우선 · 엄지 영역 하단 배치 · 최소 터치 48dp
@@ -22,6 +27,9 @@
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --font: 'Pretendard Variable', Pretendard, -apple-system, 'Noto Sans KR', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  /* 디스플레이(한글 제목): Jua · 숫자/로고: Lilita One — 게임 UI 전용 서체 */
+  --font-display: 'Jua', 'Pretendard Variable', system-ui, sans-serif;
+  --font-num: 'Lilita One', 'Jua', 'Pretendard Variable', system-ui, sans-serif;
   color-scheme: dark;
 }
 
@@ -436,3 +444,54 @@ p { line-height: 1.5; }
   .move-btn { min-height: 58px; }
   .b-log { min-height: 44px; padding: 8px 12px; font-size: 14px; }
 }
+
+/* ═══════════ v0.3 아트 디렉션: Canva 에셋 + 게임 서체 ═══════════ */
+h1, h2, h3, .b-name, .btn.xl > span:first-child, .reward-card b, .shop-card b, .asc-level, .kind-badge, .eyebrow { font-family: var(--font-display); font-weight: 400; letter-spacing: 0; }
+h2 { font-size: 22px; }
+.logo { font-family: var(--font-num); font-weight: 400; letter-spacing: 0.02em; font-size: 60px; -webkit-text-stroke: 1px rgba(255, 255, 255, 0.15); }
+.logo.sm { font-size: 46px; }
+.gold-burst, .pop, .hp-num, .pill, .reward-shards, .stat-grid b, .price, .mv-cost, .intent-dmg, .lv, .gold { font-family: var(--font-num); font-weight: 400; letter-spacing: 0.02em; }
+.pop { font-size: 30px; }
+.ui-img { display: block; object-fit: contain; flex: 0 0 auto; }
+.ico { flex: 0 0 auto; vertical-align: middle; }
+
+/* 배경 일러스트 레이어 (가독성 오버레이 포함) */
+.title-screen { background: linear-gradient(180deg, rgba(11, 11, 26, 0.05) 0%, rgba(11, 11, 26, 0.15) 45%, rgba(11, 11, 26, 0.85) 72%, #0b0b1a 100%), var(--bgimg) center top / cover no-repeat, #0b0b1a; }
+.title-screen .tagline { color: #fff; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); }
+.title-screen .btn.ghost, .title-screen .btn.tile { background: rgba(15, 12, 35, 0.72); backdrop-filter: blur(8px); }
+.map-screen { background: linear-gradient(180deg, rgba(8, 8, 20, 0.55) 0%, rgba(8, 8, 20, 0.35) 30%, rgba(8, 8, 20, 0.6) 100%), var(--bgimg) center / cover no-repeat, var(--bg1); }
+.battle-screen { background: linear-gradient(180deg, rgba(6, 6, 16, 0.55) 0%, rgba(6, 6, 16, 0) 22%, rgba(6, 6, 16, 0) 55%, rgba(6, 6, 16, 0.75) 78%, #07060f 100%), var(--bgimg) center 30% / cover no-repeat, var(--bg1); }
+.battle-screen.k-boss { background: linear-gradient(180deg, rgba(60, 0, 20, 0.55) 0%, rgba(6, 6, 16, 0) 25%, rgba(6, 6, 16, 0) 55%, rgba(6, 6, 16, 0.78) 78%, #07060f 100%), var(--bgimg) center 30% / cover no-repeat, var(--bg1); }
+.arena-floor { display: none; }
+
+/* 맵 노드: 일러스트 아이콘 */
+.map-node { background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.12), rgba(10, 10, 25, 0.85)); backdrop-filter: blur(3px); width: 58px; height: 58px; }
+.map-node .node-ico { width: 42px; height: 42px; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45)); }
+.map-node.visited .node-ico { filter: grayscale(0.9) brightness(0.7); }
+.map-node.avail .node-ico { animation: node-bounce 1.6s ease-in-out infinite; }
+@keyframes node-bounce { 50% { transform: translateY(-2px) scale(1.06); } }
+.map-lines line { stroke: rgba(255, 255, 255, 0.35); }
+.legend span { align-items: center; }
+
+/* 아이템·속성 아이콘 */
+.item-ico { filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4)); }
+.reward-icon { width: 58px; height: 58px; background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03)); }
+.reward-icon .ui-img { filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4)); }
+.shop-icon { display: grid; place-items: center; min-height: 64px; }
+.el-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 3px; }
+.el-chip.sm { padding: 1px 6px 1px 2px; }
+.el-ico { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.res-chip { display: inline-flex; align-items: center; gap: 2px; }
+.sub-btn .ui-img { width: 26px; height: 26px; }
+.btn.tile .ico { color: #cfc4ff; }
+.bottom-nav button .ico { color: #d9d2ff; }
+.party-mini { height: 8px; }
+.party-mini i { width: 7px; height: 7px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 4px; }
+.hero-art { display: grid; place-items: center; margin: 6px 0 2px; position: relative; animation: float 3s ease-in-out infinite; }
+.hero-art .ui-img { filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.5)) drop-shadow(0 0 24px rgba(124, 92, 255, 0.35)); }
+.event-emoji { position: absolute; right: calc(50% - 70px); bottom: 0; font-size: 34px; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5)); }
+.icon-btn .ico, .sheet-head .ico { color: var(--text); }
+
+.btn-label { display: inline-flex; align-items: center; gap: 8px; }
+.btn-label .ui-img { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }

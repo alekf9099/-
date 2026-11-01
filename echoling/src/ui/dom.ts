@@ -1,4 +1,5 @@
 // 초경량 DOM 헬퍼 (프레임워크 없이 번들 ~수십KB 유지 → 저사양 안드로이드 대응)
+import { ico } from './assets';
 type Child = Node | string | number | null | undefined | false | Child[];
 type Props = {
   class?: string;
@@ -74,7 +75,7 @@ export function openSheet(title: string, content: HTMLElement | HTMLElement[], o
   const body = h('div', { class: 'sheet-body' }, content);
   const panel = h('div', { class: 'sheet' + (opts.tall ? ' tall' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h('div', { class: 'sheet-grip' }),
-    h('div', { class: 'sheet-head' }, h('h3', null, title), dismissible ? h('button', { class: 'icon-btn', 'aria-label': '닫기', onclick: () => close() }, '✕') : null),
+    h('div', { class: 'sheet-head' }, h('h3', null, title), dismissible ? h('button', { class: 'icon-btn', 'aria-label': '닫기', onclick: () => close() }, ico('close', 20)) : null),
     body,
   );
   const backdrop = h('div', { class: 'backdrop', onclick: (e: MouseEvent) => { if (e.target === backdrop && dismissible) close(); } }, panel);

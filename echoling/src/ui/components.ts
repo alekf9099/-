@@ -9,10 +9,12 @@ import { computeResonance, STATUS_NAME } from '../game/battle';
 import { computeStats, displayName, expToNext, maxHp } from '../game/monster';
 import { bar, h, openSheet } from './dom';
 import { monSprite } from './sprite';
+import { EL_ICON, img } from './assets';
 
 export function elChip(el: Element, small = false): HTMLElement {
   const e = ELEMENTS[el];
-  return h('span', { class: 'el-chip' + (small ? ' sm' : ''), style: `--c:${e.color}` }, e.icon + ' ' + e.name);
+  const src = EL_ICON[el];
+  return h('span', { class: 'el-chip' + (small ? ' sm' : ''), style: `--c:${e.color}` }, src ? img(src, small ? 14 : 18, 'el-ico') : e.icon, e.name);
 }
 
 export function elChips(els: Element[], small = false): HTMLElement {
@@ -51,7 +53,7 @@ export function moveCard(id: string, extra?: HTMLElement | null): HTMLElement {
   const mv = getMove(id);
   const e = ELEMENTS[mv.element];
   return h('div', { class: 'move-card', style: `--c:${e.color}` },
-    h('div', { class: 'row between' }, h('b', null, `${e.icon} ${mv.name}`), costPips(mv.cost)),
+    h('div', { class: 'row between' }, h('b', { class: 'row gap-s' }, EL_ICON[mv.element] ? img(EL_ICON[mv.element]!, 18, 'el-ico') : e.icon, mv.name), costPips(mv.cost)),
     h('div', { class: 'muted small' }, mv.power > 0 ? `위력 ${mv.power} · 명중 ${mv.acc}` : '변화기', ' — ', mv.desc),
     extra ?? null,
   );
@@ -94,6 +96,6 @@ export function resonanceChips(party: Monster[], charms: string[]): HTMLElement 
       h('p', { class: t >= 1 ? '' : 'muted' }, `● 2마리: ${r.t1}`),
       h('p', { class: t >= 2 ? '' : 'muted' }, `● 3마리: ${r.t2}`),
       h('small', { class: 'muted' }, '파티(최대 6) 안의 같은 속성 에코링 수로 발동합니다.'),
-    )) }, `${e.icon}${'★'.repeat(t)}`);
+    )) }, EL_ICON[el] ? img(EL_ICON[el]!, 16, 'el-ico') : e.icon, '★'.repeat(t));
   }));
 }

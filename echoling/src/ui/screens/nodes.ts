@@ -15,6 +15,7 @@ import { elChips, monRow, moveCard, rarityName } from '../components';
 import { spriteSvg, monSprite } from '../sprite';
 import { completeNode, eventFor, learnMoveModal, processGrowth, run } from '../flow';
 import { openParty } from './map';
+import { ITEM_ICON, NODE_ICON, ico, img } from '../assets';
 
 function topbar(title: string, right?: HTMLElement): HTMLElement {
   const r = run();
@@ -23,12 +24,12 @@ function topbar(title: string, right?: HTMLElement): HTMLElement {
     h('span', { class: 'spacer' }),
     right ?? null,
     h('span', { class: 'pill gold' }, `🪙 ${r.gold}`),
-    h('button', { class: 'icon-btn', 'aria-label': '파티', onclick: () => openParty() }, '👥'),
+    h('button', { class: 'icon-btn', 'aria-label': '파티', onclick: () => openParty() }, ico('party', 20)),
   );
 }
 
 function optionCard(o: RewardOption, onPick: () => void): HTMLElement {
-  let icon = '';
+  let icon: string | Node = '';
   let name = '';
   let desc = '';
   let tag = '';
@@ -40,7 +41,7 @@ function optionCard(o: RewardOption, onPick: () => void): HTMLElement {
     }
     case 'item': {
       const it = ITEMS[o.itemId];
-      icon = it.icon; name = `${it.name} ×${o.qty}`; desc = it.desc; tag = '아이템';
+      icon = img(ITEM_ICON[o.itemId], 46); name = `${it.name} ×${o.qty}`; desc = it.desc; tag = '아이템';
       break;
     }
     case 'gold':
@@ -187,8 +188,8 @@ register('treasure', () => {
   const p = r.pending;
   if (p?.kind !== 'treasure') return h('div');
   return h('div', { class: 'page' },
-    topbar('💎 보물 상자'),
-    h('div', { class: 'chest' }, '🎁'),
+    topbar('보물 상자'),
+    h('div', { class: 'hero-art' }, img(NODE_ICON.treasure, 132)),
     h('p', { class: 'center' }, '반짝이는 부적 3개가 들어 있다. 하나만 가져갈 수 있다!'),
     h('div', { class: 'list' }, p.options.map((o) => optionCard(o, async () => { sfx('level'); await applyOption(o); completeNode(); }))),
   );
@@ -221,10 +222,10 @@ register('shop', () => {
     };
   };
   const shopCard = (e: ShopEntry): HTMLElement => {
-    let icon = '';
+    let icon: string | Node = '';
     let name = '';
     let desc = '';
-    if (e.kind === 'item') { const it = ITEMS[e.ref as keyof typeof ITEMS]; icon = it.icon; name = `${it.name}${e.qty > 1 ? ' ×' + e.qty : ''}`; desc = it.desc; }
+    if (e.kind === 'item') { const it = ITEMS[e.ref as keyof typeof ITEMS]; icon = img(ITEM_ICON[e.ref as keyof typeof ITEMS], 64); name = `${it.name}${e.qty > 1 ? ' ×' + e.qty : ''}`; desc = it.desc; }
     if (e.kind === 'charm') { const c = getCharm(e.ref); icon = c.icon; name = c.name; desc = c.desc; }
     const isMon = e.kind === 'monster';
     const afford = r.gold >= e.price;
@@ -254,7 +255,7 @@ register('shop', () => {
   };
   render();
   return h('div', { class: 'page' },
-    h('header', { class: 'topbar' }, h('h2', null, '🛒 떠돌이 상점'), h('span', { class: 'spacer' }), goldPill, h('button', { class: 'icon-btn', 'aria-label': '파티', onclick: () => openParty(render) }, '👥')),
+    h('header', { class: 'topbar' }, h('h2', { class: 'row gap-s' }, img(NODE_ICON.shop, 34), '떠돌이 상점'), h('span', { class: 'spacer' }), goldPill, h('button', { class: 'icon-btn', 'aria-label': '파티', onclick: () => openParty(render) }, ico('party', 20))),
     h('p', { class: 'muted pad-x small' }, '"어서 오세요~ 테이머 할인은 없습니다만!"'),
     grid,
     h('div', { class: 'row gap' }, rerollBtn, h('button', { class: 'btn primary grow', onclick: () => completeNode() }, '상점 떠나기 →')),
@@ -272,8 +273,8 @@ register('rest', () => {
     }
   };
   return h('div', { class: 'page' },
-    topbar('⛺ 캠프'),
-    h('div', { class: 'campfire' }, '🔥'),
+    topbar('캠프'),
+    h('div', { class: 'hero-art' }, img(NODE_ICON.rest, 132)),
     h('p', { class: 'center muted' }, '모닥불이 타닥거린다. 무엇을 할까? (하나만 선택)'),
     h('div', { class: 'list' },
       h('button', { class: 'reward-card', onclick: () => choose(async () => { restHeal(r); sfx('heal'); toast(`파티 전원 HP ${heal}% 회복 · 부활 · 상태이상 치료`, 'good'); return true; }) },
@@ -347,8 +348,8 @@ register('event', () => {
   };
   render();
   return h('div', { class: 'page' },
-    topbar('❓ 이벤트'),
-    h('div', { class: 'event-art' }, ev.icon),
+    topbar('이벤트'),
+    h('div', { class: 'hero-art' }, img(NODE_ICON.event, 104), h('span', { class: 'event-emoji' }, ev.icon)),
     h('h2', { class: 'center' }, ev.title),
     h('p', { class: 'event-text' }, ev.text),
     body,

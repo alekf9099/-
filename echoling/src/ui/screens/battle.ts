@@ -20,6 +20,7 @@ import { elChips } from '../components';
 import { monSprite } from '../sprite';
 import { endRun, processGrowth, run, seen, setBattleReward } from '../flow';
 import { markCaught, saveMeta } from '../../game/meta';
+import { EL_ICON, ITEM_ICON, ACT_BG, ico, img } from '../assets';
 
 interface View {
   b: BattleState;
@@ -56,11 +57,11 @@ register('battle', () => {
     h('div', { class: 'side e' }, h('div', { class: 'e-col' }, el.eCard, el.intent), el.eSprite),
     h('div', { class: 'side p' }, el.pSprite, el.pCard),
   );
-  el.autoBtn = h('button', { class: 'chip-btn', 'aria-pressed': 'false', onclick: () => toggleAuto() }, '⚡ AUTO');
+  el.autoBtn = h('button', { class: 'chip-btn', 'aria-pressed': 'false', onclick: () => toggleAuto() }, ico('auto', 14), 'AUTO');
   el.speedBtn = h('button', { class: 'chip-btn', onclick: () => cycleSpeed() }, `▶ x${app.meta.settings.speed}`);
   const kindBadge = { wild: '야생', trainer: '테이머', elite: '엘리트', boss: 'BOSS' }[b.kind];
   const act = ACTS[r.act];
-  const root = h('div', { class: `battle-screen k-${b.kind}`, style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]}` },
+  const root = h('div', { class: `battle-screen k-${b.kind}`, style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]};--bgimg:url(${ACT_BG[r.act]})` },
     h('header', { class: 'b-top' }, h('span', { class: 'kind-badge k-' + b.kind }, kindBadge), el.teamDots, h('span', { class: 'spacer' }), el.speedBtn, el.autoBtn),
     el.arena,
     el.log,
@@ -200,7 +201,7 @@ function renderMoves(): void {
       oncontextmenu: (ev: MouseEvent) => { ev.preventDefault(); toast(`${mv.name}: ${mv.desc}`); },
     },
       h('span', { class: 'mv-top' }, h('b', null, mv.name), h('span', { class: 'mv-cost' }, mv.cost ? '◆'.repeat(mv.cost) : 'FREE')),
-      h('span', { class: 'mv-bot' }, h('small', null, `${e.icon} ${mv.power > 0 ? '위력 ' + mv.power : '변화'}`),
+      h('span', { class: 'mv-bot' }, h('small', { class: 'row gap-s' }, EL_ICON[mv.element] ? img(EL_ICON[mv.element]!, 14, 'el-ico') : e.icon, mv.power > 0 ? '위력 ' + mv.power : '변화'),
         ko ? h('span', { class: 'eff-badge ko' }, 'KO!') : label ? h('span', { class: 'eff-badge ' + (eff > 1 ? 'up' : 'down') }, label.replace(/[!…]/g, '')) : null),
     ));
   });
@@ -208,10 +209,10 @@ function renderMoves(): void {
   const capsules = (r.items.capsule ?? 0) + (r.items.hyperCapsule ?? 0);
   const canSwitch = b.p.team.some((m, i) => i !== b.p.active && m.hp > 0);
   v.el.sub.append(
-    h('button', { class: 'sub-btn', disabled: !canSwitch || v.busy ? true : undefined, onclick: () => switchSheet(false) }, '🔄', h('span', null, '교체')),
-    h('button', { class: 'sub-btn', disabled: v.busy ? true : undefined, onclick: () => itemSheet() }, '🎒', h('span', null, '아이템')),
+    h('button', { class: 'sub-btn', disabled: !canSwitch || v.busy ? true : undefined, onclick: () => switchSheet(false) }, ico('swap', 18), h('span', null, '교체')),
+    h('button', { class: 'sub-btn', disabled: v.busy ? true : undefined, onclick: () => itemSheet() }, img(ITEM_ICON.potion, 26), h('span', null, '아이템')),
     b.kind === 'wild'
-      ? h('button', { class: 'sub-btn capture', disabled: !capsules || v.busy ? true : undefined, onclick: () => captureSheet() }, '🔵', h('span', null, `포획 ${Math.round(captureChance(b, 'capsule') * 100)}%`), h('small', null, `×${capsules}`))
+      ? h('button', { class: 'sub-btn capture', disabled: !capsules || v.busy ? true : undefined, onclick: () => captureSheet() }, img(ITEM_ICON.capsule, 26), h('span', null, `포획 ${Math.round(captureChance(b, 'capsule') * 100)}%`), h('small', null, `×${capsules}`))
       : h('button', { class: 'sub-btn', disabled: true }, '🚫', h('span', null, '포획 불가')),
   );
 }
@@ -329,7 +330,7 @@ function itemSheet(): void {
         openBattleSheet?.close();
         if (it.target === 'none') return useItem(id);
         pickTarget(id);
-      } }, h('div', null, h('b', null, `${it.icon} ${it.name}`), h('div', { class: 'muted small' }, it.desc)), h('span', { class: 'pill' }, `×${n}`));
+      } }, img(ITEM_ICON[id], 44, 'item-ico'), h('div', { class: 'grow' }, h('b', null, it.name), h('div', { class: 'muted small' }, it.desc)), h('span', { class: 'pill' }, `×${n}`));
     }) : h('p', { class: 'muted pad' }, '전투에서 쓸 수 있는 아이템이 없어요.'),
   ));
 }
@@ -359,7 +360,7 @@ function captureSheet(): void {
   if (opts.length === 1) return throwCapsule(opts[0]);
   openBattleSheet = openSheet('🔵 캡슐 선택', h('div', { class: 'list' }, opts.map((id) =>
     h('button', { class: 'card row between', onclick: () => { openBattleSheet?.close(); throwCapsule(id); } },
-      h('div', null, h('b', null, `${ITEMS[id].icon} ${ITEMS[id].name}`), h('div', { class: 'muted small' }, `성공 확률 약 ${Math.round(captureChance(b, id) * 100)}%`)),
+      img(ITEM_ICON[id], 44, 'item-ico'), h('div', { class: 'grow' }, h('b', null, ITEMS[id].name), h('div', { class: 'muted small' }, `성공 확률 약 ${Math.round(captureChance(b, id) * 100)}%`)),
       h('span', { class: 'pill' }, `×${r.items[id]}`)),
   )));
 }
