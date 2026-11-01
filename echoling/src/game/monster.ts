@@ -71,9 +71,9 @@ export function movesLearnedAt(speciesId: string, level: number): string[] {
   return out;
 }
 
-/** 레벨에 맞게 진화형 결정 (야생 생성용) */
+/** 레벨에 맞는 진화 단계 결정 (야생/상점 생성용) — 계보의 1단계부터 레벨 조건대로 올라감 */
 export function evolvedFormFor(speciesId: string, level: number): string {
-  let s = getSpecies(speciesId);
+  let s = lineage(speciesId)[0];
   while (s.evolveTo && s.evolveLevel && level >= s.evolveLevel) s = getSpecies(s.evolveTo);
   return s.id;
 }

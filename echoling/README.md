@@ -43,7 +43,7 @@ npx cap open android     # Android Studio 열기 → Build > Generate Signed Bun
 ```
 src/
 ├─ core/   types.ts · rng.ts (시드 RNG)
-├─ data/   elements · species(33) · moves(50) · charms(24+아이템) · world(액트·공명·데일리·메타)
+├─ data/   elements · species(34) · moves(50) · charms(24+아이템) · world(액트·공명·데일리·메타)
 ├─ game/   battle (전투 엔진) · map (맵 생성) · run (런 진행) · events · monster (성장) · meta (저장)
 └─ ui/     app (라우터) · dom · fx (햅틱/사운드) · sprite (SVG 생성) · components · flow · screens/*
 tests/     core · battle · balance(시뮬레이터) · sim.ts

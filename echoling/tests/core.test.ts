@@ -132,3 +132,20 @@ describe('0EN 기본기 보장', () => {
     }
   });
 });
+
+describe('상점', () => {
+  it('분양 에코링은 레벨에 맞는 진화 단계', async () => {
+    const { newRun, makeShop } = await import('../src/game/run');
+    const { defaultMeta } = await import('../src/game/meta');
+    const { lineage } = await import('../src/game/monster');
+    for (let seed = 1; seed < 40; seed++) {
+      const r = newRun('embercat', defaultMeta(), 'normal', seed);
+      r.act = seed % 3;
+      for (const e of makeShop(r, defaultMeta()).filter((x) => x.kind === 'monster')) {
+        const line = lineage(e.ref);
+        const prevo = line[line.length - 2];
+        if (prevo?.evolveLevel) expect(e.level!, e.ref).toBeGreaterThanOrEqual(prevo.evolveLevel);
+      }
+    }
+  });
+});

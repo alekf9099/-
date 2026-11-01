@@ -6,7 +6,7 @@ import { BOSSES, SPECIES_LIST, getSpecies, wildPool } from '../data/species';
 import { CHARM_LIST, ITEMS } from '../data/charms';
 import { MOVE_LIST } from '../data/moves';
 import { generateMap } from './map';
-import { type BattleMonster, createMonster, healPct, maxHp } from './monster';
+import { type BattleMonster, createMonster, evolvedFormFor, healPct, maxHp } from './monster';
 import { RUN_VERSION } from './meta';
 import { type BattleKind, type BattleState, cleanupAfterBattle, computeResonance, createBattle } from './battle';
 
@@ -261,11 +261,12 @@ export function makeShop(run: RunState, meta: MetaSave): ShopEntry[] {
     stock.push({ id: 'c_' + c, kind: 'charm', ref: c, price: Math.round({ common: 110, rare: 170, epic: 260 }[rarity] * pm), qty: 1 });
   }
   // 희귀 에코링 분양
-  const rare = wildPool(Math.min(2, run.act + 1)).filter((s) => s.rarity !== 'common');
+  const rare = wildPool(run.act).filter((s) => s.rarity !== 'common');
   if (rare.length) {
-    const sp = rng.pick(rare);
-    const level = Math.max(3, enemyLevel(run.act, 4, 'wild'));
-    stock.push({ id: 'm_' + sp.id, kind: 'monster', ref: sp.id, price: Math.round((150 + run.act * 40) * pm), qty: 1, level });
+    const level = Math.max(4, enemyLevel(run.act, 5, 'wild'));
+    // 레벨에 맞는 진화 단계로 표시 (예: Lv.6 진화형 같은 부자연스러운 조합 방지)
+    const sid = evolvedFormFor(rng.pick(rare).id, level);
+    stock.push({ id: 'm_' + sid, kind: 'monster', ref: sid, price: Math.round((150 + run.act * 40) * pm), qty: 1, level });
   }
   commitRng(run, rng);
   return stock;
