@@ -207,8 +207,34 @@ export interface SpriteOpts {
   className?: string;
 }
 
-/** 종 ID → SVG 문자열 */
+/** 고품질 일러스트가 있는 종 (Canva AI로 제작한 오리지널 아트, public/sprites/*.webp) */
+const ART = new Set([
+  'embercat', 'flarecat', 'pyrolynx', 'puddlo', 'wavlo', 'tsunadrake', 'sproutle', 'leafbear', 'grovelord',
+  'zaprit', 'voltrabbit', 'gloomouse', 'noctifang', 'puffeather', 'galehawk', 'pebblo', 'bouldron', 'sporelet',
+  'toadcap', 'salamint', 'magmaw', 'jellink', 'sparkbee', 'dunemole', 'cloudlamb', 'stormram', 'lampghost',
+  'starbun', 'halorion', 'coralcrab', 'frostling', 'mossking', 'tempestwyrm', 'eclipsion',
+]);
+
+const BASE = (import.meta.env?.BASE_URL ?? './').replace(/\/?$/, '/');
+
+export function artUrl(speciesId: string): string {
+  return `${BASE}sprites/${speciesId}.webp`;
+}
+
+/** 종 ID → 스프라이트 마크업 (일러스트 우선, 없으면 벡터 폴백) */
 export function spriteSvg(speciesId: string, opts: SpriteOpts = {}): string {
+  if (!ART.has(speciesId)) return vectorSprite(speciesId, opts);
+  const size = opts.size ?? 120;
+  const cls = ['sprite', 'art-sprite', opts.className ?? '', opts.flip ? 'flip' : '', opts.shiny ? 'shiny' : '', opts.silhouette ? 'sil' : ''].join(' ');
+  return `<span class="${cls}" style="width:${size}px;height:${size}px" aria-hidden="true">
+    <i class="art-shadow"></i>
+    <span class="art-flip"><img class="art" src="${artUrl(speciesId)}" alt="" width="${size}" height="${size}" draggable="false" decoding="async"></span>
+    ${opts.shiny ? '<i class="art-spark">✦</i>' : ''}
+  </span>`;
+}
+
+/** 프로시저럴 벡터 스프라이트 (폴백/저사양용) */
+export function vectorSprite(speciesId: string, opts: SpriteOpts = {}): string {
   const sp = getSpecies(speciesId);
   const look = { ...sp.look };
   if (opts.shiny) {

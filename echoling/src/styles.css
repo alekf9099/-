@@ -338,6 +338,19 @@ p { line-height: 1.5; }
 .evo-stage.evolved .sprite { animation: pop-in 0.6s; }
 .detail-sprite { flex: 0 0 auto; }
 
+/* ── 일러스트 스프라이트 */
+.art-sprite { position: relative; display: inline-block; flex: 0 0 auto; }
+.art-sprite .art-flip { position: absolute; inset: 0; display: block; }
+.art-sprite.flip .art-flip { transform: scaleX(-1); }
+.art-sprite img.art { width: 100%; height: 100%; object-fit: contain; display: block; transform-origin: 50% 100%; animation: art-bob 2.6s ease-in-out infinite; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.35)); -webkit-user-drag: none; }
+.art-shadow { position: absolute; left: 22%; right: 22%; bottom: 0; height: 7%; border-radius: 50%; background: rgba(0, 0, 0, 0.32); filter: blur(3px); }
+.art-sprite.sil img.art { filter: brightness(0) opacity(0.55); animation: none; }
+.art-sprite.sil .art-shadow { display: none; }
+.art-sprite.shiny img.art { filter: hue-rotate(150deg) saturate(1.25) drop-shadow(0 0 10px rgba(122, 247, 255, 0.8)); }
+.art-spark { position: absolute; top: 4%; left: 8%; font-style: normal; color: #fff6a8; font-size: 1.1em; text-shadow: 0 0 8px #fff; animation: twinkle 1.2s ease-in-out infinite; }
+.mon-row-sprite .art-sprite img.art, .party-strip .art-sprite img.art, .dex-cell .art-sprite img.art { animation: none; }
+@keyframes art-bob { 50% { transform: translateY(-3%) scaleY(1.015); } }
+
 /* ── 애니메이션 */
 .bob { animation: bob 2.4s ease-in-out infinite; transform-origin: 60px 104px; }
 .flame { animation: flicker 0.9s ease-in-out infinite alternate; transform-origin: 90px 90px; }

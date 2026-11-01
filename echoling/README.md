@@ -18,6 +18,12 @@
 | 🔬 **메타 진행** | 에코 결정으로 연구소 업그레이드 · 스타터 해금 · 도감 |
 | 📱 **모바일 UX** | 세로·한 손 조작, 하단 시트, 햅틱, AUTO·x3 배속, 백버튼, 노드 단위 자동저장 |
 
+## 🎨 아트 파이프라인
+- 34종 전부 **Canva AI로 생성한 오리지널 3D 치비 일러스트** (`public/sprites/*.webp`, 384px · 투명 배경 · 총 ~1.2MB)
+- 재생성 절차: Canva `generate-image` → 6×6 시트(3072px)로 배치·PNG 내보내기 → `python3 tools/cutout.py art/sheet-3072.webp public/sprites art/canva-media.json`
+  - 흰 배경 자동 제거(테두리 flood fill + 경계 알파 + halo 제거), 자동 크롭·하단 정렬
+- 일러스트가 없는 종은 `src/ui/sprite.ts`의 벡터 렌더러로 자동 폴백
+
 ## 빠른 시작
 ```bash
 cd echoling
