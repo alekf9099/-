@@ -15,7 +15,7 @@ import { elChips, monRow, moveCard, rarityName } from '../components';
 import { spriteSvg, monSprite } from '../sprite';
 import { completeNode, eventFor, learnMoveModal, processGrowth, run } from '../flow';
 import { openParty } from './map';
-import { ITEM_ICON, NODE_ICON, ico, img } from '../assets';
+import { ITEM_ICON, NODE_ICON, charmIconUrl, ico, img } from '../assets';
 
 function topbar(title: string, right?: HTMLElement): HTMLElement {
   const r = run();
@@ -36,7 +36,7 @@ function optionCard(o: RewardOption, onPick: () => void): HTMLElement {
   switch (o.kind) {
     case 'charm': {
       const c = getCharm(o.charmId);
-      icon = c.icon; name = c.name; desc = c.desc; tag = '부적 · ' + rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '');
+      icon = img(charmIconUrl(o.charmId), 48); name = c.name; desc = c.desc; tag = '부적 · ' + rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '');
       break;
     }
     case 'item': {
@@ -226,7 +226,7 @@ register('shop', () => {
     let name = '';
     let desc = '';
     if (e.kind === 'item') { const it = ITEMS[e.ref as keyof typeof ITEMS]; icon = img(ITEM_ICON[e.ref as keyof typeof ITEMS], 64); name = `${it.name}${e.qty > 1 ? ' ×' + e.qty : ''}`; desc = it.desc; }
-    if (e.kind === 'charm') { const c = getCharm(e.ref); icon = c.icon; name = c.name; desc = c.desc; }
+    if (e.kind === 'charm') { const c = getCharm(e.ref); icon = img(charmIconUrl(e.ref), 64); name = c.name; desc = c.desc; }
     const isMon = e.kind === 'monster';
     const afford = r.gold >= e.price;
     return h('button', { class: 'shop-card' + (e.sold ? ' sold' : '') + (afford ? '' : ' poor') + (e.kind === 'charm' ? ' r-' + getCharm(e.ref).rarity : ''), disabled: e.sold ? true : undefined, onclick: async () => {

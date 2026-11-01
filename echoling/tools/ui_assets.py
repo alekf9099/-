@@ -49,3 +49,16 @@ bgs = Image.open(f'{ROOT}/art/ui-bg-4320.jpg').convert('RGB')
 for i, name in enumerate(media['backgrounds'].keys()):
     bgs.crop((i * 1080, 0, (i + 1) * 1080, 1920)).resize((720, 1280), Image.LANCZOS).save(f'{ROOT}/public/ui/{name}.webp', 'WEBP', quality=80, method=6)
     print('bg', name)
+
+# 부적 아이콘: 4개 시트(각 1264px, 3x3) 가로 배치 → 셀별 배경 제거
+charms = np.asarray(Image.open(f'{ROOT}/art/charm-icons-5056.webp').convert('RGB')).astype(np.float32)
+CELL = 1264 / 3
+for i, name in enumerate(media['charmOrder']):
+    if name.startswith('_'):
+        continue
+    sheet_i, k = divmod(i, 9)
+    r, c = divmod(k, 3)
+    x0 = int(sheet_i * 1264 + c * CELL); y0 = int(r * CELL)
+    cell = charms[y0:y0 + int(CELL), x0:x0 + int(CELL)]
+    cutout(cell).resize((128, 128), Image.LANCZOS).save(f'{ROOT}/public/ui/charm_{name}.webp', 'WEBP', quality=90, method=6)
+    print('charm', name)

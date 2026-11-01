@@ -18,9 +18,10 @@ export function defaultMeta(): MetaSave {
     wins: 0,
     upgrades: {},
     dailyBest: {},
-    settings: { speed: 1, haptics: true, sound: true, reduceMotion: false },
+    settings: { speed: 2, haptics: true, sound: true, reduceMotion: false },
     tutorialDone: false,
     maxAscension: 0,
+    tipsSeen: [],
   };
 }
 

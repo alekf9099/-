@@ -13,6 +13,10 @@ import { sfx } from '../fx';
 import { charmIcon, elChips, expBar, monRow, moveCard, resonanceChips, statBars, statusChip } from '../components';
 import { monSprite } from '../sprite';
 import { enterNode, processGrowth, run } from '../flow';
+import type { MapNode, NodeType, RunState } from '../../core/types';
+import { DANGER_LABEL, type Danger, bossReadiness, dangerOf, expectedEnemyLevel, nodeKind } from '../../game/advice';
+import { computeResonance } from '../../game/battle';
+import { coach } from '../coach';
 import { ACT_BG, ITEM_ICON, NODE_ICON, ico, img } from '../assets';
 
 const ROW_H = 86;
@@ -52,7 +56,7 @@ register('map', () => {
         disabled: !isAvail ? true : undefined,
         onclick: () => {
           sfx('tap');
-          enterNode(n.id);
+          openNodeCard(n);
         },
       }, n.type === 'boss' ? h('span', { class: 'boss-face', html: monSpriteBoss(r.act) }) : img(NODE_ICON[n.type], 40, 'node-ico'));
     }),
@@ -63,7 +67,7 @@ register('map', () => {
       h('div', null, h('small', { class: 'muted' }, act.sub), h('h2', null, act.name)),
       h('div', { class: 'hud-stats' }, (r.ascension ?? 0) > 0 ? h('span', { class: 'pill asc' }, `🔥${r.ascension}`) : null, h('span', { class: 'pill gold' }, `🪙 ${r.gold}`), h('span', { class: 'pill' }, `🏁 ${r.floorsCleared}`)),
     ),
-    bossPreview(r.act),
+    bossPreview(r),
     h('div', { class: 'row between hud-sub' },
       h('div', { class: 'charm-strip' }, r.charms.length ? r.charms.map(charmIcon) : h('span', { class: 'muted small' }, '부적 없음')),
       resonanceChips(r.party, r.charms),
@@ -72,6 +76,15 @@ register('map', () => {
   );
 
   const scroller = h('div', { class: 'map-scroll' }, map);
+  setTimeout(() => {
+    if (!document.querySelector('.map-screen')) return;
+    coach('map-first');
+    const lead = r.party[0];
+    if (lead.hp > 0 && lead.hp / maxHp(lead) < 0.35 && r.party.length > 1) coach('low-hp-lead');
+    if (Object.values(computeResonance(r.party, r.charms)).some((t) => (t ?? 0) > 0)) coach('resonance-first');
+    if (r.charms.length > 0) coach('charm-first');
+    if (r.floorsCleared >= 5) coach('boss-ready');
+  }, 450);
   // 현재 위치로 스크롤
   requestAnimationFrame(() => {
     const target = r.currentNodeId ? pos(r.currentNodeId).y : height;
@@ -92,9 +105,75 @@ register('map', () => {
   );
 });
 
-/** 👑 이번 액트 보스 미리보기 — 목표가 보이면 경로·파티 계획이 생긴다 */
-function bossPreview(act: number): HTMLElement {
+const NODE_DESC: Record<NodeType, string> = {
+  battle: '야생 에코링 1마리. 체력을 깎아 캡슐을 던지면 포획할 수 있어요.',
+  trainer: '테이머의 에코링 2~3마리와 연전. 포획은 불가, 골드와 부적 보상이 커요.',
+  elite: '접두사가 붙은 강화 개체. 위험하지만 부적 3택1 보상!',
+  event: '무슨 일이 일어날지 몰라요. 선택에 따라 보상 또는 대가.',
+  shop: '골드로 아이템·부적·희귀 에코링을 살 수 있어요.',
+  rest: '체력 회복 · 특훈 · 에코 퓨전 중 하나를 선택.',
+  treasure: '부적 3개 중 하나를 골라 가져가요.',
+  boss: '이번 액트의 보스. HP 50%에서 분노 각성해요.',
+};
+
+const DANGER_CLS: Record<Danger, string> = { easy: 'd-easy', fair: 'd-fair', risky: 'd-risky', deadly: 'd-deadly' };
+
+/** 🗺️ 노드 확인 카드: 오탭 방지 + 들어가기 전 판단 정보 */
+function openNodeCard(n: MapNode): void {
+  const r = run();
+  const meta = NODE_META[n.type];
+  const lead = r.party[0];
+  const enemyLv = expectedEnemyLevel(r, n);
+  const kind = nodeKind(n);
+  const danger = enemyLv !== null && kind ? dangerOf(enemyLv, lead.level, kind) : null;
+  const leadLow = !!kind && lead.hp / maxHp(lead) < 0.35;
+  const healthiest = r.party.reduce((b, m, i) => (m.hp / maxHp(m) > r.party[b].hp / maxHp(r.party[b]) ? i : b), 0);
+  let sheet: Sheet;
+  const body = h('div', { class: 'node-card' },
+    h('div', { class: 'nc-head' },
+      n.type === 'boss' ? h('div', { html: monSpriteBoss(r.act, 96) }) : img(NODE_ICON[n.type], 96, 'nc-art'),
+      h('div', { class: 'grow' },
+        h('small', { class: 'eyebrow' }, `${n.row + 1}층`),
+        h('h2', null, n.type === 'boss' ? getSpecies(ACTS[r.act].boss).name : meta.name),
+        h('p', { class: 'muted small', style: 'margin:4px 0 0' }, NODE_DESC[n.type]),
+      ),
+    ),
+    enemyLv !== null && danger
+      ? h('div', { class: 'nc-stats' },
+          h('div', null, h('small', null, '예상 적 레벨'), h('b', null, `Lv.${enemyLv}${kind === 'wild' ? '±1' : ''}`)),
+          h('div', null, h('small', null, '내 선두'), h('b', null, `Lv.${lead.level}`)),
+          h('div', null, h('small', null, '위험도'), h('span', { class: 'danger ' + DANGER_CLS[danger] }, DANGER_LABEL[danger])),
+        )
+      : null,
+    leadLow
+      ? h('div', { class: 'nc-warn' },
+          h('span', null, `⚠️ 선두 ${displayName(lead)}의 체력이 ${Math.round((lead.hp / maxHp(lead)) * 100)}%예요.`),
+          healthiest !== 0
+            ? h('button', { class: 'chip-btn', onclick: () => {
+                const [m] = r.party.splice(healthiest, 1);
+                r.party.unshift(m);
+                saveAll();
+                sfx('tap');
+                toast(`${displayName(m)}을(를) 선두로!`, 'good');
+                sheet.close();
+                go('map');
+              } }, `${displayName(r.party[healthiest])} 선두로`)
+            : null,
+        )
+      : null,
+    h('div', { class: 'row gap' },
+      h('button', { class: 'btn ghost grow', onclick: () => sheet.close() }, '취소'),
+      h('button', { class: 'btn primary grow', onclick: () => { sheet.close(); enterNode(n.id); } }, n.type === 'boss' ? '보스에 도전' : '입장하기'),
+    ),
+  );
+  sheet = openSheet(meta.name, body);
+}
+
+/** 👑 이번 액트 보스 미리보기 + 준비도 */
+function bossPreview(r: RunState): HTMLElement {
+  const act = r.act;
   const sp = getSpecies(ACTS[act].boss);
+  const ready = bossReadiness(r);
   return h('button', { class: 'boss-preview', onclick: () => openSheet(`👑 ${sp.name}`, h('div', { class: 'pad center col gap' },
     h('div', { html: monSpriteBoss(act, 160) }),
     elChips(sp.elements),
@@ -104,8 +183,7 @@ function bossPreview(act: number): HTMLElement {
   ), { tall: true }) },
     h('span', { class: 'bp-face', html: monSpriteBoss(act, 34) }),
     h('span', null, h('small', null, `ACT ${act + 1} 보스`), h('b', null, sp.name)),
-    elChips(sp.elements, true),
-    h('span', { class: 'bp-more' }, '정보 ›'),
+    h('span', { class: 'bp-ready' }, h('small', null, `권장 Lv.${ready.bossLevel} · 내 최고 Lv.${ready.myBest}`), h('span', { class: 'danger ' + DANGER_CLS[ready.danger] }, DANGER_LABEL[ready.danger])),
   );
 }
 

@@ -20,6 +20,8 @@ import { elChips } from '../components';
 import { monSprite } from '../sprite';
 import { endRun, processGrowth, run, seen, setBattleReward } from '../flow';
 import { markCaught, saveMeta } from '../../game/meta';
+import { bestLevel } from '../../game/advice';
+import { coach } from '../coach';
 import { EL_ICON, ITEM_ICON, ACT_BG, ico, img } from '../assets';
 
 interface View {
@@ -30,9 +32,18 @@ interface View {
   /** 표시용 스냅샷 (이벤트 재생 중 실제 상태와 분리) */
   disp: { idx: Record<Side, number>; hp: Map<string, number>; status: Map<string, StatusId | undefined>; en: Record<Side, number> };
   el: Record<string, HTMLElement>;
+  /** ⏩ 이번 턴 연출 빨리 감기 */
+  skip: boolean;
+  /** 패배 분석용: 마지막으로 공격한 적과 기술 */
+  lastFoe?: { speciesId: string; level: number; moveId: string };
 }
 
 let V: View | null = null;
+
+/** 빨리 감기 중이면 대기 생략 */
+function wait(ms: number): Promise<void> {
+  return V?.skip ? sleep(16) : sleep(ms * speedMult());
+}
 
 register('battle', () => {
   const r = run();
@@ -68,8 +79,16 @@ register('battle', () => {
     h('div', { class: 'b-panel' }, el.moves, el.sub),
   );
 
+  const skip = () => {
+    if (V && V.busy && !V.skip) {
+      V.skip = true;
+      haptic(6);
+    }
+  };
+  el.arena.addEventListener('pointerdown', skip);
+  el.log.addEventListener('pointerdown', skip);
   V = {
-    b, rng, busy: false, auto: false, el,
+    b, rng, busy: false, auto: false, el, skip: false,
     disp: { idx: { p: b.p.active, e: b.e.active }, hp: new Map(), status: new Map(), en: { p: b.p.en, e: b.e.en } },
   };
   snapshot();
@@ -233,6 +252,8 @@ async function act(a: PlayerAction): Promise<void> {
   if (v.busy || v.b.over) return;
   sfx('tap');
   v.busy = true;
+  v.skip = false;
+  v.el.log.classList.add('playing');
   renderMoves();
   renderIntent();
   snapshot();
@@ -245,7 +266,16 @@ async function afterTurn(): Promise<void> {
   const v = V!;
   snapshot();
   v.busy = false;
+  v.skip = false;
+  v.el.log.classList.remove('playing');
   renderAll();
+  // 💡 상황별 첫 경험 팁
+  const info = intentInfo(v.b);
+  if (info?.lethal && v.b.p.team.some((m, i) => i !== v.b.p.active && m.hp > 0)) coach('intent-lethal');
+  const foe = activeOf(v.b, 'e');
+  const r0 = run();
+  if (v.b.kind === 'wild' && foe.hp > 0 && foe.hp / maxHp(foe) <= 0.5 && (r0.items.capsule ?? 0) + (r0.items.hyperCapsule ?? 0) > 0) coach('capture-chance');
+  if (v.b.turn >= 3) coach('fast-forward');
   if (v.b.over) return finish();
   if (v.b.needSwitch) {
     if (v.auto) {
@@ -388,12 +418,12 @@ function anim(elm: HTMLElement, cls: string, ms: number): Promise<void> {
   elm.classList.remove(cls);
   void elm.offsetWidth;
   elm.classList.add(cls);
-  return sleep(ms * speedMult()).then(() => elm.classList.remove(cls));
+  return wait(ms).then(() => elm.classList.remove(cls));
 }
 
 async function play(events: BEvent[]): Promise<void> {
   const v = V!;
-  const d = (ms: number) => sleep(ms * speedMult());
+  const d = (ms: number) => wait(ms);
   for (const e of events) {
     if (V !== v) return; // 화면 이탈
     switch (e.t) {
@@ -403,6 +433,10 @@ async function play(events: BEvent[]): Promise<void> {
         break;
       case 'use': {
         const mv = getMove(e.move);
+        if (e.side === 'e') {
+          const foe = dispMon('e');
+          v.lastFoe = { speciesId: foe.speciesId, level: foe.level, moveId: e.move };
+        }
         log(`${e.name}의 ${mv.name}!`);
         const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
         spr.style.setProperty('--fx', ELEMENTS[mv.element].color);
@@ -555,8 +589,9 @@ async function finish(): Promise<void> {
     log('눈앞이 캄캄해졌다…');
     sfx('lose');
     await sleep(1200);
+    const lf = v.lastFoe ?? { speciesId: activeOf(b, 'e').speciesId, level: activeOf(b, 'e').level, moveId: '' };
     V = null;
-    endRun(false);
+    endRun(false, { enemySpecies: lf.speciesId, enemyLevel: lf.level, moveId: lf.moveId || undefined, myBestLevel: bestLevel(r.party), kind: b.kind });
     return;
   }
   const out = applyBattleOutcome(r, b);

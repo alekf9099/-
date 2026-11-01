@@ -26,6 +26,9 @@ export const EL_ICON: Partial<Record<Element, string>> = {
 
 /** CSS 변수(--bgimg)에 넣는 배경은 절대 URL이어야 함 (상대 url()은 스타일시트 기준으로 해석되므로) */
 const abs = (u: string) => (typeof document !== 'undefined' ? new URL(u, document.baseURI).href : u);
+/** 부적 아이콘 (Canva AI 3x3 시트에서 분할) */
+export const charmIconUrl = (id: string) => ui('charm_' + id);
+
 export const ACT_BG = [abs(ui('bg_act0')), abs(ui('bg_act1')), abs(ui('bg_act2'))];
 export const TITLE_BG = abs(ui('bg_title'));
 

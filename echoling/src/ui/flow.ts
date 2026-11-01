@@ -9,6 +9,7 @@ import { advanceAct, battleRewards, makeShop, newRun, treasureRewards } from '..
 import type { BattleKind } from '../game/battle';
 import { todayKey } from '../core/rng';
 import { MAX_ASCENSION } from '../data/world';
+import type { DefeatCause } from '../game/advice';
 import { app, go, saveAll } from './app';
 import { h, openSheet, sleep } from './dom';
 import { sfx } from './fx';
@@ -109,7 +110,7 @@ export function setBattleReward(kind: BattleKind, title: string): void {
   go('reward');
 }
 
-export function endRun(victory: boolean): void {
+export function endRun(victory: boolean, cause?: DefeatCause): void {
   const r = run();
   const shards = shardsForRun(r, victory);
   const m = app.meta;
@@ -128,7 +129,7 @@ export function endRun(victory: boolean): void {
     m.dailyBest[k] = Math.max(m.dailyBest[k] ?? 0, score);
   }
   for (const mon of [...r.party, ...r.box]) markCaught(m, mon.speciesId);
-  const summary = { victory, shards, ascUnlocked, run: JSON.parse(JSON.stringify(r)) as RunState };
+  const summary = { victory, shards, ascUnlocked, cause, run: JSON.parse(JSON.stringify(r)) as RunState };
   app.run = null;
   saveAll();
   go('runEnd', summary);

@@ -228,6 +228,8 @@ export interface MetaSave {
   tutorialDone: boolean;
   /** 해금된 최대 각성 단계 */
   maxAscension: number;
+  /** 이미 본 코치 팁 ID */
+  tipsSeen: string[];
 }
 
 export interface Settings {

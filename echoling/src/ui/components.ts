@@ -9,7 +9,7 @@ import { computeResonance, STATUS_NAME } from '../game/battle';
 import { computeStats, displayName, expToNext, maxHp } from '../game/monster';
 import { bar, h, openSheet } from './dom';
 import { monSprite } from './sprite';
-import { EL_ICON, img } from './assets';
+import { EL_ICON, charmIconUrl, img } from './assets';
 
 export function elChip(el: Element, small = false): HTMLElement {
   const e = ELEMENTS[el];
@@ -77,7 +77,7 @@ export function expBar(m: Monster): HTMLElement {
 
 export function charmIcon(id: string): HTMLElement {
   const c = getCharm(id);
-  return h('button', { class: 'charm-icon r-' + c.rarity, 'aria-label': c.name, onclick: () => openSheet(c.name, h('div', { class: 'pad center' }, h('div', { class: 'big-emoji' }, c.icon), h('p', null, c.desc), h('small', { class: 'muted' }, rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '')))) }, c.icon);
+  return h('button', { class: 'charm-icon r-' + c.rarity, 'aria-label': c.name, onclick: () => openSheet(c.name, h('div', { class: 'pad center col gap' }, img(charmIconUrl(id), 112, 'charm-hero'), h('p', null, c.desc), h('small', { class: 'muted' }, rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '')))) }, img(charmIconUrl(id), 28));
 }
 
 export function rarityName(r: string): string {

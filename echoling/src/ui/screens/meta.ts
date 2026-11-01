@@ -5,6 +5,7 @@ import { SPECIES_LIST, STARTERS, getSpecies } from '../../data/species';
 import { getMove } from '../../data/moves';
 import { ACTS, ASCENSION_RULES, DAILY_MODIFIERS, META_UPGRADES, STARTER_UNLOCK_COST } from '../../data/world';
 import { getCharm } from '../../data/charms';
+import { type DefeatCause, counterElements, defeatAdvice } from '../../game/advice';
 import { hashString } from '../../core/rng';
 import { defaultMeta } from '../../game/meta';
 import { learnableUpTo } from '../../game/monster';
@@ -14,7 +15,7 @@ import { bindSettings, haptic, sfx } from '../fx';
 import { elChips, rarityName, resonanceChips } from '../components';
 import { spriteSvg, monSprite } from '../sprite';
 import { proceedAfterActClear, resume, startRun } from '../flow';
-import { NODE_ICON, TITLE_BG, ico, img } from '../assets';
+import { NODE_ICON, TITLE_BG, charmIconUrl, ico, img } from '../assets';
 
 function todaysModifier() {
   return DAILY_MODIFIERS[hashString(todayKey()) % DAILY_MODIFIERS.length];
@@ -271,8 +272,27 @@ register('actClear', () => {
   );
 });
 
+// ─────────── 💀 패배 원인 리포트 ───────────
+function defeatCard(c: DefeatCause): HTMLElement {
+  const sp = getSpecies(c.enemySpecies);
+  const mv = c.moveId ? getMove(c.moveId) : null;
+  const counters = counterElements(sp.elements);
+  return h('div', { class: 'defeat-card' },
+    h('div', { class: 'row gap' },
+      h('div', { html: spriteSvg(c.enemySpecies, { size: 64 }) }),
+      h('div', { class: 'grow', style: 'text-align:left' },
+        h('small', { class: 'eyebrow' }, '패배 원인'),
+        h('b', null, `${sp.name} Lv.${c.enemyLevel}${mv ? `의 「${mv.name}」` : ''}`),
+        h('div', { class: 'row gap-s', style: 'margin-top:4px' }, elChips(sp.elements, true), h('small', { class: 'muted' }, `내 최고 Lv.${c.myBestLevel}`)),
+      ),
+    ),
+    counters.length ? h('div', { class: 'row gap-s', style: 'flex-wrap:wrap' }, h('small', { class: 'muted' }, '추천 속성'), elChips(counters, true)) : null,
+    h('ul', { class: 'defeat-tips' }, defeatAdvice(c).map((t) => h('li', null, t))),
+  );
+}
+
 // ─────────── 런 종료 ───────────
-register('runEnd', (sum: { victory: boolean; shards: number; ascUnlocked?: number | null; run: RunState }) => {
+register('runEnd', (sum: { victory: boolean; shards: number; ascUnlocked?: number | null; cause?: DefeatCause; run: RunState }) => {
   const r = sum.run;
   sfx(sum.victory ? 'win' : 'lose');
   const mins = Math.max(1, Math.round((Date.now() - r.startedAt) / 60000));
@@ -281,7 +301,7 @@ register('runEnd', (sum: { victory: boolean; shards: number; ascUnlocked?: numbe
   const buildCard = h('div', { class: 'build-card' },
     h('div', { class: 'row between' }, h('b', null, '📸 이번 런 빌드'), h('span', { class: 'pill' }, r.ascension ? `🔥 각성 ${r.ascension}` : '기본')),
     h('div', { class: 'bc-party' }, r.party.map((m) => h('div', { class: 'bc-mon' + (m.hp <= 0 ? ' fainted' : '') }, h('div', { html: monSprite(m, { size: 54 }) }), h('small', null, `Lv.${m.level}`)))),
-    h('div', { class: 'bc-charms' }, r.charms.length ? r.charms.map((c) => h('span', { class: 'bc-charm r-' + getCharm(c).rarity, title: getCharm(c).name }, getCharm(c).icon)) : h('small', { class: 'muted' }, '부적 없음')),
+    h('div', { class: 'bc-charms' }, r.charms.length ? r.charms.map((c) => h('span', { class: 'bc-charm r-' + getCharm(c).rarity, title: getCharm(c).name }, img(charmIconUrl(c), 26))) : h('small', { class: 'muted' }, '부적 없음')),
     resonanceChips(r.party, r.charms),
     h('div', { class: 'row between bc-seed' },
       h('code', null, seedText),
@@ -311,6 +331,7 @@ register('runEnd', (sum: { victory: boolean; shards: number; ascUnlocked?: numbe
       h('div', null, h('small', null, '시간'), h('b', null, `${mins}분`)),
     ),
     h('div', { class: 'reward-shards' }, `💎 +${sum.shards} 에코 결정`),
+    sum.cause ? defeatCard(sum.cause) : null,
     buildCard,
     h('div', { class: 'col gap' },
       h('button', { class: 'btn primary xl block', onclick: () => go('starter', 'normal') }, '다시 도전'),
