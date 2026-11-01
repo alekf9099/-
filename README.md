@@ -1,3 +1,7 @@
+> 📦 이 저장소에는 두 개의 프로젝트가 있습니다.
+> - **AI 샷메이커** (아래, 루트)
+> - **[ECHOLING — 몬스터 테이밍 로그라이크 게임](echoling/README.md)** (`echoling/`)
+
 # AI 샷메이커 (AiShotMaker)
 
 쇼핑몰 사장님을 위한 AI 모델 착용샷 & 누끼 자동화 앱

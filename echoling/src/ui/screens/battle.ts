@@ -1,0 +1,537 @@
+// 전투 화면 — 엔진 이벤트를 순차 재생 (연출과 로직 분리)
+import type { ItemId, StatusId } from '../../core/types';
+import { Rng } from '../../core/rng';
+import { ELEMENTS, effLabel } from '../../data/elements';
+import { getMove } from '../../data/moves';
+import { getSpecies } from '../../data/species';
+import { ITEMS } from '../../data/charms';
+import { ACTS } from '../../data/world';
+import {
+  type BEvent, type BattleState, type Side, type PlayerAction,
+  activeOf, captureChance, chooseAiMove, expectedDamage, forceSwitch, previewEff, resolveTurn, STATUS_NAME,
+} from '../../game/battle';
+import { displayName, maxHp } from '../../game/monster';
+import { applyBattleOutcome, buildBattle, makeEncounter } from '../../game/run';
+import { app, register, saveAll } from '../app';
+import { bar, h, openSheet, sleep, toast, type Sheet } from '../dom';
+import { haptic, sfx, speedMult } from '../fx';
+import { elChips } from '../components';
+import { monSprite } from '../sprite';
+import { endRun, processGrowth, run, seen, setBattleReward } from '../flow';
+import { markCaught, saveMeta } from '../../game/meta';
+
+interface View {
+  b: BattleState;
+  rng: Rng;
+  busy: boolean;
+  auto: boolean;
+  /** 표시용 스냅샷 (이벤트 재생 중 실제 상태와 분리) */
+  disp: { idx: Record<Side, number>; hp: Map<string, number>; status: Map<string, StatusId | undefined>; en: Record<Side, number> };
+  el: Record<string, HTMLElement>;
+}
+
+let V: View | null = null;
+
+register('battle', () => {
+  const r = run();
+  const node = r.map.nodes[r.currentNodeId!];
+  const enc = makeEncounter(r, node);
+  const b = buildBattle(r, enc);
+  const rng = new Rng(r.rngState);
+  enc.enemies.forEach((m) => seen(m.speciesId));
+
+  const el: Record<string, HTMLElement> = {};
+  el.eCard = h('div', { class: 'b-card enemy' });
+  el.pCard = h('div', { class: 'b-card player' });
+  el.eSprite = h('div', { class: 'b-sprite enemy' });
+  el.pSprite = h('div', { class: 'b-sprite player' });
+  el.log = h('div', { class: 'b-log', role: 'log', 'aria-live': 'polite' }, enc.title);
+  el.moves = h('div', { class: 'b-moves' });
+  el.sub = h('div', { class: 'b-sub' });
+  el.teamDots = h('div', { class: 'team-dots' });
+  el.arena = h('div', { class: 'arena' },
+    h('div', { class: 'arena-floor e' }), h('div', { class: 'arena-floor p' }),
+    h('div', { class: 'side e' }, el.eCard, el.eSprite),
+    h('div', { class: 'side p' }, el.pSprite, el.pCard),
+  );
+  el.autoBtn = h('button', { class: 'chip-btn', 'aria-pressed': 'false', onclick: () => toggleAuto() }, '⚡ AUTO');
+  el.speedBtn = h('button', { class: 'chip-btn', onclick: () => cycleSpeed() }, `▶ x${app.meta.settings.speed}`);
+  const kindBadge = { wild: '야생', trainer: '테이머', elite: '엘리트', boss: 'BOSS' }[b.kind];
+  const act = ACTS[r.act];
+  const root = h('div', { class: `battle-screen k-${b.kind}`, style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]}` },
+    h('header', { class: 'b-top' }, h('span', { class: 'kind-badge k-' + b.kind }, kindBadge), el.teamDots, h('span', { class: 'spacer' }), el.speedBtn, el.autoBtn),
+    el.arena,
+    el.log,
+    h('div', { class: 'b-panel' }, el.moves, el.sub),
+  );
+
+  V = {
+    b, rng, busy: false, auto: false, el,
+    disp: { idx: { p: b.p.active, e: b.e.active }, hp: new Map(), status: new Map(), en: { p: b.p.en, e: b.e.en } },
+  };
+  snapshot();
+  renderAll();
+  if (b.kind === 'boss') {
+    root.classList.add('boss-intro');
+    sfx('crit');
+  }
+  setTimeout(() => {
+    if (!app.meta.tutorialDone) showTutorial();
+  }, 500);
+  return root;
+});
+
+function snapshot(): void {
+  const v = V!;
+  for (const m of [...v.b.p.team, ...v.b.e.team]) {
+    v.disp.hp.set(m.uid, m.hp);
+    v.disp.status.set(m.uid, m.status);
+  }
+  v.disp.idx = { p: v.b.p.active, e: v.b.e.active };
+  v.disp.en = { p: v.b.p.en, e: v.b.e.en };
+}
+
+function dispMon(side: Side) {
+  const v = V!;
+  return v.b[side].team[v.disp.idx[side]];
+}
+
+// ─────────── 렌더 ───────────
+function renderCard(side: Side): void {
+  const v = V!;
+  const m = dispMon(side);
+  const sp = getSpecies(m.speciesId);
+  const hp = v.disp.hp.get(m.uid) ?? m.hp;
+  const mx = maxHp(m);
+  const st = v.disp.status.get(m.uid);
+  const card = side === 'p' ? v.el.pCard : v.el.eCard;
+  card.innerHTML = '';
+  card.append(
+    h('div', { class: 'row between' }, h('b', { class: 'b-name' }, displayName(m), m.shiny ? ' ✦' : ''), h('span', { class: 'lv' }, 'Lv.' + m.level)),
+    h('div', { class: 'row gap-s' }, elChips(sp.elements, true), st ? h('span', { class: 'status-chip st-' + st }, STATUS_NAME[st]) : null, stageChips(side)),
+    h('div', { class: 'hp-line' }, bar(hp / mx, 'hp'), side === 'p' ? h('span', { class: 'hp-num' }, `${hp}/${mx}`) : h('span', { class: 'hp-num' }, `${Math.ceil((hp / mx) * 100)}%`)),
+    side === 'p' ? enPips(v.disp.en.p, v.b.p.maxEn) : enPips(v.disp.en.e, v.b.e.maxEn, true),
+  );
+}
+
+function stageChips(side: Side): HTMLElement | null {
+  const st = V!.b[side].stages;
+  const lab = { atk: '공', def: '방', spd: '속' } as const;
+  const parts = (Object.keys(st) as (keyof typeof st)[]).filter((k) => st[k] !== 0).map((k) =>
+    h('span', { class: 'stage ' + (st[k] > 0 ? 'up' : 'down') }, `${lab[k]}${st[k] > 0 ? '▲' : '▼'}${Math.abs(st[k])}`));
+  return parts.length ? h('span', { class: 'stages' }, parts) : null;
+}
+
+function enPips(en: number, max: number, small = false): HTMLElement {
+  return h('div', { class: 'en-row' + (small ? ' sm' : ''), 'aria-label': `EN ${en}/${max}` },
+    h('small', null, 'EN'),
+    Array.from({ length: max }, (_, i) => h('i', { class: 'en-pip' + (i < en ? ' on' : '') })),
+  );
+}
+
+function renderSprite(side: Side): void {
+  const m = dispMon(side);
+  const box = side === 'p' ? V!.el.pSprite : V!.el.eSprite;
+  const big = getSpecies(m.speciesId).rarity === 'legend';
+  box.innerHTML = monSprite(m, { size: big ? 190 : 150, flip: side === 'p' });
+  box.classList.toggle('fainted', (V!.disp.hp.get(m.uid) ?? m.hp) <= 0);
+}
+
+function renderTeamDots(): void {
+  const v = V!;
+  v.el.teamDots.innerHTML = '';
+  if (v.b.e.team.length > 1) {
+    v.el.teamDots.append(...v.b.e.team.map((m) => h('i', { class: (v.disp.hp.get(m.uid) ?? m.hp) > 0 ? 'on' : '' })));
+  }
+}
+
+function renderMoves(): void {
+  const v = V!;
+  const b = v.b;
+  v.el.moves.innerHTML = '';
+  v.el.sub.innerHTML = '';
+  if (b.over) return;
+  const me = activeOf(b, 'p');
+  const foe = activeOf(b, 'e');
+  me.moves.forEach((id, idx) => {
+    const mv = getMove(id);
+    const e = ELEMENTS[mv.element];
+    const afford = mv.cost <= b.p.en;
+    const eff = previewEff(b, 'p', mv);
+    const label = mv.power > 0 ? effLabel(eff) : '';
+    const ko = mv.power > 0 && afford && expectedDamage(b, 'p', mv) >= foe.hp;
+    v.el.moves.appendChild(h('button', {
+      class: 'move-btn' + (afford ? '' : ' no-en') + (eff > 1 ? ' good' : eff < 1 ? ' bad' : ''),
+      style: `--c:${e.color}`,
+      disabled: !afford || v.busy ? true : undefined,
+      'aria-label': `${mv.name}, ${e.name} 속성, EN ${mv.cost}${label ? ', ' + label : ''}`,
+      onclick: () => act({ type: 'move', idx }),
+      oncontextmenu: (ev: MouseEvent) => { ev.preventDefault(); toast(`${mv.name}: ${mv.desc}`); },
+    },
+      h('span', { class: 'mv-top' }, h('b', null, mv.name), h('span', { class: 'mv-cost' }, mv.cost ? '◆'.repeat(mv.cost) : 'FREE')),
+      h('span', { class: 'mv-bot' }, h('small', null, `${e.icon} ${mv.power > 0 ? '위력 ' + mv.power : '변화'}`),
+        ko ? h('span', { class: 'eff-badge ko' }, 'KO!') : label ? h('span', { class: 'eff-badge ' + (eff > 1 ? 'up' : 'down') }, label.replace(/[!…]/g, '')) : null),
+    ));
+  });
+  const r = run();
+  const capsules = (r.items.capsule ?? 0) + (r.items.hyperCapsule ?? 0);
+  const canSwitch = b.p.team.some((m, i) => i !== b.p.active && m.hp > 0);
+  v.el.sub.append(
+    h('button', { class: 'sub-btn', disabled: !canSwitch || v.busy ? true : undefined, onclick: () => switchSheet(false) }, '🔄', h('span', null, '교체')),
+    h('button', { class: 'sub-btn', disabled: v.busy ? true : undefined, onclick: () => itemSheet() }, '🎒', h('span', null, '아이템')),
+    b.kind === 'wild'
+      ? h('button', { class: 'sub-btn capture', disabled: !capsules || v.busy ? true : undefined, onclick: () => captureSheet() }, '🔵', h('span', null, `포획 ${Math.round(captureChance(b, 'capsule') * 100)}%`), h('small', null, `×${capsules}`))
+      : h('button', { class: 'sub-btn', disabled: true }, '🚫', h('span', null, '포획 불가')),
+  );
+}
+
+function renderAll(): void {
+  renderCard('p');
+  renderCard('e');
+  renderSprite('p');
+  renderSprite('e');
+  renderTeamDots();
+  renderMoves();
+}
+
+// ─────────── 입력 ───────────
+async function act(a: PlayerAction): Promise<void> {
+  const v = V!;
+  if (v.busy || v.b.over) return;
+  sfx('tap');
+  v.busy = true;
+  renderMoves();
+  snapshot();
+  const ev = resolveTurn(v.b, a, v.rng);
+  await play(ev);
+  await afterTurn();
+}
+
+async function afterTurn(): Promise<void> {
+  const v = V!;
+  snapshot();
+  v.busy = false;
+  renderAll();
+  if (v.b.over) return finish();
+  if (v.b.needSwitch) {
+    if (v.auto) {
+      const best = bestAlive();
+      await doForceSwitch(best);
+    } else switchSheet(true);
+    return;
+  }
+  if (v.auto) {
+    await sleep(250 * speedMult());
+    if (V === v && v.auto && !v.busy) void act({ type: 'move', idx: chooseAiMove(v.b, 'p', null) });
+  }
+}
+
+function bestAlive(): number {
+  const t = V!.b.p.team;
+  let best = -1;
+  t.forEach((m, i) => { if (m.hp > 0 && (best < 0 || m.hp / maxHp(m) > t[best].hp / maxHp(t[best]))) best = i; });
+  return best;
+}
+
+async function doForceSwitch(idx: number): Promise<void> {
+  const v = V!;
+  v.busy = true;
+  snapshot();
+  const ev = forceSwitch(v.b, idx);
+  await play(ev);
+  await afterTurn();
+}
+
+function toggleAuto(): void {
+  const v = V!;
+  v.auto = !v.auto;
+  v.el.autoBtn.classList.toggle('on', v.auto);
+  v.el.autoBtn.setAttribute('aria-pressed', String(v.auto));
+  toast(v.auto ? '⚡ 자동 전투 ON — 최적 기술을 자동 선택' : '자동 전투 OFF');
+  if (v.auto && !v.busy && !v.b.over) {
+    if (v.b.needSwitch) void doForceSwitch(bestAlive());
+    else void act({ type: 'move', idx: chooseAiMove(v.b, 'p', null) });
+  }
+}
+
+function cycleSpeed(): void {
+  const s = app.meta.settings;
+  s.speed = (s.speed === 3 ? 1 : s.speed + 1) as 1 | 2 | 3;
+  V!.el.speedBtn.textContent = `▶ x${s.speed}`;
+  saveMeta(app.meta);
+}
+
+let openBattleSheet: Sheet | null = null;
+
+function switchSheet(forced: boolean): void {
+  const v = V!;
+  const b = v.b;
+  openBattleSheet?.close();
+  openBattleSheet = openSheet(forced ? '다음 에코링을 선택하세요' : '교체 (턴 소모)', h('div', { class: 'list' },
+    b.p.team.map((m, i) => {
+      const ok = m.hp > 0 && i !== b.p.active;
+      const sp = getSpecies(m.speciesId);
+      return h('button', { class: 'mon-row' + (ok ? '' : ' fainted'), disabled: ok ? undefined : true, onclick: async () => {
+        openBattleSheet?.close();
+        openBattleSheet = null;
+        if (forced) await doForceSwitch(i);
+        else await act({ type: 'switch', idx: i });
+      } },
+        h('div', { class: 'mon-row-sprite', html: monSprite(m, { size: 52 }) }),
+        h('div', { class: 'mon-row-main' }, h('div', { class: 'mon-row-top' }, h('b', null, displayName(m)), h('span', { class: 'lv' }, 'Lv.' + m.level)), elChips(sp.elements, true),
+          h('div', { class: 'hp-line' }, bar(m.hp / maxHp(m), 'hp'), h('span', { class: 'hp-num' }, `${m.hp}/${maxHp(m)}`))),
+        i === b.p.active ? h('span', { class: 'tag' }, '출전 중') : null,
+      );
+    }),
+  ), { dismissible: !forced });
+}
+
+function itemSheet(): void {
+  const r = run();
+  const usable = (Object.entries(r.items) as [ItemId, number][]).filter(([id, n]) => n > 0 && ITEMS[id].battle && id !== 'capsule' && id !== 'hyperCapsule');
+  openBattleSheet = openSheet('🎒 아이템 (턴 소모)', h('div', { class: 'list' },
+    usable.length ? usable.map(([id, n]) => {
+      const it = ITEMS[id];
+      return h('button', { class: 'card row between', onclick: () => {
+        openBattleSheet?.close();
+        if (it.target === 'none') return useItem(id);
+        pickTarget(id);
+      } }, h('div', null, h('b', null, `${it.icon} ${it.name}`), h('div', { class: 'muted small' }, it.desc)), h('span', { class: 'pill' }, `×${n}`));
+    }) : h('p', { class: 'muted pad' }, '전투에서 쓸 수 있는 아이템이 없어요.'),
+  ));
+}
+
+function pickTarget(id: ItemId): void {
+  const b = V!.b;
+  const it = ITEMS[id];
+  openBattleSheet = openSheet(`${it.icon} 누구에게?`, h('div', { class: 'list' }, b.p.team.map((m, i) => {
+    const ok = it.target === 'fainted' ? m.hp <= 0 : m.hp > 0 && (id !== 'cleanser' || !!m.status) && (id === 'cleanser' || m.hp < maxHp(m));
+    return h('button', { class: 'mon-row' + (ok ? '' : ' fainted'), disabled: ok ? undefined : true, onclick: () => { openBattleSheet?.close(); useItem(id, i); } },
+      h('div', { class: 'mon-row-sprite', html: monSprite(m, { size: 48 }) }),
+      h('div', { class: 'mon-row-main' }, h('b', null, displayName(m)), h('div', { class: 'hp-line' }, bar(m.hp / maxHp(m), 'hp'), h('span', { class: 'hp-num' }, `${m.hp}/${maxHp(m)}`))));
+  })));
+}
+
+function useItem(id: ItemId, target?: number): void {
+  const r = run();
+  if ((r.items[id] ?? 0) <= 0) return;
+  r.items[id] = (r.items[id] ?? 1) - 1;
+  void act({ type: 'item', item: id, target });
+}
+
+function captureSheet(): void {
+  const b = V!.b;
+  const r = run();
+  const opts = (['capsule', 'hyperCapsule'] as const).filter((id) => (r.items[id] ?? 0) > 0);
+  if (opts.length === 1) return throwCapsule(opts[0]);
+  openBattleSheet = openSheet('🔵 캡슐 선택', h('div', { class: 'list' }, opts.map((id) =>
+    h('button', { class: 'card row between', onclick: () => { openBattleSheet?.close(); throwCapsule(id); } },
+      h('div', null, h('b', null, `${ITEMS[id].icon} ${ITEMS[id].name}`), h('div', { class: 'muted small' }, `성공 확률 약 ${Math.round(captureChance(b, id) * 100)}%`)),
+      h('span', { class: 'pill' }, `×${r.items[id]}`)),
+  )));
+}
+
+function throwCapsule(id: 'capsule' | 'hyperCapsule'): void {
+  const r = run();
+  if (r.party.length + r.box.length >= 30) return toast('보관함이 가득 찼어요', 'bad');
+  r.items[id] = (r.items[id] ?? 1) - 1;
+  void act({ type: 'capture', item: id });
+}
+
+// ─────────── 이벤트 재생 ───────────
+function log(text: string): void {
+  V!.el.log.textContent = text;
+}
+
+function pop(side: Side, text: string, cls: string): void {
+  const box = side === 'p' ? V!.el.pSprite : V!.el.eSprite;
+  const p = h('div', { class: 'pop ' + cls }, text);
+  box.appendChild(p);
+  setTimeout(() => p.remove(), 1100);
+}
+
+function anim(elm: HTMLElement, cls: string, ms: number): Promise<void> {
+  elm.classList.remove(cls);
+  void elm.offsetWidth;
+  elm.classList.add(cls);
+  return sleep(ms * speedMult()).then(() => elm.classList.remove(cls));
+}
+
+async function play(events: BEvent[]): Promise<void> {
+  const v = V!;
+  const d = (ms: number) => sleep(ms * speedMult());
+  for (const e of events) {
+    if (V !== v) return; // 화면 이탈
+    switch (e.t) {
+      case 'msg':
+        log(e.text);
+        await d(560);
+        break;
+      case 'use': {
+        const mv = getMove(e.move);
+        log(`${e.name}의 ${mv.name}!`);
+        const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
+        spr.style.setProperty('--fx', ELEMENTS[mv.element].color);
+        await anim(spr, mv.power > 0 ? 'lunge' : 'cast', 380);
+        break;
+      }
+      case 'hit': {
+        const m = dispMon(e.side);
+        v.disp.hp.set(m.uid, e.hp);
+        const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
+        renderCard(e.side);
+        renderTeamDots();
+        pop(e.side, `-${e.dmg}`, e.crit ? 'crit' : e.eff > 1 ? 'super' : e.eff < 1 ? 'weak' : '');
+        if (e.crit) {
+          sfx('crit');
+          if (!app.meta.settings.reduceMotion) void anim(v.el.arena, 'shake', 350);
+          pop(e.side, '치명타!', 'tag-pop');
+        } else if (e.eff > 1) {
+          sfx('super');
+          pop(e.side, effLabel(e.eff), 'tag-pop up');
+        } else if (e.eff < 1) {
+          sfx('weak');
+          pop(e.side, effLabel(e.eff), 'tag-pop down');
+        } else sfx('hit');
+        await anim(spr, 'hurt', 420);
+        break;
+      }
+      case 'miss':
+        pop(e.side, 'MISS', 'miss');
+        await d(300);
+        break;
+      case 'heal': {
+        const m = dispMon(e.side);
+        v.disp.hp.set(m.uid, e.hp);
+        renderCard(e.side);
+        sfx('heal');
+        pop(e.side, `+${e.amount}`, 'heal');
+        await d(380);
+        break;
+      }
+      case 'status': {
+        const m = dispMon(e.side);
+        v.disp.status.set(m.uid, e.status ?? undefined);
+        renderCard(e.side);
+        if (e.status) {
+          sfx('debuff');
+          pop(e.side, STATUS_NAME[e.status], 'status st-' + e.status);
+        }
+        await d(200);
+        break;
+      }
+      case 'stat':
+        renderCard(e.side);
+        sfx(e.delta > 0 ? 'buff' : 'debuff');
+        pop(e.side, `${{ atk: '공격', def: '방어', spd: '스피드' }[e.stat]} ${e.delta > 0 ? '▲' : '▼'}`, e.delta > 0 ? 'buff' : 'debuff');
+        await d(380);
+        break;
+      case 'faint': {
+        const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
+        sfx('faint');
+        spr.classList.add('fainted');
+        renderTeamDots();
+        await d(650);
+        break;
+      }
+      case 'switch':
+        v.disp.idx[e.side] = e.idx;
+        if (e.side === 'e') seen(v.b.e.team[e.idx].speciesId);
+        renderSprite(e.side);
+        renderCard(e.side);
+        await anim(e.side === 'p' ? v.el.pSprite : v.el.eSprite, 'enter', 420);
+        break;
+      case 'en':
+        v.disp.en[e.side] = e.en;
+        renderCard(e.side);
+        break;
+      case 'capture':
+        await captureAnim(e.shakes, e.success);
+        break;
+      case 'exp': {
+        const m = v.b.p.team.find((x) => x.uid === e.uid);
+        if (!m || e.amount <= 0) break;
+        if (m === dispMon('p')) {
+          log(`${displayName(m)}은(는) 경험치 ${e.amount}을(를) 얻었다!`);
+          await d(420);
+        }
+        if (e.levels.length) {
+          sfx('level');
+          toast(`⬆ ${displayName(m)} Lv.${m.level}!${e.learned.length ? ' 새 기술: ' + e.learned.map((x) => getMove(x).name).join(', ') : ''}`, 'good');
+          if (m === dispMon('p')) renderCard('p');
+          await d(380);
+        }
+        break;
+      }
+      case 'end':
+        break;
+    }
+  }
+}
+
+async function captureAnim(shakes: number, success: boolean): Promise<void> {
+  const v = V!;
+  const spr = v.el.eSprite;
+  const ball = h('div', { class: 'capsule-fx' });
+  spr.appendChild(ball);
+  await sleep(450 * speedMult());
+  spr.classList.add('absorbed');
+  await sleep(350 * speedMult());
+  for (let i = 0; i < shakes; i++) {
+    sfx('shake');
+    await anim(ball, 'wobble', 520);
+  }
+  if (success) {
+    sfx('capture');
+    ball.classList.add('locked');
+    await sleep(700 * speedMult());
+  } else {
+    spr.classList.remove('absorbed');
+    ball.remove();
+    haptic(30);
+    await sleep(200 * speedMult());
+  }
+}
+
+// ─────────── 종료 ───────────
+async function finish(): Promise<void> {
+  const v = V!;
+  const b = v.b;
+  const r = run();
+  r.rngState = v.rng.state;
+  if (b.over === 'lose') {
+    log('눈앞이 캄캄해졌다…');
+    sfx('lose');
+    await sleep(1200);
+    V = null;
+    endRun(false);
+    return;
+  }
+  const out = applyBattleOutcome(r, b);
+  if (b.over === 'caught' && b.caughtMon) {
+    markCaught(app.meta, b.caughtMon.speciesId);
+    toast(`🎉 ${displayName(b.caughtMon)} ${out.caughtWhere === 'party' ? '파티 합류!' : '보관함으로 이동'}`, 'good');
+  } else {
+    sfx('win');
+    log(b.kind === 'boss' ? '보스를 쓰러뜨렸다!' : '승리!');
+  }
+  saveAll();
+  await sleep(700);
+  await processGrowth(b.pendingLearn);
+  V = null;
+  const node = r.map.nodes[r.currentNodeId!];
+  setBattleReward(b.kind, b.kind === 'boss' ? '👑 보스 격파 보상' : node.type === 'elite' ? '💀 엘리트 격파!' : b.over === 'caught' ? '포획 성공!' : '전투 승리!');
+}
+
+function showTutorial(): void {
+  const steps = [
+    ['◆ EN (에코 에너지)', '매 턴 EN이 1씩 차요 (최대 3). 강한 기술일수록 EN을 더 써요. FREE 기술은 언제나 사용 가능!'],
+    ['🎯 상성 배지', '기술 버튼의 「효과 굉장」·「KO!」 배지를 확인하세요. 상대 속성에 유리한 기술은 1.6배 피해를 줘요.'],
+    ['🔵 포획', '야생 에코링은 체력을 깎을수록, 상태이상일수록 잡기 쉬워요. 확률은 버튼에 표시돼요.'],
+    ['🔗 공명', '같은 속성 에코링이 파티에 2마리·3마리 모이면 세트 보너스가 발동해요!'],
+  ];
+  const s = openSheet('처음이신가요? 30초 가이드', h('div', { class: 'list' },
+    steps.map(([t, d]) => h('div', { class: 'card' }, h('b', null, t), h('p', { class: 'muted small' }, d))),
+    h('button', { class: 'btn primary block', onclick: () => s.close() }, '알겠어요!'),
+  ), { onClose: () => { app.meta.tutorialDone = true; saveMeta(app.meta); } });
+}

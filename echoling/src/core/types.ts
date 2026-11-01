@@ -185,7 +185,10 @@ export type PendingScreen =
   | { kind: 'reward'; options: RewardOption[]; gold: number; title: string }
   | { kind: 'shop'; stock: ShopEntry[] }
   | { kind: 'event'; eventId: string }
-  | { kind: 'rest' };
+  | { kind: 'rest' }
+  | { kind: 'treasure'; options: RewardOption[] }
+  | { kind: 'battle' }
+  | { kind: 'actClear' };
 
 export type RewardOption =
   | { kind: 'charm'; charmId: string }
