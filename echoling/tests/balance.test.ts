@@ -22,4 +22,12 @@ describe('밸런스 시뮬레이션 (봇 300런)', () => {
     expect(wins / N).toBeGreaterThan(0.05);
     expect(wins / N).toBeLessThan(0.7);
   }, 60000);
+
+  it('각성 10은 각성 0보다 어렵다', () => {
+    const N = 200;
+    const w = (a: number) => Array.from({ length: N }, (_, i) => simulateRun(5000 + i, ['embercat', 'puddlo', 'sproutle'][i % 3], undefined, a)).filter((r) => r.victory).length / N;
+    const a0 = w(0), a5 = w(5), a10 = w(10);
+    console.log(`각성별 봇 승률  A0 ${(a0 * 100).toFixed(1)}%  A5 ${(a5 * 100).toFixed(1)}%  A10 ${(a10 * 100).toFixed(1)}%`);
+    expect(a10).toBeLessThan(a0);
+  }, 120000);
 });

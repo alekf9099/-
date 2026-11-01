@@ -29,6 +29,14 @@ export interface BattleCtx {
   modifier?: string;
   /** 플레이어 파티 공명 단계 (속성 → 0|1|2) */
   resonance: Partial<Record<Element, number>>;
+  /** 각성 단계 */
+  ascension?: number;
+  /** 보유 골드 (미다스의 손) */
+  gold?: number;
+  /** 눈덩이 누적 */
+  snowball?: number;
+  /** 현재 액트 (0~2) */
+  act?: number;
 }
 
 export interface BattleState {
@@ -46,6 +54,14 @@ export interface BattleState {
   caughtMon?: Monster;
   /** 전투 후 처리 대기: 기술 습득 선택 */
   pendingLearn: { uid: string; moveId: string }[];
+  /** ⚔️ 적 행동 예고: 이번 턴 적이 사용할 기술 인덱스 (턴 시작 시 확정) */
+  eIntent: number | null;
+  /** 보스 분노 각성 발동 여부 */
+  phase2: boolean;
+  /** 선수필승 사용 여부 */
+  firstBloodUsed: boolean;
+  /** 과충전: 현재 실행 중 기술이 EN 가득 찬 상태에서 시작됐는가 */
+  overchargeNow: boolean;
 }
 
 export type BEvent =
@@ -61,6 +77,8 @@ export type BEvent =
   | { t: 'en'; side: Side; en: number }
   | { t: 'capture'; shakes: number; success: boolean }
   | { t: 'exp'; uid: string; amount: number; levels: number[]; learned: string[] }
+  | { t: 'phase'; side: Side }
+  | { t: 'revive' }
   | { t: 'end'; result: 'win' | 'lose' | 'caught' };
 
 export type PlayerAction =
@@ -132,9 +150,49 @@ export function createBattle(
     ctx,
     participants: [playerParty[firstAlive].uid],
     pendingLearn: [],
+    eIntent: null,
+    phase2: false,
+    firstBloodUsed: false,
+    overchargeNow: false,
   };
   if (ctx.charms.includes('firstStrike')) st.p.en = Math.min(maxEn, st.p.en + 1);
+  planIntent(st, null);
   return st;
+}
+
+function hasAffix(state: BattleState, side: Side, id: string): boolean {
+  return side === 'e' && !!activeOf(state, side).affixes?.includes(id);
+}
+
+/** ⚔️ 적의 이번 턴 행동을 확정 (플레이어가 보고 대응할 수 있게 공개) */
+export function planIntent(state: BattleState, rng: Rng | null): void {
+  if (state.over) {
+    state.eIntent = null;
+    return;
+  }
+  state.eIntent = chooseAiMove(state, 'e', rng);
+}
+
+export interface IntentInfo {
+  move: Move;
+  /** 현재 출전 중인 내 에코링에게 예상되는 피해 (변화기는 0) */
+  expected: number;
+  /** 예상 피해로 쓰러질 위험 */
+  lethal: boolean;
+  kind: 'attack' | 'buff' | 'debuff' | 'heal' | 'status';
+}
+
+export function intentInfo(state: BattleState): IntentInfo | null {
+  if (state.eIntent === null || state.over) return null;
+  const foe = activeOf(state, 'e');
+  const id = foe.moves[state.eIntent];
+  if (!id) return null;
+  const move = getMove(id);
+  const me = activeOf(state, 'p');
+  const expected = move.power > 0 ? Math.round(expectedDamage(state, 'e', move) / (move.acc / 100)) : 0;
+  const ef = move.effect ?? {};
+  const kind: IntentInfo['kind'] = move.power > 0 ? 'attack' : ef.healPct ? 'heal' : ef.status ? 'status' : ef.selfStat ? 'buff' : 'debuff';
+  return { move, expected, lethal: expected >= me.hp, kind };
 }
 
 function zeroStages(): Record<StatKey, number> {
@@ -166,6 +224,7 @@ export function effStat(state: BattleState, side: Side, stat: StatKey): number {
     if (hasCharm(state, side, 'speedShoes')) v *= 1.15;
     if (hasRes2(state, side, 'gale')) v *= 1.25;
     if (side === 'e' && mod === 'speedDemon') v *= 1.25;
+    if (hasAffix(state, side, 'swift')) v *= 1.3;
   }
   if (mod === 'glassCannon') {
     if (stat === 'atk') v *= 1.3;
@@ -221,12 +280,14 @@ export function calcDamage(state: BattleState, side: Side, move: Move, rng: Rng 
   if (atkMon.status === 'burn') dmg *= 0.75;
   // 대지 공명 2단계: 받는 피해 -15%
   if (hasRes2(state, other(side), 'terra')) dmg *= 0.85;
+  dmg *= damageMods(state, side, atkMon, defMon);
 
   let crit = false;
   if (rng) {
     let critP = BASE_CRIT + (move.effect?.critBonus ?? 0);
     if (hasCharm(state, side, 'critLens')) critP += 0.1;
     if (hasRes2(state, side, 'umbra')) critP += 0.15;
+    if (side === 'p' && hasCharm(state, side, 'firstBlood') && !state.firstBloodUsed) critP = 1;
     crit = rng.chance(critP);
     if (crit) dmg *= 1.5;
     dmg *= 0.85 + rng.next() * 0.15;
@@ -234,6 +295,32 @@ export function calcDamage(state: BattleState, side: Side, move: Move, rng: Rng 
     dmg *= 0.925;
   }
   return { dmg: Math.max(1, Math.floor(dmg)), eff, crit };
+}
+
+/** v0.2 부적·접두사·각성 피해 배율 (공격 측 side 기준) */
+function damageMods(state: BattleState, side: Side, atkMon: BattleMonster, defMon: BattleMonster): number {
+  let m = 1;
+  const ctx = state.ctx;
+  const def = other(side);
+  // 공격 측 (플레이어)
+  if (side === 'p') {
+    if (hasCharm(state, 'p', 'glassHeart')) m *= 1.35;
+    if (hasCharm(state, 'p', 'lonewolf') && state.p.team.length === 1) m *= 1.5;
+    if (hasCharm(state, 'p', 'collector')) m *= 1 + 0.04 * state.p.team.length;
+    if (hasCharm(state, 'p', 'catalyst') && defMon.status) m *= 1.3;
+    if (hasCharm(state, 'p', 'goldenTouch')) m *= 1 + Math.min(0.4, Math.floor((ctx.gold ?? 0) / 100) * 0.04);
+    if (hasCharm(state, 'p', 'snowball')) m *= 1 + 0.03 * (ctx.snowball ?? 0);
+    if (hasCharm(state, 'p', 'overcharge') && state.overchargeNow) m *= 1.3;
+  } else {
+    if ((ctx.ascension ?? 0) >= 8) m *= 1.1;
+    if (hasAffix(state, 'e', 'enraged') && atkMon.hp / maxHp(atkMon) <= 0.5) m *= 1.3;
+  }
+  // 방어 측
+  if (def === 'p') {
+    if (hasCharm(state, 'p', 'glassHeart')) m *= 1.2;
+    if (hasCharm(state, 'p', 'lonewolf') && state.p.team.length === 1) m *= 0.75;
+  } else if (hasAffix(state, 'e', 'armored')) m *= 0.8;
+  return m;
 }
 
 // ─────────── AI ───────────
@@ -311,8 +398,9 @@ export function resolveTurn(state: BattleState, action: PlayerAction, rng: Rng):
     queue.push({ side: 'p', kind: 'move', moveIdx: action.idx, priority: mv.priority ?? 0, speed: effStat(state, 'p', 'spd') });
   }
 
-  // 2) 적 행동 선택
-  const eIdx = chooseAiMove(state, 'e', rng);
+  // 2) 적 행동: 턴 시작 때 공개한 예고를 그대로 실행 (교체해도 바뀌지 않음 → 상성 교체 전략)
+  const planned = state.eIntent;
+  const eIdx = planned !== null && activeOf(state, 'e').moves[planned] ? planned : chooseAiMove(state, 'e', rng);
   const eMove = getMove(activeOf(state, 'e').moves[eIdx]);
   queue.push({ side: 'e', kind: 'move', moveIdx: eIdx, priority: eMove.priority ?? 0, speed: effStat(state, 'e', 'spd') });
 
@@ -329,6 +417,7 @@ export function resolveTurn(state: BattleState, action: PlayerAction, rng: Rng):
 
   if (!state.over) endOfTurn(state, rng, ev);
   if (!state.over) state.turn += 1;
+  planIntent(state, rng);
   return ev;
 }
 
@@ -371,9 +460,15 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
   }
   if (!canAct(state, side, rng, ev)) return;
 
+  state.overchargeNow = side === 'p' && s.en >= s.maxEn;
   s.en -= mv.cost;
   ev.push({ t: 'use', side, move: mv.id, name: displayName(user) });
   if (mv.cost > 0) ev.push({ t: 'en', side, en: s.en });
+  // 🔁 메아리 방: EN 환급
+  if (mv.cost > 0 && hasCharm(state, side, 'echoChamber') && rng.chance(0.3)) {
+    s.en = Math.min(s.maxEn, s.en + mv.cost);
+    ev.push({ t: 'en', side, en: s.en }, { t: 'msg', text: '🔁 메아리! EN이 돌아왔다.' });
+  }
 
   const tSide = other(side);
   const target = activeOf(state, tSide);
@@ -401,6 +496,7 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
       target.hp = Math.max(0, target.hp - dmg);
       total += dmg;
       ev.push({ t: 'hit', side: tSide, dmg, hp: target.hp, eff: c.eff, crit: c.crit, hitNo: hits > 1 ? h + 1 : undefined });
+      if (side === 'p') state.firstBloodUsed = true;
     }
     if (hits > 1) ev.push({ t: 'msg', text: `${hits}번 맞았다!` });
 
@@ -408,6 +504,7 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
     let drain = ef.drain ?? 0;
     if (hasCharm(state, side, 'vampFang')) drain += 0.12;
     if (hasRes2(state, side, 'bloom')) drain += 0.15;
+    if (hasAffix(state, side, 'vampiric')) drain += 0.2;
     if (drain > 0 && user.hp > 0) heal(state, side, Math.ceil(total * drain), ev);
 
     // 반동
@@ -421,6 +518,12 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
       const r = Math.max(1, Math.floor(total * 0.2));
       user.hp = Math.max(0, user.hp - r);
       ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false }, { t: 'msg', text: '🌵 가시에 찔렸다!' });
+    }
+    // 엘리트 가시 접두사
+    if (hasAffix(state, tSide, 'thorns') && user.hp > 0) {
+      const r = Math.max(1, Math.floor(total * 0.15));
+      user.hp = Math.max(0, user.hp - r);
+      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false }, { t: 'msg', text: '🌵 엘리트의 가시가 반격했다!' });
     }
     // 불꽃 공명2: 20% 화상
     if (hasRes2(state, side, 'blaze') && target.hp > 0 && !target.status && rng.chance(0.2)) {
@@ -443,6 +546,29 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
     if (ef.targetStat && (mv.power === 0 || procs)) {
       for (const [k, v] of Object.entries(ef.targetStat)) changeStage(state, tSide, k as StatKey, v, ev);
     }
+  }
+  state.overchargeNow = false;
+  checkPhase(state, ev);
+}
+
+/** 👑 보스 2페이즈: HP 50% 이하가 되는 순간 1회 분노 각성 */
+function checkPhase(state: BattleState, ev: BEvent[]): void {
+  if (state.kind !== 'boss' || state.phase2) return;
+  const boss = activeOf(state, 'e');
+  if (getSpecies(boss.speciesId).rarity !== 'legend' || boss.hp <= 0 || boss.hp > maxHp(boss) / 2) return;
+  state.phase2 = true;
+  // 액트1 보스는 학습용: 공격 상승 없이 스피드만. 액트2+는 공격 +1, 각성5+ 추가 +1
+  const atkUp = ((state.ctx.act ?? 0) >= 1 ? 1 : 0) + ((state.ctx.ascension ?? 0) >= 5 ? 1 : 0);
+  ev.push({ t: 'phase', side: 'e' }, { t: 'msg', text: `💢 ${displayName(boss)}이(가) 분노 각성했다!` });
+  if (atkUp > 0) changeStage(state, 'e', 'atk', atkUp, ev);
+  changeStage(state, 'e', 'spd', 1, ev);
+  if ((state.ctx.act ?? 0) >= 1) {
+    state.e.en = state.e.maxEn;
+    ev.push({ t: 'en', side: 'e', en: state.e.en });
+  }
+  if (boss.status) {
+    boss.status = undefined;
+    ev.push({ t: 'status', side: 'e', status: null });
   }
 }
 
@@ -502,6 +628,7 @@ export function forceSwitch(state: BattleState, idx: number): BEvent[] {
   if (!m || m.hp <= 0) return ev;
   state.needSwitch = false;
   doSwitch(state, 'p', idx, ev, true);
+  planIntent(state, null);
   return ev;
 }
 
@@ -551,6 +678,7 @@ export function captureChance(state: BattleState, item: 'capsule' | 'hyperCapsul
   if (item === 'hyperCapsule') p *= 2;
   if (state.ctx.charms.includes('tamerGlove')) p += 0.25;
   if (state.ctx.modifier === 'catchFever') p += 0.3;
+  if ((state.ctx.ascension ?? 0) >= 9) p -= 0.1;
   return Math.max(0.02, Math.min(0.97, p));
 }
 
@@ -625,6 +753,14 @@ function checkFaints(state: BattleState, rng: Rng, ev: BEvent[]): boolean {
   if (p.hp <= 0 && !state.over) {
     ev.push({ t: 'faint', side: 'p' }, { t: 'msg', text: `${displayName(p)}은(는) 쓰러졌다…` });
     p.status = undefined;
+    const phoenixIdx = state.ctx.charms.indexOf('phoenix');
+    if (state.p.team.every((m) => m.hp <= 0) && phoenixIdx >= 0) {
+      // 🪶 불사조 깃털: 런당 1회 (부적 소멸 → 런 데이터에도 반영됨)
+      state.ctx.charms.splice(phoenixIdx, 1);
+      for (const m of state.p.team) healPct(m, 0.5, true);
+      ev.push({ t: 'revive' }, { t: 'msg', text: '🪶 불사조 깃털이 타오르며 모두가 되살아났다!' });
+      return true; // 출전 중이던 에코링이 그대로 부활해 전투 계속
+    }
     if (state.p.team.every((m) => m.hp <= 0)) {
       state.over = 'lose';
       ev.push({ t: 'end', result: 'lose' });
@@ -658,6 +794,7 @@ function endOfTurn(state: BattleState, rng: Rng, ev: BEvent[]): void {
       let regen = 0;
       if (hasCharm(state, side, 'mossRegen')) regen += 0.05;
       if (hasRes2(state, side, 'tide')) regen += 0.04;
+      if (hasAffix(state, side, 'regen')) regen += 0.06;
       if (regen > 0 && m.hp < mx) heal(state, side, Math.ceil(mx * regen), ev);
     }
     // EN 회복
@@ -668,6 +805,7 @@ function endOfTurn(state: BattleState, rng: Rng, ev: BEvent[]): void {
     s.en = Math.min(s.maxEn, s.en + gain);
     if (s.en !== before) ev.push({ t: 'en', side, en: s.en });
   }
+  checkPhase(state, ev);
   checkFaints(state, rng, ev);
 }
 

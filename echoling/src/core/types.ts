@@ -179,16 +179,21 @@ export interface RunState {
   uidCounter: number;
   /** 대기중인 보상/화면 등 */
   pending?: PendingScreen;
+  /** 각성(난이도) 단계 0~10 */
+  ascension: number;
+  /** 눈덩이 부적 누적 스택 */
+  snowball: number;
 }
 
 export type PendingScreen =
-  | { kind: 'reward'; options: RewardOption[]; gold: number; title: string }
+  | { kind: 'reward'; options: RewardOption[]; gold: number; title: string; battleKind?: 'wild' | 'trainer' | 'elite' | 'boss'; rerolls?: number }
   | { kind: 'shop'; stock: ShopEntry[] }
   | { kind: 'event'; eventId: string }
   | { kind: 'rest' }
   | { kind: 'treasure'; options: RewardOption[] }
   | { kind: 'battle' }
-  | { kind: 'actClear' };
+  | { kind: 'actClear' }
+  | { kind: 'blessing'; options: string[] };
 
 export type RewardOption =
   | { kind: 'charm'; charmId: string }
@@ -221,6 +226,8 @@ export interface MetaSave {
   settings: Settings;
   /** 첫 실행 튜토리얼 완료 */
   tutorialDone: boolean;
+  /** 해금된 최대 각성 단계 */
+  maxAscension: number;
 }
 
 export interface Settings {

@@ -20,6 +20,7 @@ export function defaultMeta(): MetaSave {
     dailyBest: {},
     settings: { speed: 1, haptics: true, sound: true, reduceMotion: false },
     tutorialDone: false,
+    maxAscension: 0,
   };
 }
 
@@ -62,6 +63,8 @@ export function loadRun(): RunState | null {
   try {
     const r = JSON.parse(raw) as RunState;
     if (r.version !== RUN_VERSION || !r.party?.length) return null;
+    r.ascension ??= 0;
+    r.snowball ??= 0;
     return r;
   } catch {
     return null;
@@ -86,5 +89,7 @@ export function shardsForRun(run: RunState, victory: boolean): number {
   let s = run.floorsCleared * 2 + run.battlesWon + run.caught * 2 + run.act * 25;
   if (victory) s += 80;
   if (run.mode === 'daily' && run.dailyModifier === 'ironman' && victory) s = Math.floor(s * 1.5);
+  // 각성 보너스 +10%/단계
+  s = Math.floor(s * (1 + 0.1 * (run.ascension ?? 0)));
   return s;
 }

@@ -1,12 +1,13 @@
 // 런(1회 플레이) 진행 로직: 노드 진입 · 조우 생성 · 보상 · 상점 · 캠프
 import type { ItemId, MapNode, MetaSave, Monster, RewardOption, RunState, ShopEntry, Species } from '../core/types';
 import { Rng, dailySeed, hashString, todayKey } from '../core/rng';
-import { ACTS, DAILY_MODIFIERS, MAP_ROWS } from '../data/world';
+import { ACTS, BLESSINGS, DAILY_MODIFIERS, MAP_ROWS, MAX_ASCENSION } from '../data/world';
 import { BOSSES, SPECIES_LIST, getSpecies, wildPool } from '../data/species';
-import { CHARM_LIST, ITEMS } from '../data/charms';
+import { CHARM_LIST, ITEMS, getCharm, type Charm } from '../data/charms';
+import { AFFIX_IDS } from '../data/affixes';
 import { MOVE_LIST } from '../data/moves';
 import { generateMap } from './map';
-import { type BattleMonster, createMonster, evolvedFormFor, healPct, maxHp } from './monster';
+import { type BattleMonster, createMonster, evolvedFormFor, healPct, levelUp, maxHp } from './monster';
 import { RUN_VERSION } from './meta';
 import { type BattleKind, type BattleState, cleanupAfterBattle, computeResonance, createBattle } from './battle';
 
@@ -25,7 +26,7 @@ export function nextUid(run: RunState): string {
   return 'm' + run.uidCounter;
 }
 
-export function newRun(starterId: string, meta: MetaSave, mode: 'normal' | 'daily' = 'normal', seedOverride?: number): RunState {
+export function newRun(starterId: string, meta: MetaSave, mode: 'normal' | 'daily' = 'normal', seedOverride?: number, ascension = 0): RunState {
   const seed = seedOverride ?? (mode === 'daily' ? dailySeed() : (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
   const rng = new Rng(seed);
   const up = (id: string) => meta.upgrades[id] ?? 0;
@@ -48,7 +49,13 @@ export function newRun(starterId: string, meta: MetaSave, mode: 'normal' | 'dail
     caught: 0,
     startedAt: Date.now(),
     uidCounter: 0,
+    ascension: Math.max(0, Math.min(MAX_ASCENSION, ascension)),
+    snowball: 0,
   };
+  if (run.ascension >= 4) {
+    run.items.potion = Math.max(0, (run.items.potion ?? 0) - 1);
+    run.items.capsule = Math.max(0, (run.items.capsule ?? 0) - 1);
+  }
   if (mode === 'daily') {
     const mod = DAILY_MODIFIERS[hashString(todayKey()) % DAILY_MODIFIERS.length];
     run.dailyModifier = mod.id;
@@ -59,8 +66,60 @@ export function newRun(starterId: string, meta: MetaSave, mode: 'normal' | 'dail
   starter.iv = { hp: Math.max(starter.iv.hp, 8), atk: Math.max(starter.iv.atk, 8), def: Math.max(starter.iv.def, 8), spd: Math.max(starter.iv.spd, 8) };
   starter.hp = maxHp(starter);
   run.party.push(starter);
+  // 🌅 출발 축복: 5종 중 3개 제시
+  run.pending = { kind: 'blessing', options: rng.sample(BLESSINGS.map((b) => b.id), 3) };
   commitRng(run, rng);
   return run;
+}
+
+/** 각성 단계 n 이상인가 */
+export function asc(run: { ascension?: number }, n: number): boolean {
+  return (run.ascension ?? 0) >= n;
+}
+
+export function applyBlessing(run: RunState, id: string): string {
+  const rng = runRng(run);
+  let msg = '';
+  switch (id) {
+    case 'rareCharm': {
+      const c = randomCharms(rng, run, 1, 'rare', ['rare'])[0];
+      if (c) run.charms.push(c);
+      msg = c ? `${getCharm(c).icon} ${getCharm(c).name} 획득!` : '';
+      break;
+    }
+    case 'companion': {
+      const pool = wildPool(0).filter((s) => s.rarity !== 'common');
+      const m = createMonster(rng.pick(pool).id, 6, rng, nextUid(run), { evolve: true });
+      addMonster(run, m);
+      run.caught += 1;
+      msg = `${getSpecies(m.speciesId).name}이(가) 합류했다!`;
+      break;
+    }
+    case 'supplies':
+      run.gold += 100;
+      addItem(run, 'capsule', 3);
+      addItem(run, 'potion', 2);
+      msg = '골드 +100 · 캡슐 +3 · 포션 +2';
+      break;
+    case 'training': {
+      const st = run.party[0];
+      for (let i = 0; i < 3; i++) levelUp(st);
+      st.hp = maxHp(st);
+      msg = `${getSpecies(st.speciesId).name} Lv.${st.level}!`;
+      break;
+    }
+    case 'pact': {
+      const c = randomCharms(rng, run, 1, 'rare', ['epic'])[0];
+      if (c) run.charms.push(c);
+      run.gold = 0;
+      run.items.potion = 0;
+      msg = c ? `${getCharm(c).icon} ${getCharm(c).name} 획득… 대가를 치렀다.` : '';
+      break;
+    }
+  }
+  run.pending = undefined;
+  commitRng(run, rng);
+  return msg;
 }
 
 // ─────────── 레벨 스케일링 ───────────
@@ -100,7 +159,7 @@ export function makeEncounter(run: RunState, node: MapNode): Encounter {
   const rng = runRng(run);
   const act = run.act;
   const kind: BattleKind = node.type === 'boss' ? 'boss' : node.type === 'elite' ? 'elite' : node.type === 'trainer' ? 'trainer' : 'wild';
-  const lvl = enemyLevel(act, node.row, kind);
+  const lvl = enemyLevel(act, node.row, kind) + (asc(run, 6) ? 1 : 0) + (asc(run, 10) ? 1 : 0);
   const mk = (sid: string, l: number, evolve = true): BattleMonster => createMonster(sid, Math.max(2, l), rng, nextUid(run), { evolve });
   let enc: Encounter;
 
@@ -120,16 +179,26 @@ export function makeEncounter(run: RunState, node: MapNode): Encounter {
     lead.power = [1.05, 1.1, 1.12][act];
     lead.hpMult = [1.15, 1.25, 1.3][act];
     lead.hp = maxHp(lead);
+    // 💀 엘리트 접두사: 액트1 1개, 이후 1~2개, 각성2+ 하나 추가
+    const nAffix = Math.min(3, (act === 0 ? 1 : rng.int(1, 2)) + (asc(run, 2) ? 1 : 0));
+    lead.affixes = rng.sample(AFFIX_IDS, nAffix);
     const enemies: BattleMonster[] = act === 0 ? [lead] : [mk(pickWild(rng, act).id, lvl - 2), lead];
     enc = { kind, title: `엘리트 ${rng.pick(ELITE_NAMES)}이(가) 앞을 막아섰다!`, enemies };
   } else {
     const boss = mk(BOSSES[act], lvl, false);
     boss.power = [0.95, 1.1, 1.18][act];
-    boss.hpMult = [1.3, 2.2, 2.7][act];
+    boss.hpMult = [1.0, 1.9, 2.5][act] * (asc(run, 10) ? 1.15 : 1);
     boss.hp = maxHp(boss);
     const escorts: BattleMonster[] = [];
     for (let i = 0; i < act; i++) escorts.push(mk(pickWild(rng, act).id, lvl - 4));
     enc = { kind, title: `${BOSS_TITLES[act]}, ${getSpecies(boss.speciesId).name}!`, enemies: [...escorts, boss] };
+  }
+  // 각성1: 모든 적 체력 +10%
+  if (asc(run, 1)) {
+    for (const m of enc.enemies) {
+      m.hpMult = (m.hpMult ?? 1) * 1.1;
+      m.hp = maxHp(m);
+    }
   }
   commitRng(run, rng);
   return enc;
@@ -147,12 +216,20 @@ export function priceMult(run: RunState): number {
   let m = 1;
   if (run.charms.includes('bargain')) m *= 0.75;
   if (run.dailyModifier === 'richRun') m *= 1.5;
+  if (asc(run, 3)) m *= 1.15;
   return m;
 }
 
-function randomCharms(rng: Rng, run: RunState, n: number, minRarity?: 'rare'): string[] {
-  const pool = CHARM_LIST.filter((c) => !run.charms.includes(c.id) && (!minRarity || c.rarity !== 'common'));
-  const w: Record<string, number> = { common: 6, rare: 3, epic: 1 };
+/** 부적 추첨. 전설은 allowLegend(보스 보상)일 때만, only로 등급 고정 가능 */
+function randomCharms(rng: Rng, run: RunState, n: number, minRarity?: 'rare', only?: Charm['rarity'][], allowLegend = false): string[] {
+  const pool = CHARM_LIST.filter(
+    (c) =>
+      !run.charms.includes(c.id) &&
+      (!minRarity || c.rarity !== 'common') &&
+      (!only || only.includes(c.rarity)) &&
+      (c.rarity !== 'legend' || allowLegend || only?.includes('legend')),
+  );
+  const w: Record<string, number> = { common: 6, rare: 3, epic: 1, legend: 1.4 };
   const out: string[] = [];
   const cand = [...pool];
   while (out.length < n && cand.length) {
@@ -180,7 +257,7 @@ export function battleRewards(run: RunState, kind: BattleKind): { gold: number; 
   const gold = Math.round((baseGold + rng.int(0, 12) + run.act * 10) * goldMult(run));
   const options: RewardOption[] = [];
   if (kind === 'elite' || kind === 'boss') {
-    for (const c of randomCharms(rng, run, 3, kind === 'boss' ? 'rare' : undefined)) options.push({ kind: 'charm', charmId: c });
+    for (const c of randomCharms(rng, run, 3, kind === 'boss' ? 'rare' : undefined, undefined, kind === 'boss')) options.push({ kind: 'charm', charmId: c });
   } else {
     const items = new Set<ItemId>();
     while (items.size < 2) items.add(rng.weighted(ITEM_WEIGHTS));
@@ -193,6 +270,12 @@ export function battleRewards(run: RunState, kind: BattleKind): { gold: number; 
       const mv = rng.pick(MOVE_LIST.filter((m) => m.cost >= 1 && m.cost <= 2));
       options.push({ kind: 'move', moveId: mv.id });
     } else options.push({ kind: 'gold', amount: Math.round(30 * goldMult(run)) });
+  }
+  // 🍀 네잎클로버: 선택지 +1
+  if (run.charms.includes('luckyClover')) {
+    const extra = randomCharms(rng, run, 1, undefined, undefined, kind === 'boss')[0];
+    if (extra && !options.some((o) => o.kind === 'charm' && o.charmId === extra)) options.push({ kind: 'charm', charmId: extra });
+    else options.push({ kind: 'item', itemId: rng.weighted(ITEM_WEIGHTS), qty: 1 });
   }
   commitRng(run, rng);
   return { gold, options };
@@ -258,7 +341,7 @@ export function makeShop(run: RunState, meta: MetaSave): ShopEntry[] {
   }
   for (const c of randomCharms(rng, run, 2)) {
     const rarity = CHARM_LIST.find((x) => x.id === c)!.rarity;
-    stock.push({ id: 'c_' + c, kind: 'charm', ref: c, price: Math.round({ common: 110, rare: 170, epic: 260 }[rarity] * pm), qty: 1 });
+    stock.push({ id: 'c_' + c, kind: 'charm', ref: c, price: Math.round({ common: 110, rare: 170, epic: 260, legend: 400 }[rarity] * pm), qty: 1 });
   }
   // 희귀 에코링 분양
   const rare = wildPool(run.act).filter((s) => s.rarity !== 'common');
@@ -274,7 +357,7 @@ export function makeShop(run: RunState, meta: MetaSave): ShopEntry[] {
 
 // ─────────── 캠프 ───────────
 export function restHeal(run: RunState): void {
-  const pct = run.dailyModifier === 'ironman' ? 0.3 : 0.6;
+  const pct = run.dailyModifier === 'ironman' ? 0.3 : asc(run, 7) ? 0.45 : 0.6;
   for (const m of run.party) {
     healPct(m, pct, true);
     if (m.status) m.status = undefined;
@@ -312,6 +395,7 @@ export function applyBattleOutcome(run: RunState, b: BattleState): { caughtWhere
   const out: { caughtWhere?: 'party' | 'box' } = {};
   if (b.over === 'win' || b.over === 'caught') {
     run.battlesWon += 1;
+    if (run.charms.includes('snowball')) run.snowball += 1;
     // 승리 후 숨 고르기: 파티 10% 회복 (+휴대 구급함 12%), 기절한 동료도 10%로 일어남
     const pct = 0.1 + (run.charms.includes('medkit') ? 0.12 : 0);
     for (const m of run.party) healPct(m, pct, true);
@@ -330,5 +414,25 @@ export function buildBattle(run: RunState, enc: Encounter): BattleState {
     charms: run.charms,
     modifier: run.dailyModifier,
     resonance: computeResonance(run.party, run.charms),
+    ascension: run.ascension ?? 0,
+    gold: run.gold,
+    snowball: run.snowball ?? 0,
+    act: run.act,
   });
+}
+
+/** 🎲 보상 다시 뽑기 비용 */
+export function rerollCost(rerolls: number): number {
+  return 20 + rerolls * 15;
+}
+
+export function rerollRewards(run: RunState): boolean {
+  const p = run.pending;
+  if (p?.kind !== 'reward' || !p.battleKind) return false;
+  const cost = rerollCost(p.rerolls ?? 0);
+  if (run.gold < cost) return false;
+  run.gold -= cost;
+  p.options = battleRewards(run, p.battleKind).options;
+  p.rerolls = (p.rerolls ?? 0) + 1;
+  return true;
 }

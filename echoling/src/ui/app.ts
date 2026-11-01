@@ -17,7 +17,7 @@ export function saveAll(): void {
 
 export type Route =
   | 'title' | 'starter' | 'map' | 'battle' | 'reward' | 'shop' | 'rest' | 'event' | 'treasure'
-  | 'runEnd' | 'dex' | 'lab' | 'settings' | 'actClear';
+  | 'runEnd' | 'dex' | 'lab' | 'settings' | 'actClear' | 'blessing';
 
 type ScreenFn = (arg?: any) => HTMLElement; // eslint-disable-line @typescript-eslint/no-explicit-any
 const routes: Partial<Record<Route, ScreenFn>> = {};

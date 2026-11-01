@@ -12,7 +12,7 @@ export interface ActInfo {
 }
 
 export const ACTS: ActInfo[] = [
-  { name: '이끼숲', sub: 'ACT 1 · Mossy Woods', bg: ['#0f2a1d', '#1f4d33'], boss: 'mossking', levels: [3, 10], bossLevel: 13 },
+  { name: '이끼숲', sub: 'ACT 1 · Mossy Woods', bg: ['#0f2a1d', '#1f4d33'], boss: 'mossking', levels: [3, 10], bossLevel: 12 },
   { name: '폭풍 협곡', sub: 'ACT 2 · Storm Canyon', bg: ['#141a3a', '#2b3d7a'], boss: 'tempestwyrm', levels: [13, 24], bossLevel: 27 },
   { name: '에코 코어', sub: 'ACT 3 · Echo Core', bg: ['#1a0d2e', '#4a1f5c'], boss: 'eclipsion', levels: [27, 37], bossLevel: 41 },
 ];
@@ -76,3 +76,37 @@ export const STARTER_UNLOCK_COST: Record<string, number> = {
   zaprit: 120,
   gloomouse: 200,
 };
+
+// ─────────── 🔥 각성 (Ascension) — 누적 난이도 ───────────
+export const MAX_ASCENSION = 10;
+export const ASCENSION_RULES: string[] = [
+  '기본 난이도',
+  '적 체력 +10%',
+  '엘리트 접두사 +1',
+  '상점 가격 +15%',
+  '시작 포션·캡슐 -1',
+  '보스 분노 강화 (공격 +2단계)',
+  '적 레벨 +1',
+  '캠프 회복 60% → 45%',
+  '적 공격 +10%',
+  '포획 확률 -10%p',
+  '보스 체력 +15%, 적 레벨 +1 추가',
+];
+
+// ─────────── 🌅 출발 축복 ───────────
+export interface Blessing {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  /** 대가형 */
+  cursed?: boolean;
+}
+
+export const BLESSINGS: Blessing[] = [
+  { id: 'rareCharm', name: '희귀 부적', icon: '🎁', desc: '희귀 등급 부적 1개를 받는다.' },
+  { id: 'companion', name: '첫 동료', icon: '🤝', desc: '1액트 희귀 에코링이 동료로 합류한다.' },
+  { id: 'supplies', name: '보급품', icon: '📦', desc: '골드 +100, 싱크 캡슐 +3, 에코 포션 +2.' },
+  { id: 'training', name: '특훈', icon: '🏋️', desc: '스타터 레벨 +3.' },
+  { id: 'pact', name: '금단의 계약', icon: '🩸', desc: '영웅 등급 부적 1개. 대신 골드·포션을 모두 잃는다.', cursed: true },
+];

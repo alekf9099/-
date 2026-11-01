@@ -75,7 +75,7 @@ export function expBar(m: Monster): HTMLElement {
 
 export function charmIcon(id: string): HTMLElement {
   const c = getCharm(id);
-  return h('button', { class: 'charm-icon r-' + c.rarity, 'aria-label': c.name, onclick: () => openSheet(c.name, h('div', { class: 'pad center' }, h('div', { class: 'big-emoji' }, c.icon), h('p', null, c.desc), h('small', { class: 'muted' }, rarityName(c.rarity)))) }, c.icon);
+  return h('button', { class: 'charm-icon r-' + c.rarity, 'aria-label': c.name, onclick: () => openSheet(c.name, h('div', { class: 'pad center' }, h('div', { class: 'big-emoji' }, c.icon), h('p', null, c.desc), h('small', { class: 'muted' }, rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '')))) }, c.icon);
 }
 
 export function rarityName(r: string): string {

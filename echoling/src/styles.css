@@ -294,6 +294,60 @@ p { line-height: 1.5; }
 .capsule-fx.locked { animation: locked 0.7s forwards; }
 .boss-intro .side.e .sprite { animation: boss-in 0.9s ease-out; }
 
+/* ── v0.2 희귀도·카드 연출 */
+.reward-card.r-legend, .shop-card.r-legend { border-color: rgba(255, 216, 74, 0.85); background: linear-gradient(135deg, rgba(255, 216, 74, 0.2), rgba(255, 122, 89, 0.1) 60%, var(--panel)); box-shadow: 0 0 18px rgba(255, 216, 74, 0.25); }
+.charm-icon.r-legend { border-color: #ffd84a; box-shadow: 0 0 12px rgba(255, 216, 74, 0.55); }
+.reward-card.cursed { border-color: rgba(255, 77, 109, 0.7); background: linear-gradient(135deg, rgba(120, 10, 40, 0.35), var(--panel)); }
+.deal { animation: deal 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes deal { from { opacity: 0; transform: translateY(24px) rotate(-2deg) scale(0.96); } }
+.eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: #ffcf8a; }
+.blessing-page { position: relative; overflow: hidden; }
+.dawn { position: absolute; inset: -20% -10% auto; height: 60%; background: radial-gradient(60% 60% at 50% 30%, rgba(255, 190, 110, 0.35), transparent 70%); pointer-events: none; }
+
+/* ── v0.2 각성·결과 카드 */
+.asc-picker { margin: 10px 16px 0; padding: 12px 14px; border-radius: var(--r); background: linear-gradient(135deg, rgba(255, 61, 110, 0.12), rgba(255, 159, 67, 0.06)); border: 1px solid rgba(255, 61, 110, 0.35); }
+.asc-level { font-size: 20px; font-weight: 900; }
+.asc-rules { margin: 8px 0 4px; padding-left: 0; list-style: none; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; max-height: 120px; overflow-y: auto; }
+.asc-rules li.new { color: #ffd5c2; font-weight: 700; }
+.asc-locked { font-size: 12.5px; color: var(--muted); }
+.asc-unlock { padding: 10px 16px; border-radius: 14px; background: linear-gradient(90deg, #ff3d6e, #ff9f43); color: #fff; font-weight: 900; display: flex; flex-direction: column; align-items: center; animation: pop-in 0.5s; }
+.asc-unlock small { font-weight: 600; opacity: 0.9; }
+.build-card { width: 100%; text-align: left; padding: 14px; border-radius: var(--r); background: linear-gradient(160deg, #221c45, #151229); border: 1px solid rgba(124, 92, 255, 0.45); display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.bc-party { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.bc-mon { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--muted); }
+.bc-mon.fainted { filter: grayscale(1) opacity(0.5); }
+.bc-charms { display: flex; flex-wrap: wrap; gap: 4px; }
+.bc-charm { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--stroke); font-size: 16px; }
+.bc-charm.r-rare { border-color: #4fb8ff; } .bc-charm.r-epic { border-color: #c27bff; } .bc-charm.r-legend { border-color: #ffd84a; box-shadow: 0 0 8px rgba(255, 216, 74, 0.5); }
+.bc-seed code { font-size: 13px; color: #b9a6ff; letter-spacing: 0.06em; }
+
+/* ── v0.2 맵 */
+.boss-preview { margin-top: 8px; width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 14px; background: linear-gradient(90deg, rgba(255, 61, 110, 0.18), rgba(255, 159, 67, 0.08)); border: 1px solid rgba(255, 61, 110, 0.4); text-align: left; }
+.boss-preview small { display: block; font-size: 10px; color: #ffb3c1; font-weight: 800; letter-spacing: 0.05em; }
+.boss-preview b { font-size: 14px; }
+.bp-face { width: 36px; height: 36px; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: rgba(0, 0, 0, 0.25); flex: 0 0 auto; }
+.bp-more { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.pill.asc { background: linear-gradient(90deg, #ff3d6e, #ff9f43); color: #fff; }
+
+/* ── v0.2 전투: 예고 · 접두사 · 분노 */
+.e-col { display: flex; flex-direction: column; gap: 6px; width: 52%; max-width: 230px; align-self: flex-start; }
+.e-col .b-card { width: 100%; }
+.intent { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 12px; background: rgba(14, 12, 30, 0.88); border: 1.5px solid color-mix(in srgb, var(--c) 70%, transparent); font-size: 12.5px; text-align: left; box-shadow: 0 0 14px color-mix(in srgb, var(--c) 30%, transparent); animation: pop-in 0.3s; }
+.intent b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.intent-label { font-size: 10px; font-weight: 800; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+.intent-dmg { font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; color: #ffd5c2; }
+.intent.hot .intent-dmg { color: #ff9a6b; }
+.intent.cool .intent-dmg { color: #9fd6ff; }
+.intent.lethal { border-color: var(--bad); background: rgba(80, 10, 30, 0.9); animation: lethal-pulse 1s ease-in-out infinite; }
+.intent.lethal .intent-dmg { color: #fff; background: var(--bad); padding: 1px 6px; border-radius: 6px; }
+.affix-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.affix-chip { font-size: 10.5px; font-weight: 800; padding: 2px 7px; border-radius: 6px; background: rgba(255, 77, 109, 0.18); border: 1px solid rgba(255, 77, 109, 0.5); color: #ffc2cd; }
+.rage-chip { font-size: 11px; font-weight: 900; color: #fff; background: linear-gradient(90deg, #ff3d6e, #ff9f43); padding: 2px 8px; border-radius: 6px; align-self: flex-start; }
+.arena.rage::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 70% 25%, rgba(255, 61, 110, 0.55), transparent 60%); animation: rage-flash 0.9s ease-out forwards; pointer-events: none; }
+.arena.revive-fx::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 75%, rgba(255, 200, 80, 0.6), transparent 60%); animation: rage-flash 0.9s ease-out forwards; pointer-events: none; }
+@keyframes rage-flash { from { opacity: 1; } to { opacity: 0; } }
+@keyframes lethal-pulse { 50% { box-shadow: 0 0 22px rgba(255, 77, 109, 0.8); } }
+
 /* ── 보상/상점/캠프/이벤트 */
 .reward-card { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: var(--r); background: var(--panel); border: 1px solid var(--stroke); text-align: left; transition: transform 0.08s; }
 .reward-card:active:not(:disabled) { transform: scale(0.98); }

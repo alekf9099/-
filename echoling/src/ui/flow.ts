@@ -8,6 +8,7 @@ import { canEvolve, displayName, evolve } from '../game/monster';
 import { advanceAct, battleRewards, makeShop, newRun, treasureRewards } from '../game/run';
 import type { BattleKind } from '../game/battle';
 import { todayKey } from '../core/rng';
+import { MAX_ASCENSION } from '../data/world';
 import { app, go, saveAll } from './app';
 import { h, openSheet, sleep } from './dom';
 import { sfx } from './fx';
@@ -19,12 +20,12 @@ export function run(): RunState {
   return app.run;
 }
 
-export function startRun(starterId: string, mode: 'normal' | 'daily'): void {
-  app.run = newRun(starterId, app.meta, mode);
+export function startRun(starterId: string, mode: 'normal' | 'daily', ascension = 0): void {
+  app.run = newRun(starterId, app.meta, mode, undefined, mode === 'daily' ? 0 : ascension);
   app.meta.totalRuns += 1;
   markCaught(app.meta, starterId);
   saveAll();
-  go('map');
+  resume();
 }
 
 /** 저장된 pending 상태로 복귀 */
@@ -38,6 +39,7 @@ export function resume(): void {
     case 'treasure': return go('treasure');
     case 'battle': return go('battle');
     case 'actClear': return go('actClear');
+    case 'blessing': return go('blessing');
     default: return go('map');
   }
 }
@@ -102,7 +104,7 @@ export function proceedAfterActClear(): void {
 export function setBattleReward(kind: BattleKind, title: string): void {
   const r = run();
   const rw = battleRewards(r, kind);
-  r.pending = { kind: 'reward', options: rw.options, gold: rw.gold, title };
+  r.pending = { kind: 'reward', options: rw.options, gold: rw.gold, title, battleKind: kind, rerolls: 0 };
   saveAll();
   go('reward');
 }
@@ -114,13 +116,19 @@ export function endRun(victory: boolean): void {
   m.shards += shards;
   m.bestFloor = Math.max(m.bestFloor, r.floorsCleared + r.act * 100);
   if (victory) m.wins += 1;
+  // 🔥 각성 해금: 현재 최고 단계를 클리어하면 다음 단계 열림
+  let ascUnlocked: number | null = null;
+  if (victory && r.mode === 'normal' && (r.ascension ?? 0) >= (m.maxAscension ?? 0) && (m.maxAscension ?? 0) < MAX_ASCENSION) {
+    m.maxAscension = (r.ascension ?? 0) + 1;
+    ascUnlocked = m.maxAscension;
+  }
   if (r.mode === 'daily') {
     const k = todayKey();
     const score = r.floorsCleared + (victory ? 100 : 0);
     m.dailyBest[k] = Math.max(m.dailyBest[k] ?? 0, score);
   }
   for (const mon of [...r.party, ...r.box]) markCaught(m, mon.speciesId);
-  const summary = { victory, shards, run: JSON.parse(JSON.stringify(r)) as RunState };
+  const summary = { victory, shards, ascUnlocked, run: JSON.parse(JSON.stringify(r)) as RunState };
   app.run = null;
   saveAll();
   go('runEnd', summary);

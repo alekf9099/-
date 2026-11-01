@@ -11,6 +11,8 @@ import { MOVES } from '../data/moves';
 export interface EnemyBoost {
   power?: number;
   hpMult?: number;
+  /** 엘리트 접두사 */
+  affixes?: string[];
 }
 
 export type BattleMonster = Monster & EnemyBoost;

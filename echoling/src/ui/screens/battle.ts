@@ -1,16 +1,17 @@
 // 전투 화면 — 엔진 이벤트를 순차 재생 (연출과 로직 분리)
 import type { ItemId, StatusId } from '../../core/types';
 import { Rng } from '../../core/rng';
-import { ELEMENTS, effLabel } from '../../data/elements';
+import { ELEMENTS, effLabel, effectiveness } from '../../data/elements';
+import { AFFIXES } from '../../data/affixes';
 import { getMove } from '../../data/moves';
 import { getSpecies } from '../../data/species';
 import { ITEMS } from '../../data/charms';
 import { ACTS } from '../../data/world';
 import {
   type BEvent, type BattleState, type Side, type PlayerAction,
-  activeOf, captureChance, chooseAiMove, expectedDamage, forceSwitch, previewEff, resolveTurn, STATUS_NAME,
+  activeOf, captureChance, chooseAiMove, expectedDamage, forceSwitch, intentInfo, previewEff, resolveTurn, STATUS_NAME,
 } from '../../game/battle';
-import { displayName, maxHp } from '../../game/monster';
+import { type BattleMonster, displayName, maxHp } from '../../game/monster';
 import { applyBattleOutcome, buildBattle, makeEncounter } from '../../game/run';
 import { app, register, saveAll } from '../app';
 import { bar, h, openSheet, sleep, toast, type Sheet } from '../dom';
@@ -49,9 +50,10 @@ register('battle', () => {
   el.moves = h('div', { class: 'b-moves' });
   el.sub = h('div', { class: 'b-sub' });
   el.teamDots = h('div', { class: 'team-dots' });
+  el.intent = h('button', { class: 'intent', hidden: true, 'aria-live': 'polite' });
   el.arena = h('div', { class: 'arena' },
     h('div', { class: 'arena-floor e' }), h('div', { class: 'arena-floor p' }),
-    h('div', { class: 'side e' }, el.eCard, el.eSprite),
+    h('div', { class: 'side e' }, h('div', { class: 'e-col' }, el.eCard, el.intent), el.eSprite),
     h('div', { class: 'side p' }, el.pSprite, el.pCard),
   );
   el.autoBtn = h('button', { class: 'chip-btn', 'aria-pressed': 'false', onclick: () => toggleAuto() }, '⚡ AUTO');
@@ -106,12 +108,41 @@ function renderCard(side: Side): void {
   const st = v.disp.status.get(m.uid);
   const card = side === 'p' ? v.el.pCard : v.el.eCard;
   card.innerHTML = '';
-  card.append(
+  const rows: (HTMLElement | null)[] = [
     h('div', { class: 'row between' }, h('b', { class: 'b-name' }, displayName(m), m.shiny ? ' ✦' : ''), h('span', { class: 'lv' }, 'Lv.' + m.level)),
     h('div', { class: 'row gap-s' }, elChips(sp.elements, true), st ? h('span', { class: 'status-chip st-' + st }, STATUS_NAME[st]) : null, stageChips(side)),
+    side === 'e' && (m as BattleMonster).affixes?.length
+      ? h('div', { class: 'affix-row' }, (m as BattleMonster).affixes!.map((id) => h('button', { class: 'affix-chip', onclick: () => toast(`${AFFIXES[id].icon} ${AFFIXES[id].name}: ${AFFIXES[id].desc}`) }, `${AFFIXES[id].icon}${AFFIXES[id].name}`)))
+      : null,
+    side === 'e' && v.b.phase2 ? h('span', { class: 'rage-chip' }, '💢 분노') : null,
     h('div', { class: 'hp-line' }, bar(hp / mx, 'hp'), side === 'p' ? h('span', { class: 'hp-num' }, `${hp}/${mx}`) : h('span', { class: 'hp-num' }, `${Math.ceil((hp / mx) * 100)}%`)),
     side === 'p' ? enPips(v.disp.en.p, v.b.p.maxEn) : enPips(v.disp.en.e, v.b.e.maxEn, true),
+  ];
+  card.append(...rows.filter((x): x is HTMLElement => !!x));
+}
+
+/** ⚔️ 적 행동 예고 배너 */
+function renderIntent(): void {
+  const v = V!;
+  const el = v.el.intent;
+  const info = v.busy || v.b.needSwitch ? null : intentInfo(v.b);
+  el.hidden = !info;
+  if (!info) return;
+  const e = ELEMENTS[info.move.element];
+  const me = activeOf(v.b, 'p');
+  const icon = { attack: '⚔️', buff: '⬆️', debuff: '⬇️', heal: '💚', status: '💤' }[info.kind];
+  const eff = info.move.power > 0 ? effectiveness(info.move.element, getSpecies(me.speciesId).elements) : 1;
+  el.className = 'intent' + (info.lethal ? ' lethal' : '') + (eff > 1 ? ' hot' : eff < 1 ? ' cool' : '');
+  el.style.setProperty('--c', e.color);
+  el.innerHTML = '';
+  el.append(
+    h('span', { class: 'intent-label' }, '다음 행동'),
+    h('b', null, `${icon} ${info.move.name}`),
+    info.kind === 'attack'
+      ? h('span', { class: 'intent-dmg' }, `~${info.expected}${info.lethal ? ' 위험!' : eff > 1 ? ' 약점' : eff < 1 ? ' 저항' : ''}`)
+      : h('span', { class: 'intent-dmg' }, { buff: '자기 강화', debuff: '약화', heal: '회복', status: '상태이상', attack: '' }[info.kind]),
   );
+  el.onclick = () => toast(`${info.move.name}: ${info.move.desc}${info.kind === 'attack' ? ` · 현재 ${displayName(me)}에게 약 ${info.expected} 피해 예상` : ''}`);
 }
 
 function stageChips(side: Side): HTMLElement | null {
@@ -192,6 +223,7 @@ function renderAll(): void {
   renderSprite('e');
   renderTeamDots();
   renderMoves();
+  renderIntent();
 }
 
 // ─────────── 입력 ───────────
@@ -201,6 +233,7 @@ async function act(a: PlayerAction): Promise<void> {
   sfx('tap');
   v.busy = true;
   renderMoves();
+  renderIntent();
   snapshot();
   const ev = resolveTurn(v.b, a, v.rng);
   await play(ev);
@@ -463,6 +496,24 @@ async function play(events: BEvent[]): Promise<void> {
         }
         break;
       }
+      case 'phase': {
+        sfx('crit');
+        haptic([40, 40, 80]);
+        if (!app.meta.settings.reduceMotion) void anim(v.el.arena, 'shake', 350);
+        void anim(v.el.arena, 'rage', 900);
+        toast('💢 보스 분노 각성! 공격 패턴이 강해집니다', 'bad');
+        renderCard('e');
+        await d(700);
+        break;
+      }
+      case 'revive':
+        sfx('evolve');
+        for (const m of v.b.p.team) v.disp.hp.set(m.uid, m.hp);
+        renderSprite('p');
+        renderCard('p');
+        void anim(v.el.arena, 'revive-fx', 900);
+        await d(900);
+        break;
       case 'end':
         break;
     }
@@ -525,6 +576,7 @@ async function finish(): Promise<void> {
 
 function showTutorial(): void {
   const steps = [
+    ['🎯 행동 예고', '적 카드 아래에 적이 이번 턴에 쓸 기술과 예상 피해가 보여요. 「위험!」이면 교체하거나 회복하세요. 예고는 교체해도 바뀌지 않아요!'],
     ['◆ EN (에코 에너지)', '매 턴 EN이 1씩 차요 (최대 3). 강한 기술일수록 EN을 더 써요. FREE 기술은 언제나 사용 가능!'],
     ['🎯 상성 배지', '기술 버튼의 「효과 굉장」·「KO!」 배지를 확인하세요. 상대 속성에 유리한 기술은 1.6배 피해를 줘요.'],
     ['🔵 포획', '야생 에코링은 체력을 깎을수록, 상태이상일수록 잡기 쉬워요. 확률은 버튼에 표시돼요.'],

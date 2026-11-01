@@ -5,7 +5,9 @@ export interface Charm {
   id: string;
   name: string;
   icon: string;
-  rarity: 'common' | 'rare' | 'epic';
+  rarity: 'common' | 'rare' | 'epic' | 'legend';
+  /** 빌드 축 태그 (UI 표시용) */
+  tag?: string;
   desc: string;
   /** 속성 강화 부적 */
   element?: Element;
@@ -45,6 +47,18 @@ const list: Charm[] = [
   { id: 'speedShoes', name: '질풍 신발', icon: '👟', rarity: 'common', desc: '스피드 +15%.' },
   { id: 'statusWard', name: '정화 부적', icon: '🧿', rarity: 'rare', desc: '상태이상 저항 50%.' },
   { id: 'bargain', name: '단골 카드', icon: '💳', rarity: 'common', desc: '상점 가격 -25%.' },
+  // ── v0.2 빌드 정의 부적
+  { id: 'snowball', name: '눈덩이', icon: '❄️', rarity: 'legend', tag: '성장', desc: '전투 승리마다 모든 피해 +3% 누적 (상한 없음).' },
+  { id: 'echoChamber', name: '메아리 방', icon: '🔁', rarity: 'legend', tag: 'EN', desc: 'EN을 쓰는 기술 사용 시 30% 확률로 EN 환급.' },
+  { id: 'phoenix', name: '불사조 깃털', icon: '🪶', rarity: 'legend', tag: '생존', desc: '런당 1회, 전멸하는 순간 파티 전원이 HP 50%로 부활 (사용 후 소멸).' },
+  { id: 'goldenTouch', name: '미다스의 손', icon: '👑', rarity: 'legend', tag: '골드', desc: '보유 골드 100당 피해 +4% (최대 +40%).' },
+  { id: 'glassHeart', name: '유리 심장', icon: '💔', rarity: 'epic', tag: '리스크', desc: '주는 피해 +35%, 받는 피해 +20%.' },
+  { id: 'lonewolf', name: '외로운 늑대', icon: '🐺', rarity: 'epic', tag: '솔로', desc: '파티가 1마리일 때 주는 피해 +50%, 받는 피해 -25%.' },
+  { id: 'overcharge', name: '과충전', icon: '⚡', rarity: 'epic', tag: 'EN', desc: 'EN이 가득 찬 상태에서 쓰는 기술 피해 +30%.' },
+  { id: 'firstBlood', name: '선수필승', icon: '🩸', rarity: 'rare', tag: '버스트', desc: '매 전투 첫 공격은 치명타 확정.' },
+  { id: 'collector', name: '수집가', icon: '📚', rarity: 'rare', tag: '풀파티', desc: '파티 1마리당 주는 피해 +4%.' },
+  { id: 'catalyst', name: '촉매', icon: '🧪', rarity: 'rare', tag: '상태이상', desc: '상태이상에 걸린 적에게 주는 피해 +30%.' },
+  { id: 'luckyClover', name: '네잎클로버', icon: '🍀', rarity: 'rare', tag: '선택지', desc: '전투 보상 선택지 +1.' },
 ];
 
 export const CHARMS: Record<string, Charm> = Object.fromEntries(list.map((c) => [c.id, c]));

@@ -5,9 +5,10 @@ import { CHARMS, ITEMS, getCharm } from '../../data/charms';
 import { getMove } from '../../data/moves';
 import { getSpecies } from '../../data/species';
 import { createMonster, displayName, gainExp, expToNext } from '../../game/monster';
-import { addItem, addMonster, makeShop, nextUid, restHeal, MAX_PARTY } from '../../game/run';
+import { addItem, addMonster, applyBlessing, makeShop, nextUid, rerollCost, rerollRewards, restHeal, MAX_PARTY } from '../../game/run';
+import { BLESSINGS } from '../../data/world';
 import { markCaught } from '../../game/meta';
-import { app, register, saveAll } from '../app';
+import { app, go, register, saveAll } from '../app';
 import { confirmSheet, h, openSheet, toast } from '../dom';
 import { sfx } from '../fx';
 import { elChips, monRow, moveCard, rarityName } from '../components';
@@ -34,7 +35,7 @@ function optionCard(o: RewardOption, onPick: () => void): HTMLElement {
   switch (o.kind) {
     case 'charm': {
       const c = getCharm(o.charmId);
-      icon = c.icon; name = c.name; desc = c.desc; tag = '부적 · ' + rarityName(c.rarity);
+      icon = c.icon; name = c.name; desc = c.desc; tag = '부적 · ' + rarityName(c.rarity) + (c.tag ? ` · #${c.tag}` : '');
       break;
     }
     case 'item': {
@@ -119,12 +120,64 @@ register('reward', () => {
     claimGold();
     completeNode();
   };
+  const list = h('div', { class: 'list' });
+  const reroll = h('button', { class: 'btn ghost grow' });
+  const renderOpts = () => {
+    list.innerHTML = '';
+    list.append(...p.options.map((o, i) => {
+      const card = optionCard(o, () => { sfx('tap'); void finish(o); });
+      card.style.animationDelay = `${i * 70}ms`;
+      card.classList.add('deal');
+      return card;
+    }));
+    const cost = rerollCost(p.rerolls ?? 0);
+    reroll.textContent = `🎲 다시 뽑기 · ${cost}G (보유 ${r.gold}G)`;
+    (reroll as HTMLButtonElement).disabled = !p.battleKind || r.gold < cost;
+  };
+  reroll.onclick = () => {
+    if (!rerollRewards(r)) return toast('골드가 부족해요', 'bad');
+    sfx('shake');
+    saveAll();
+    renderOpts();
+  };
+  renderOpts();
   return h('div', { class: 'page' },
     topbar(p.title),
     h('div', { class: 'gold-burst' }, `+${p.gold} 🪙`),
     h('p', { class: 'center muted' }, '보상을 하나 선택하세요'),
-    h('div', { class: 'list' }, p.options.map((o) => optionCard(o, () => { sfx('tap'); void finish(o); }))),
-    h('button', { class: 'btn ghost block', onclick: () => finish() }, '건너뛰기 (골드만 받기)'),
+    list,
+    h('div', { class: 'row gap' }, reroll, h('button', { class: 'btn ghost grow', onclick: () => finish() }, '건너뛰기')),
+  );
+});
+
+// ─────────── 🌅 출발 축복 ───────────
+register('blessing', () => {
+  const r = run();
+  const p = r.pending;
+  if (p?.kind !== 'blessing') return h('div');
+  const starter = r.party[0];
+  return h('div', { class: 'page blessing-page' },
+    h('div', { class: 'dawn' }),
+    h('header', { class: 'center col', style: 'gap:6px;padding:18px 16px 4px' },
+      h('small', { class: 'eyebrow' }, (r.ascension ?? 0) > 0 ? `🔥 각성 ${r.ascension} · 새로운 여정` : '새로운 여정'),
+      h('h2', null, '출발의 축복'),
+      h('p', { class: 'muted small', style: 'margin:0' }, '여정을 떠나기 전, 에코의 정령이 하나의 선물을 건넨다.'),
+    ),
+    h('div', { class: 'center', html: monSprite(starter, { size: 130 }) }),
+    h('div', { class: 'list' }, p.options.map((id, i) => {
+      const b = BLESSINGS.find((x) => x.id === id)!;
+      const card = h('button', { class: 'reward-card deal' + (b.cursed ? ' cursed' : ' r-rare'), style: `animation-delay:${i * 90}ms`, onclick: () => {
+        sfx(b.cursed ? 'debuff' : 'level');
+        const msg = applyBlessing(r, id);
+        if (msg) toast(`${b.icon} ${msg}`, b.cursed ? 'bad' : 'good');
+        saveAll();
+        go('map');
+      } },
+        h('div', { class: 'reward-icon' }, b.icon),
+        h('div', { class: 'grow' }, h('small', { class: 'muted' }, b.cursed ? '대가형 계약' : '축복'), h('b', null, b.name), h('p', { class: 'small' }, b.desc)),
+      );
+      return card;
+    })),
   );
 });
 

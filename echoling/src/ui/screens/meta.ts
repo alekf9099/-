@@ -3,14 +3,15 @@ import type { RunState, Settings } from '../../core/types';
 import { todayKey } from '../../core/rng';
 import { SPECIES_LIST, STARTERS, getSpecies } from '../../data/species';
 import { getMove } from '../../data/moves';
-import { ACTS, DAILY_MODIFIERS, META_UPGRADES, STARTER_UNLOCK_COST } from '../../data/world';
+import { ACTS, ASCENSION_RULES, DAILY_MODIFIERS, META_UPGRADES, STARTER_UNLOCK_COST } from '../../data/world';
+import { getCharm } from '../../data/charms';
 import { hashString } from '../../core/rng';
 import { defaultMeta } from '../../game/meta';
 import { learnableUpTo } from '../../game/monster';
 import { app, go, register, saveAll } from '../app';
 import { confirmSheet, h, openSheet, toast } from '../dom';
 import { bindSettings, haptic, sfx } from '../fx';
-import { elChips, rarityName } from '../components';
+import { elChips, rarityName, resonanceChips } from '../components';
 import { spriteSvg, monSprite } from '../sprite';
 import { proceedAfterActClear, resume, startRun } from '../flow';
 
@@ -59,6 +60,37 @@ register('title', () => {
 });
 
 // ─────────── 스타터 선택 ───────────
+let ascSel = 0;
+
+/** 🔥 각성 선택기 — 클리어할수록 다음 단계가 열리는 누적 난이도 */
+function ascensionPicker(): HTMLElement {
+  const max = app.meta.maxAscension ?? 0;
+  ascSel = Math.min(ascSel, max);
+  const wrap = h('div', { class: 'asc-picker' });
+  const render = () => {
+    wrap.innerHTML = '';
+    if (max === 0) {
+      wrap.append(h('div', { class: 'asc-locked' }, '🔒 각성 모드 — 첫 클리어 시 해금 (클리어할 때마다 더 높은 난이도 · 결정 보너스 +10%/단계)'));
+      return;
+    }
+    wrap.append(
+      h('div', { class: 'row between' },
+        h('div', null, h('small', { class: 'eyebrow' }, '각성 난이도'), h('div', { class: 'asc-level' }, ascSel === 0 ? '기본' : `🔥 ${ascSel}`, h('small', { class: 'muted' }, `  / 최대 ${max}`))),
+        h('div', { class: 'seg' },
+          h('button', { 'aria-label': '각성 낮추기', disabled: ascSel <= 0 ? true : undefined, onclick: () => { ascSel--; sfx('tap'); render(); } }, '−'),
+          h('button', { 'aria-label': '각성 높이기', disabled: ascSel >= max ? true : undefined, onclick: () => { ascSel++; sfx('tap'); render(); } }, '+'),
+        ),
+      ),
+      ascSel > 0
+        ? h('ul', { class: 'asc-rules' }, ASCENSION_RULES.slice(1, ascSel + 1).map((t, i) => h('li', { class: i === ascSel - 1 ? 'new' : '' }, `${i + 1}. ${t}`)))
+        : h('p', { class: 'muted small', style: 'margin:6px 0 0' }, '추가 규칙 없음'),
+      ...(ascSel > 0 ? [h('small', { class: 'gold' }, `💎 결정 보상 +${ascSel * 10}%`)] : []),
+    );
+  };
+  render();
+  return wrap;
+}
+
 register('starter', (mode: 'normal' | 'daily' = 'normal') => {
   const m = app.meta;
   let selected = m.unlockedStarters[0];
@@ -124,7 +156,8 @@ register('starter', (mode: 'normal' | 'daily' = 'normal') => {
     mode === 'daily' ? h('div', { class: 'banner daily' }, `오늘의 규칙: ${todaysModifier().name} — ${todaysModifier().desc}`) : null,
     cards,
     detail,
-    h('div', { class: 'bottom-cta' }, h('button', { class: 'btn primary xl block', onclick: () => { sfx('win'); haptic([10, 30, 10]); startRun(selected, mode); } }, '이 에코링과 출발! →')),
+    mode === 'normal' ? ascensionPicker() : null,
+    h('div', { class: 'bottom-cta' }, h('button', { class: 'btn primary xl block', onclick: () => { sfx('win'); haptic([10, 30, 10]); startRun(selected, mode, ascSel); } }, '이 에코링과 출발! →')),
   );
 });
 
@@ -238,11 +271,33 @@ register('actClear', () => {
 });
 
 // ─────────── 런 종료 ───────────
-register('runEnd', (sum: { victory: boolean; shards: number; run: RunState }) => {
+register('runEnd', (sum: { victory: boolean; shards: number; ascUnlocked?: number | null; run: RunState }) => {
   const r = sum.run;
   sfx(sum.victory ? 'win' : 'lose');
   const mins = Math.max(1, Math.round((Date.now() - r.startedAt) / 60000));
+  const seedText = `ECHO-${r.seed.toString(36).toUpperCase()}`;
+  const shareText = `ECHOLING ${sum.victory ? '클리어' : `ACT${r.act + 1} 도달`}${r.ascension ? ` · 각성${r.ascension}` : ''} · ${r.floorsCleared}층 · ${mins}분\n파티: ${r.party.map((m) => `${getSpecies(m.speciesId).name} Lv.${m.level}`).join(', ')}\n부적: ${r.charms.map((c) => getCharm(c).icon).join('') || '없음'}\n시드: ${seedText}`;
+  const buildCard = h('div', { class: 'build-card' },
+    h('div', { class: 'row between' }, h('b', null, '📸 이번 런 빌드'), h('span', { class: 'pill' }, r.ascension ? `🔥 각성 ${r.ascension}` : '기본')),
+    h('div', { class: 'bc-party' }, r.party.map((m) => h('div', { class: 'bc-mon' + (m.hp <= 0 ? ' fainted' : '') }, h('div', { html: monSprite(m, { size: 54 }) }), h('small', null, `Lv.${m.level}`)))),
+    h('div', { class: 'bc-charms' }, r.charms.length ? r.charms.map((c) => h('span', { class: 'bc-charm r-' + getCharm(c).rarity, title: getCharm(c).name }, getCharm(c).icon)) : h('small', { class: 'muted' }, '부적 없음')),
+    resonanceChips(r.party, r.charms),
+    h('div', { class: 'row between bc-seed' },
+      h('code', null, seedText),
+      h('button', { class: 'chip-btn', onclick: async (e: MouseEvent) => {
+        const btn = e.currentTarget as HTMLElement;
+        try {
+          await navigator.clipboard.writeText(shareText);
+          btn.textContent = '✓ 복사됨';
+          toast('런 결과를 복사했어요. 친구에게 붙여넣어 자랑하세요!', 'good');
+        } catch {
+          toast(seedText);
+        }
+      } }, '📋 결과 복사'),
+    ),
+  );
   return h('div', { class: 'page center-page' },
+    sum.ascUnlocked ? h('div', { class: 'asc-unlock' }, `🔥 각성 ${sum.ascUnlocked} 해금!`, h('small', null, ASCENSION_RULES[sum.ascUnlocked])) : null,
     h('h1', { class: 'logo sm ' + (sum.victory ? '' : 'dim') }, sum.victory ? 'VICTORY' : 'RUN OVER'),
     h('p', { class: 'muted' }, sum.victory ? '전설의 테이머로 기록되었습니다!' : `${ACTS[r.act].name}에서 여정이 끝났습니다…`),
     h('div', { class: 'party-strip' }, [...r.party].map((m) => h('div', { class: m.hp <= 0 ? 'fainted' : '', html: monSprite(m, { size: 64 }) }))),
@@ -255,6 +310,7 @@ register('runEnd', (sum: { victory: boolean; shards: number; run: RunState }) =>
       h('div', null, h('small', null, '시간'), h('b', null, `${mins}분`)),
     ),
     h('div', { class: 'reward-shards' }, `💎 +${sum.shards} 에코 결정`),
+    buildCard,
     h('div', { class: 'col gap' },
       h('button', { class: 'btn primary xl block', onclick: () => go('starter', 'normal') }, '다시 도전'),
       h('button', { class: 'btn ghost block', onclick: () => go('lab') }, '🔬 연구소에서 강화하기'),

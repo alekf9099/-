@@ -2,11 +2,13 @@
 import type { MetaSave, Monster, RunState } from '../src/core/types';
 import { Rng } from '../src/core/rng';
 import { getMove } from '../src/data/moves';
-import { activeOf, captureChance, chooseAiMove, forceSwitch, resolveTurn, type PlayerAction } from '../src/game/battle';
+import { activeOf, captureChance, chooseAiMove, forceSwitch, intentInfo, resolveTurn, type PlayerAction } from '../src/game/battle';
+import { effectiveness } from '../src/data/elements';
+import { getSpecies } from '../src/data/species';
 import { availableNodes } from '../src/game/map';
 import { canEvolve, evolve, maxHp } from '../src/game/monster';
 import { defaultMeta } from '../src/game/meta';
-import { addItem, addMonster, advanceAct, applyBattleOutcome, battleRewards, buildBattle, makeEncounter, makeShop, newRun, restHeal, treasureRewards } from '../src/game/run';
+import { applyBlessing, addItem, addMonster, advanceAct, applyBattleOutcome, battleRewards, buildBattle, makeEncounter, makeShop, newRun, restHeal, treasureRewards } from '../src/game/run';
 import { getEvent, pickEvent } from '../src/game/events';
 import { createMonster } from '../src/game/monster';
 import { nextUid } from '../src/game/run';
@@ -23,8 +25,9 @@ function learn(m: Monster, moveId: string) {
   if (worst >= 0 && (nm.power || 30) > worstP) m.moves[worst] = moveId;
 }
 
-export function simulateRun(seed: number, starter = 'embercat', meta: MetaSave = defaultMeta()): SimResult {
-  const run: RunState = newRun(starter, meta, 'normal', seed);
+export function simulateRun(seed: number, starter = 'embercat', meta: MetaSave = defaultMeta(), ascension = 0): SimResult {
+  const run: RunState = newRun(starter, meta, 'normal', seed, ascension);
+  if (run.pending?.kind === 'blessing') { const o = run.pending.options; applyBlessing(run, o.find((x) => x !== 'pact') ?? o[0]); }
   const bot = new Rng(seed ^ 0x9e3779b9);
   let turns = 0;
   for (let step = 0; step < 200; step++) {
@@ -41,7 +44,7 @@ export function simulateRun(seed: number, starter = 'embercat', meta: MetaSave =
       const enc = makeEncounter(run, node);
       const b = buildBattle(run, enc);
       const rng = new Rng(run.rngState);
-      let guard = 0;
+      let guard = 0, lastSwitch = -9;
       while (!b.over && guard++ < 300) {
         if (b.needSwitch) {
           let best = -1;
@@ -50,6 +53,16 @@ export function simulateRun(seed: number, starter = 'embercat', meta: MetaSave =
         }
         const me = activeOf(b, 'p'); const foe = activeOf(b, 'e');
         let act: PlayerAction = { type: 'move', idx: chooseAiMove(b, 'p', null) };
+        // 예고 대응: 상성상 크게 맞을 예정이면 저항하는 동료로 교체 (사람 플레이어 근사)
+        const intent = intentInfo(b);
+        if (!process.env.SIM_NOSWITCH && intent && intent.kind === 'attack' && guard - lastSwitch > 1) {
+          const effOn = (m: typeof me) => effectiveness(intent.move.element, getSpecies(m.speciesId).elements);
+          if (effOn(me) > 1 || intent.lethal) {
+            let bestI = -1, bestE = effOn(me);
+            b.p.team.forEach((m, i) => { if (i !== b.p.active && m.hp > maxHp(m) * 0.5 && effOn(m) < bestE) { bestE = effOn(m); bestI = i; } });
+            if (bestI >= 0) { act = { type: 'switch', idx: bestI }; lastSwitch = guard; }
+          }
+        }
         if (b.kind === 'wild' && run.party.length + run.box.length < 6 && (run.items.capsule ?? 0) > 0 && foe.hp / maxHp(foe) < 0.5 && captureChance(b, 'capsule') > 0.3) {
           run.items.capsule!--; act = { type: 'capture', item: 'capsule' };
         } else if (me.hp / maxHp(me) < 0.3 && ((run.items.potion ?? 0) > 0 || (run.items.superPotion ?? 0) > 0)) {

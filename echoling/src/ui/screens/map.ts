@@ -60,8 +60,9 @@ register('map', () => {
   const hud = h('header', { class: 'map-hud', style: `--bg1:${act.bg[0]};--bg2:${act.bg[1]}` },
     h('div', { class: 'row between' },
       h('div', null, h('small', { class: 'muted' }, act.sub), h('h2', null, act.name)),
-      h('div', { class: 'hud-stats' }, h('span', { class: 'pill gold' }, `🪙 ${r.gold}`), h('span', { class: 'pill' }, `🏁 ${r.floorsCleared}`)),
+      h('div', { class: 'hud-stats' }, (r.ascension ?? 0) > 0 ? h('span', { class: 'pill asc' }, `🔥${r.ascension}`) : null, h('span', { class: 'pill gold' }, `🪙 ${r.gold}`), h('span', { class: 'pill' }, `🏁 ${r.floorsCleared}`)),
     ),
+    bossPreview(r.act),
     h('div', { class: 'row between hud-sub' },
       h('div', { class: 'charm-strip' }, r.charms.length ? r.charms.map(charmIcon) : h('span', { class: 'muted small' }, '부적 없음')),
       resonanceChips(r.party, r.charms),
@@ -90,9 +91,26 @@ register('map', () => {
   );
 });
 
-function monSpriteBoss(act: number): string {
+/** 👑 이번 액트 보스 미리보기 — 목표가 보이면 경로·파티 계획이 생긴다 */
+function bossPreview(act: number): HTMLElement {
+  const sp = getSpecies(ACTS[act].boss);
+  return h('button', { class: 'boss-preview', onclick: () => openSheet(`👑 ${sp.name}`, h('div', { class: 'pad center col gap' },
+    h('div', { html: monSpriteBoss(act, 160) }),
+    elChips(sp.elements),
+    h('p', { class: 'muted small' }, sp.dex),
+    h('div', { class: 'list', style: 'padding:0' }, sp.learnset.map(([, mv]) => moveCard(mv))),
+    h('div', { class: 'card', style: 'text-align:left' }, h('b', null, '💢 분노 각성'), h('p', { class: 'small muted' }, act === 0 ? 'HP 50% 이하: 스피드 +1단계, 상태이상 해제' : 'HP 50% 이하: 공격·스피드 +1단계, EN 최대 충전, 상태이상 해제')),
+  ), { tall: true }) },
+    h('span', { class: 'bp-face', html: monSpriteBoss(act, 34) }),
+    h('span', null, h('small', null, `ACT ${act + 1} 보스`), h('b', null, sp.name)),
+    elChips(sp.elements, true),
+    h('span', { class: 'bp-more' }, '정보 ›'),
+  );
+}
+
+function monSpriteBoss(act: number, size = 54): string {
   const id = ACTS[act].boss;
-  return monSprite({ uid: 'boss', speciesId: id, level: 1, exp: 0, hp: 1, moves: [], iv: { hp: 0, atk: 0, def: 0, spd: 0 } }, { size: 54 });
+  return monSprite({ uid: 'boss', speciesId: id, level: 1, exp: 0, hp: 1, moves: [], iv: { hp: 0, atk: 0, def: 0, spd: 0 } }, { size });
 }
 
 // ─────────── 파티 시트 ───────────
