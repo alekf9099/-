@@ -1,158 +1,178 @@
 {
   "fps": 15,
-  "generatedBy": "tools/export-motions.js",
+  "frameSize": {
+    "w": 300,
+    "h": 428
+  },
+  "generatedBy": "3d/ride_buddy_3d.py + 3d/pack_sprites.py",
   "motions": [
     {
-      "name": "ride",
-      "label": "주행",
-      "cssClass": "rb--ride",
-      "frames": 72,
-      "durationSec": 4.8,
+      "name": "ride_r",
+      "label": "오른쪽으로 주행",
       "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 48,
+      "durationSec": 3.2,
       "sheet": {
-        "file": "ride_sheet.png",
-        "columns": 10,
-        "rows": 8
+        "file": "ride_r_sheet.webp",
+        "columns": 8,
+        "rows": 6
       },
-      "gif": "ride.gif",
-      "framesDir": "ride/"
+      "webp": "ride_r.webp",
+      "gif": "ride_r.gif"
     },
     {
-      "name": "ride_left",
-      "label": "주행(왼쪽)",
-      "cssClass": "rb--ride rb--left",
+      "name": "ride_l",
+      "label": "왼쪽으로 주행",
+      "loop": true,
+      "frames": 48,
+      "durationSec": 3.2,
+      "sheet": {
+        "file": "ride_l_sheet.webp",
+        "columns": 8,
+        "rows": 6
+      },
+      "webp": "ride_l.webp",
+      "gif": "ride_l.gif"
+    },
+    {
+      "name": "idle_r",
+      "label": "정차 (오른쪽)",
+      "loop": true,
       "frames": 36,
       "durationSec": 2.4,
-      "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
       "sheet": {
-        "file": "ride_left_sheet.png",
-        "columns": 10,
-        "rows": 4
+        "file": "idle_r_sheet.webp",
+        "columns": 8,
+        "rows": 5
       },
-      "gif": "ride_left.gif",
-      "framesDir": "ride_left/"
+      "webp": "idle_r.webp",
+      "gif": "idle_r.gif"
     },
     {
-      "name": "idle",
-      "label": "정차",
-      "cssClass": "rb--stop",
-      "frames": 72,
-      "durationSec": 4.8,
+      "name": "idle_l",
+      "label": "정차 (왼쪽)",
       "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 36,
+      "durationSec": 2.4,
       "sheet": {
-        "file": "idle_sheet.png",
-        "columns": 10,
-        "rows": 8
+        "file": "idle_l_sheet.webp",
+        "columns": 8,
+        "rows": 5
       },
-      "gif": "idle.gif",
-      "framesDir": "idle/"
+      "webp": "idle_l.webp",
+      "gif": "idle_l.gif"
+    },
+    {
+      "name": "face_r",
+      "label": "오른쪽→정면 돌아보기",
+      "loop": false,
+      "frames": 6,
+      "durationSec": 0.4,
+      "sheet": {
+        "file": "face_r_sheet.webp",
+        "columns": 6,
+        "rows": 1
+      },
+      "webp": "face_r.webp",
+      "gif": "face_r.gif"
+    },
+    {
+      "name": "face_l",
+      "label": "왼쪽→정면 돌아보기",
+      "loop": false,
+      "frames": 6,
+      "durationSec": 0.4,
+      "sheet": {
+        "file": "face_l_sheet.webp",
+        "columns": 6,
+        "rows": 1
+      },
+      "webp": "face_l.webp",
+      "gif": "face_l.gif"
+    },
+    {
+      "name": "front",
+      "label": "정면 대기",
+      "loop": true,
+      "frames": 36,
+      "durationSec": 2.4,
+      "sheet": {
+        "file": "front_sheet.webp",
+        "columns": 8,
+        "rows": 5
+      },
+      "webp": "front.webp",
+      "gif": "front.gif"
     },
     {
       "name": "notify",
       "label": "알림 도착",
-      "cssClass": "rb--notify",
-      "frames": 36,
-      "durationSec": 2.4,
-      "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "loop": false,
+      "frames": 24,
+      "durationSec": 1.6,
       "sheet": {
-        "file": "notify_sheet.png",
-        "columns": 10,
-        "rows": 4
+        "file": "notify_sheet.webp",
+        "columns": 8,
+        "rows": 3
       },
-      "gif": "notify.gif",
-      "framesDir": "notify/"
+      "webp": "notify.webp",
+      "gif": "notify.gif"
     },
     {
       "name": "talk",
       "label": "알림 읽어주기",
-      "cssClass": "rb--talk",
-      "frames": 36,
-      "durationSec": 2.4,
       "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 24,
+      "durationSec": 1.6,
       "sheet": {
-        "file": "talk_sheet.png",
-        "columns": 10,
-        "rows": 4
+        "file": "talk_sheet.webp",
+        "columns": 8,
+        "rows": 3
       },
-      "gif": "talk.gif",
-      "framesDir": "talk/"
+      "webp": "talk.webp",
+      "gif": "talk.gif"
     },
     {
       "name": "happy",
-      "label": "기쁨(클릭)",
-      "cssClass": "rb--happy",
-      "frames": 36,
-      "durationSec": 2.4,
+      "label": "기쁨",
       "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 24,
+      "durationSec": 1.6,
       "sheet": {
-        "file": "happy_sheet.png",
-        "columns": 10,
-        "rows": 4
+        "file": "happy_sheet.webp",
+        "columns": 8,
+        "rows": 3
       },
-      "gif": "happy.gif",
-      "framesDir": "happy/"
+      "webp": "happy.webp",
+      "gif": "happy.gif"
     },
     {
       "name": "sleep",
-      "label": "방해 금지(졸기)",
-      "cssClass": "rb--sleep",
-      "frames": 72,
-      "durationSec": 4.8,
+      "label": "졸기 (방해 금지)",
       "loop": true,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 48,
+      "durationSec": 3.2,
       "sheet": {
-        "file": "sleep_sheet.png",
-        "columns": 10,
-        "rows": 8
+        "file": "sleep_sheet.webp",
+        "columns": 8,
+        "rows": 6
       },
-      "gif": "sleep.gif",
-      "framesDir": "sleep/"
+      "webp": "sleep.webp",
+      "gif": "sleep.gif"
     },
     {
       "name": "turn",
-      "label": "방향 전환",
-      "cssClass": "rb--turn",
-      "frames": 9,
-      "durationSec": 0.6,
+      "label": "유턴 (왼→오)",
       "loop": false,
-      "frameSize": {
-        "w": 312,
-        "h": 382
-      },
+      "frames": 12,
+      "durationSec": 0.8,
       "sheet": {
-        "file": "turn_sheet.png",
-        "columns": 9,
-        "rows": 1
+        "file": "turn_sheet.webp",
+        "columns": 8,
+        "rows": 2
       },
-      "gif": "turn.gif",
-      "framesDir": "turn/"
+      "webp": "turn.webp",
+      "gif": "turn.gif"
     }
   ]
 }

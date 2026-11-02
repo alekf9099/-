@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
   <title>Ride Buddy</title>
-  <link rel="stylesheet" href="character.css">
   <link rel="stylesheet" href="buddy.css">
 </head>
 <body>
@@ -23,12 +22,12 @@
     </div>
 
     <div id="buddy" title="클릭: 반응 · 더블클릭: 마지막 알림 다시 듣기 · 드래그: 위치 이동 · 우클릭: 메뉴">
-      <div class="rb rb--ride" id="rb"><div class="rb-flip" id="rb-flip"></div></div>
+      <canvas id="rb-canvas" aria-label="Ride Buddy 3D 캐릭터"></canvas>
       <span id="badge" hidden></span>
     </div>
   </div>
 
-  <script src="character.js"></script>
+  <script src="sprites/sprites.js"></script>
   <script src="buddy.js"></script>
 </body>
 </html>

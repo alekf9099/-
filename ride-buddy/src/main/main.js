@@ -10,8 +10,13 @@ const { describeApp } = require('./app-names');
 const { WindowsNotificationWatcher } = require('./watchers/windows-notifications');
 
 const ASSETS = path.join(__dirname, '..', '..', 'assets');
-const SIZE_PX = { s: 110, m: 150, l: 200 };   // 캐릭터 가로 폭(DIP)
-const BUBBLE_SPACE = 210;                       // 말풍선이 들어갈 위쪽 여백
+const SIZE_PX = { s: 130, m: 170, l: 230 };   // 캐릭터 가로 폭(DIP) — renderer/buddy.js 와 동일
+const BUBBLE_SPACE = 190;                       // 말풍선이 들어갈 위쪽 여백
+let SPRITE_RATIO = 1.25;                        // 3D 스프라이트 세로/가로 비율
+try {
+  const meta = require('../renderer/sprites/sprites.json');
+  SPRITE_RATIO = meta.frameH / meta.frameW;
+} catch { /* 기본값 사용 */ }
 
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-transparent-visuals');
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -23,12 +28,12 @@ let server = null;
 let seq = 0;
 const recent = new Map(); // 중복 알림 방지
 
-function charHeight(w) { return Math.round(w * 630 / 440); }
+function charHeight(w) { return Math.round(w * SPRITE_RATIO); }
 
 function overlayBounds() {
   const cfg = config.load();
   const { workArea } = screen.getPrimaryDisplay();
-  const h = Math.min(workArea.height, Math.round(charHeight(SIZE_PX[cfg.size] || 150) * 1.15) + BUBBLE_SPACE);
+  const h = Math.min(workArea.height, charHeight(SIZE_PX[cfg.size] || 170) + BUBBLE_SPACE);
   return { x: workArea.x, y: workArea.y + workArea.height - h, width: workArea.width, height: h };
 }
 

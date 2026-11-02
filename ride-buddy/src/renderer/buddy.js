@@ -1,76 +1,139 @@
 /*
- * Ride Buddy 렌더러 — 이동 AI + 알림 말풍선 + 인터랙션
+ * Ride Buddy 렌더러 — 3D 스프라이트 캐릭터 + 이동 AI + 알림 말풍선 + 인터랙션
+ *
+ * 캐릭터는 Blender(Cycles)로 렌더한 3D 모션 스프라이트(sprites/*.webp)를 canvas 로 재생합니다.
  *
  * 상태 흐름
- *   ride ⇄ stop  (랜덤 주행/정차, 화면 끝에서 유턴)
- *   알림 수신 → notify(느낌표·비상등·빵빵) → talk(말풍선 타이핑) → 다음 알림 or happy → ride
- *   방해 금지 → sleep(졸기) + 미확인 배지, 해제 시 쌓인 알림 순서대로 읽어줌
+ *   ride_r/l ⇄ idle_r/l   랜덤 주행·정차, 화면 끝에서 3D 유턴(turn)
+ *   알림 수신 → face(정면으로 돌아봄) → notify(느낌표·비상등·빵빵·손 흔들기)
+ *            → talk(말풍선 타이핑) → front(대기) → 다음 알림 or happy → face 역재생 → 다시 주행
+ *   방해 금지 → face → sleep(졸기) + 미확인 배지, 해제 시 쌓인 알림을 차례로 읽어줌
  */
 (() => {
-  const VIEW_W = 440, VIEW_H = 630;
-  const HEAD_X = 219 / VIEW_W;                      // 머리 중심 (가로 비율)
-  const SIZE_PX = { s: 110, m: 150, l: 200 };
+  const META = window.RIDE_BUDDY_SPRITES;
+  const SIZE_PX = { s: 130, m: 170, l: 230 };       // 캐릭터 가로 폭(px)
   const BASE_SPEED = 46;                            // px/s
+  const HEAD_X = 0.5;                               // 머리 중심 (가로 비율)
+  const HEAD_TOP = 0.2;                             // 머리 윗부분 (세로 비율, 위에서부터)
 
   const $ = s => document.querySelector(s);
-  const buddyEl = $('#buddy'), rbEl = $('#rb'), badgeEl = $('#badge');
+  const buddyEl = $('#buddy'), badgeEl = $('#badge'), canvas = $('#rb-canvas');
   const bubble = $('#bubble');
-  $('#rb-flip').innerHTML = window.RideBuddyCharacter.svg();
+  const ctx = canvas.getContext('2d');
 
   // ---------- 브리지 (Electron / 브라우저 데모) ----------
-  const isDemo = !window.rideBuddyAPI;
   const bridge = window.rideBuddyAPI || makeDemoBridge();
+
+  // ---------- 스프라이트 플레이어 ----------
+  const sheets = {};
+  for (const [name, m] of Object.entries(META.motions)) {
+    const img = new Image();
+    img.src = `sprites/${m.file}`;
+    sheets[name] = img;
+  }
+  const player = {
+    name: null, reverse: false, loop: true, t0: 0, onEnd: null, done: false,
+    play(name, { reverse = false, loop, onEnd } = {}) {
+      const m = META.motions[name];
+      this.name = name;
+      this.reverse = reverse;
+      this.loop = loop ?? m.loop;
+      this.onEnd = onEnd || null;
+      this.done = false;
+      this.t0 = performance.now();
+    },
+    frameIndex(now) {
+      const m = META.motions[this.name];
+      let i = Math.floor((now - this.t0) / 1000 * META.fps);
+      if (this.loop) i %= m.frames;
+      else if (i >= m.frames) {
+        i = m.frames - 1;
+        if (!this.done) { this.done = true; const cb = this.onEnd; this.onEnd = null; cb && setTimeout(cb, 0); }
+      }
+      return this.reverse ? m.frames - 1 - i : i;
+    },
+    draw(now) {
+      if (!this.name) return;
+      const m = META.motions[this.name];
+      const img = sheets[this.name];
+      const i = this.frameIndex(now);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!img.complete || !img.naturalWidth) return;
+      const sx = (i % m.cols) * META.frameW, sy = Math.floor(i / m.cols) * META.frameH;
+      ctx.drawImage(img, sx, sy, META.frameW, META.frameH, 0, 0, canvas.width, canvas.height);
+    },
+  };
 
   // ---------- 상태 ----------
   let cfg = { size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true };
-  let charW = SIZE_PX.m, charH = charW * VIEW_H / VIEW_W;
-  let x = 0, dir = 1, mode = 'ride';
+  let charW = SIZE_PX.m, charH = charW * META.frameH / META.frameW;
+  let x = 0, dir = 1;
+  let mode = 'ride';           // ride | stop | anim(전환 중) | busy | sleep | drag
+  let facing = 'r';            // r | l | front
   let nextDecision = 0;
   const queue = [];
   const history = [];
-  let pending = 0;           // 방해 금지 중 쌓인 알림 수
+  let pending = 0;
   let busy = false;
   let current = null;
   let timers = [];
   let dragging = null;
+  let epoch = 0;               // 흐름이 바뀌면 이전 콜백 무효화
 
   const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
   const clearTimers = () => { timers.forEach(clearTimeout); timers = []; };
   const rand = (a, b) => a + Math.random() * (b - a);
   const laneW = () => window.innerWidth;
+  const side = () => (dir > 0 ? 'r' : 'l');
+  const guard = fn => { const e = epoch; return (...a) => { if (e === epoch) fn(...a); }; };
 
-  // ---------- 모드 ----------
-  function setMode(m) {
-    mode = m;
-    const map = { ride: 'rb--ride', stop: 'rb--stop', notify: 'rb--notify', talk: 'rb--talk', happy: 'rb--happy', sleep: 'rb--sleep', drag: 'rb--happy' };
-    rbEl.className = `rb ${map[m] || ''} ${dir < 0 ? 'rb--left' : ''}`;
+  // ---------- 동작 단위 ----------
+  function ride() { mode = 'ride'; facing = side(); player.play(`ride_${side()}`); }
+  function stop() { mode = 'stop'; facing = side(); player.play(`idle_${side()}`); }
+  function idle() {
+    if (cfg.dnd) return toFront(guard(() => { mode = 'sleep'; player.play('sleep'); }));
+    toSide(guard(() => {
+      if (cfg.paused) stop(); else ride();
+      nextDecision = performance.now() + rand(5000, 11000);
+    }));
   }
-  function idleMode() {
-    if (cfg.dnd) return 'sleep';
-    return cfg.paused ? 'stop' : 'ride';
+  function turn(cb) {
+    mode = 'anim';
+    const toRight = dir < 0;
+    player.play('turn', {
+      reverse: !toRight, onEnd: guard(() => { dir = toRight ? 1 : -1; facing = side(); cb ? cb() : ride(); }),
+    });
   }
-  function turn() {
-    dir = -dir;
-    rbEl.classList.toggle('rb--left', dir < 0);
-    rbEl.classList.add('rb--turn');
-    setTimeout(() => rbEl.classList.remove('rb--turn'), 520);
+  function toFront(cb) {
+    if (facing === 'front') return cb();
+    mode = 'anim';
+    player.play(`face_${side()}`, { onEnd: guard(() => { facing = 'front'; cb(); }) });
+  }
+  function toSide(cb) {
+    if (facing !== 'front') return cb();
+    mode = 'anim';
+    player.play(`face_${side()}`, { reverse: true, onEnd: guard(() => { facing = side(); cb(); }) });
   }
 
-  // ---------- 크기/설정 ----------
+  // ---------- 설정 ----------
   function applyConfig(c) {
-    const wasDnd = cfg.dnd;
+    const was = { ...cfg };
     cfg = { ...cfg, ...c };
-    charW = SIZE_PX[cfg.size] || 150;
-    charH = charW * VIEW_H / VIEW_W;
+    charW = SIZE_PX[cfg.size] || SIZE_PX.m;
+    charH = Math.round(charW * META.frameH / META.frameW);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(charW * dpr);
+    canvas.height = Math.round(charH * dpr);
+    canvas.style.width = charW + 'px';
+    canvas.style.height = charH + 'px';
     document.documentElement.style.setProperty('--char-w', charW + 'px');
     x = Math.min(Math.max(0, x), Math.max(0, laneW() - charW));
 
-    if (cfg.dnd && !wasDnd && !busy) setMode('sleep');
-    if (!cfg.dnd && wasDnd) {
-      updateBadge();
-      if (!busy && queue.length) next(); else if (!busy) setMode(idleMode());
+    if (!busy && !dragging) {
+      if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) { epoch++; clearTimers(); }
+      if (!cfg.dnd && was.dnd && queue.length) { updateBadge(); return next(); }
+      if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) idle();
     }
-    if (!busy && !dragging && (mode === 'ride' || mode === 'stop' || mode === 'sleep')) setMode(idleMode());
     updateBadge();
   }
 
@@ -79,17 +142,18 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-
-    if (!busy && !dragging && !cfg.dnd && !cfg.paused) {
+    if (!busy && !dragging && !cfg.dnd && !cfg.paused && (mode === 'ride' || mode === 'stop')) {
       if (now > nextDecision) decide(now);
       if (mode === 'ride') {
         x += dir * BASE_SPEED * cfg.speed * dt;
         const max = Math.max(0, laneW() - charW);
-        if (x <= 0) { x = 0; if (dir < 0) turn(); }
-        if (x >= max) { x = max; if (dir > 0) turn(); }
+        if (x <= 0 && dir < 0) { x = 0; turn(); }
+        else if (x >= max && dir > 0) { x = max; turn(); }
+        x = Math.min(Math.max(0, x), max);
       }
     }
     buddyEl.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`;
+    player.draw(now);
     if (!bubble.hidden) placeBubble();
     requestAnimationFrame(frame);
   }
@@ -97,12 +161,11 @@
   function decide(now) {
     if (mode === 'ride') {
       const r = Math.random();
-      if (r < 0.35) { setMode('stop'); nextDecision = now + rand(2500, 6000); }
+      if (r < 0.35) { stop(); nextDecision = now + rand(2500, 6000); }
       else if (r < 0.5) { turn(); nextDecision = now + rand(5000, 12000); }
       else nextDecision = now + rand(6000, 14000);
     } else {
-      setMode('ride');
-      if (Math.random() < 0.3) turn();
+      if (Math.random() < 0.3) turn(); else ride();
       nextDecision = now + rand(6000, 14000);
     }
   }
@@ -120,22 +183,31 @@
 
   function next() {
     clearTimers();
+    epoch++;
     if (!queue.length || cfg.dnd) {
       busy = false;
       current = null;
       hideBubble();
-      if (cfg.dnd) { setMode('sleep'); updateBadge(); return; }
-      setMode('happy');
-      later(() => { if (!busy && !dragging) { setMode(idleMode()); nextDecision = performance.now() + rand(4000, 9000); } }, 1100);
+      if (cfg.dnd) { updateBadge(); return idle(); }
+      mode = 'busy';
+      busy = true;
+      toFront(guard(() => {
+        player.play('happy');
+        later(guard(() => { busy = false; idle(); }), 1100);
+      }));
       return;
     }
     busy = true;
+    mode = 'busy';
     pending = 0;
     current = queue.shift();
     updateBadge();
-    setMode('notify');
-    if (cfg.sound) horn();
-    later(() => showBubble(current), 850);
+    const n = current;
+    toFront(guard(() => {
+      player.play('notify');
+      if (cfg.sound) horn();
+      later(guard(() => showBubble(n)), 900);
+    }));
   }
 
   function showBubble(n) {
@@ -151,62 +223,57 @@
     const title = n.title || `${n.app}에서 알림이 왔어요!`;
     const body = cfg.showBody ? (n.body || '') : (n.title ? `${n.app}에서 새 알림이 왔어요!` : '');
     const tEl = $('.bubble-title'), bEl = $('.bubble-body');
-    tEl.textContent = ''; bEl.textContent = '';
 
     bubble.hidden = false;
-    bubble.classList.remove('out'); bubble.classList.remove('in');
+    bubble.classList.remove('out', 'in');
     void bubble.offsetWidth;
     bubble.classList.add('in');
-    // 최종 크기 기준으로 위치를 먼저 잡기 위해 전체 텍스트로 측정 후 타이핑
-    tEl.textContent = title; bEl.textContent = body;
+    tEl.textContent = title; bEl.textContent = body;   // 최종 크기로 위치 계산
     placeBubble();
     tEl.textContent = ''; bEl.textContent = '';
 
-    setMode('talk');
+    player.play('talk');
     const full = [...title], fullB = [...body];
     const total = full.length + fullB.length;
     const step = Math.max(14, Math.min(45, 2200 / Math.max(1, total)));
     let i = 0;
-    const tick = () => {
-      if (current !== n) return;
+    const tick = guard(() => {
       i++;
       tEl.textContent = full.slice(0, i).join('');
       bEl.textContent = i > full.length ? fullB.slice(0, i - full.length).join('') : '';
-      const target = i <= full.length ? tEl : bEl;
-      tEl.classList.toggle('typing', target === tEl); bEl.classList.toggle('typing', target === bEl);
-      if (i < total) later(tick, step);
-      else {
-        tEl.classList.remove('typing'); bEl.classList.remove('typing');
-        setMode('stop');
-        const hold = Math.min(9000, 3500 + total * 55);
-        const bar = $('.bubble-progress i');
-        bar.style.transition = 'none'; bar.style.transform = 'scaleX(1)';
-        void bar.offsetWidth;
-        bar.style.transition = `transform ${hold}ms linear`; bar.style.transform = 'scaleX(0)';
-        later(dismiss, hold);
-      }
-    };
+      tEl.classList.toggle('typing', i <= full.length);
+      bEl.classList.toggle('typing', i > full.length);
+      if (i < total) return later(tick, step);
+      tEl.classList.remove('typing'); bEl.classList.remove('typing');
+      player.play('front');
+      const hold = Math.min(9000, 3500 + total * 55);
+      const bar = $('.bubble-progress i');
+      bar.style.transition = 'none'; bar.style.transform = 'scaleX(1)';
+      void bar.offsetWidth;
+      bar.style.transition = `transform ${hold}ms linear`; bar.style.transform = 'scaleX(0)';
+      later(guard(dismiss), hold);
+    });
     later(tick, 120);
   }
 
   function dismiss() {
-    if (!busy) return;
+    if (!busy || bubble.hidden) return;
     bubble.classList.remove('in');
     bubble.classList.add('out');
     clearTimers();
-    later(() => { bubble.hidden = true; next(); }, 220);
+    const e = ++epoch;
+    setTimeout(() => { if (e === epoch) { bubble.hidden = true; next(); } }, 220);
   }
   function hideBubble() { bubble.hidden = true; bubble.classList.remove('in', 'out'); }
 
   function placeBubble() {
     const W = laneW();
     const bw = bubble.offsetWidth;
-    const headX = x + charW * (dir < 0 ? 1 - HEAD_X : HEAD_X);
+    const headX = x + charW * HEAD_X;
     const left = Math.max(8, Math.min(W - bw - 8, headX - bw / 2));
     bubble.style.left = left + 'px';
-    bubble.style.bottom = Math.round(charH + 16) + 'px';
-    const tail = Math.max(22, Math.min(bw - 22, headX - left));
-    bubble.style.setProperty('--tail-x', tail + 'px');
+    bubble.style.bottom = Math.round(charH * (1 - HEAD_TOP) + 14) + 'px';
+    bubble.style.setProperty('--tail-x', Math.max(22, Math.min(bw - 22, headX - left)) + 'px');
   }
 
   function updateBadge() {
@@ -243,7 +310,6 @@
   }
 
   // ---------- 인터랙션 ----------
-  // 클릭 통과: 캐릭터/말풍선 위에서만 마우스를 받음
   let interactive = false;
   document.addEventListener('mousemove', e => {
     if (dragging) return;
@@ -256,25 +322,25 @@
   buddyEl.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     buddyEl.setPointerCapture(e.pointerId);
-    dragging = { sx: e.clientX, ox: x, moved: false, prevMode: mode };
+    dragging = { sx: e.clientX, ox: x, moved: false };
   });
   buddyEl.addEventListener('pointermove', e => {
     if (!dragging) return;
     const dx = e.clientX - dragging.sx;
-    if (!dragging.moved && Math.abs(dx) > 4) { dragging.moved = true; buddyEl.classList.add('dragging'); if (!busy) setMode('drag'); }
-    if (dragging.moved) {
-      x = Math.max(0, Math.min(laneW() - charW, dragging.ox + dx));
-      const want = dx > 0 ? 1 : -1;
-      if (Math.abs(dx) > 30 && want !== dir) turn();
+    if (!dragging.moved && Math.abs(dx) > 4) {
+      dragging.moved = true;
+      buddyEl.classList.add('dragging');
+      if (!busy && facing !== 'front') { epoch++; clearTimers(); stop(); }
     }
+    if (dragging.moved) x = Math.max(0, Math.min(laneW() - charW, dragging.ox + dx));
   });
-  buddyEl.addEventListener('pointerup', e => {
+  buddyEl.addEventListener('pointerup', () => {
     if (!dragging) return;
     const d = dragging;
     dragging = null;
     buddyEl.classList.remove('dragging');
-    if (d.moved) { if (!busy) setMode(idleMode()); return; }
-    onClick(e);
+    if (d.moved) { if (!busy) { nextDecision = performance.now() + rand(2000, 5000); if (mode !== 'sleep') idle(); } return; }
+    onClick();
   });
 
   let lastClick = 0;
@@ -283,18 +349,21 @@
     if (now - lastClick < 350) { lastClick = 0; replay(); return; }
     lastClick = now;
     if (busy) { dismiss(); return; }
-    setMode('happy');
+    epoch++; clearTimers();
+    busy = true; mode = 'busy';
     if (cfg.sound) horn();
-    clearTimers();
-    later(() => { if (!busy) { setMode(idleMode()); nextDecision = performance.now() + rand(3000, 8000); } }, 1400);
+    toFront(guard(() => {
+      player.play('happy');
+      later(guard(() => { busy = false; idle(); }), 1500);
+    }));
   }
 
   function replay() {
     if (!history.length) return;
-    const n = { ...history[0], replay: true };
-    queue.unshift(n);
-    if (cfg.dnd) { /* 방해 금지 중에도 직접 요청하면 읽어줌 */ const keep = cfg.dnd; cfg.dnd = false; next(); cfg.dnd = keep; return; }
-    if (busy) dismiss(); else next();
+    queue.unshift({ ...history[0], replay: true });
+    const keep = cfg.dnd;
+    if (busy && !bubble.hidden) { dismiss(); return; }
+    cfg.dnd = false; next(); cfg.dnd = keep;   // 방해 금지 중이라도 직접 요청하면 읽어줌
   }
 
   bubble.addEventListener('click', e => { e.stopPropagation(); dismiss(); });
@@ -308,7 +377,8 @@
     applyConfig(c || {});
     x = rand(0, Math.max(0, laneW() - charW));
     dir = Math.random() < 0.5 ? 1 : -1;
-    setMode(idleMode());
+    facing = side();
+    if (cfg.dnd) idle(); else if (cfg.paused) stop(); else ride();
     nextDecision = performance.now() + rand(5000, 10000);
     requestAnimationFrame(frame);
   });
@@ -326,13 +396,18 @@
       { app: '캘린더', icon: '📅', color: '#E8710A', ink: '#fff', title: '10분 후 일정', body: '팀 스탠드업 미팅 (회의실 B)' },
     ];
     let k = 0, demoCfg = { size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true };
+    const fire = () => handlers.config.forEach(h => h(demoCfg));
     const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; bar.appendChild(b); };
     btn('🔔 알림 보내기', () => handlers.notify.forEach(h => h({ ...samples[k++ % samples.length], time: Date.now() })));
-    btn('😴 방해 금지', () => { demoCfg = { ...demoCfg, dnd: !demoCfg.dnd }; handlers.config.forEach(h => h(demoCfg)); });
-    btn('⏸ 멈춤', () => { demoCfg = { ...demoCfg, paused: !demoCfg.paused }; handlers.config.forEach(h => h(demoCfg)); });
-    btn('🔍 크기', () => { demoCfg = { ...demoCfg, size: { s: 'm', m: 'l', l: 's' }[demoCfg.size] }; handlers.config.forEach(h => h(demoCfg)); });
+    btn('😴 방해 금지', () => { demoCfg = { ...demoCfg, dnd: !demoCfg.dnd }; fire(); });
+    btn('⏸ 멈춤', () => { demoCfg = { ...demoCfg, paused: !demoCfg.paused }; fire(); });
+    btn('🔍 크기', () => { demoCfg = { ...demoCfg, size: { s: 'm', m: 'l', l: 's' }[demoCfg.size] }; fire(); });
     document.body.appendChild(bar);
-    window.__demo = { send: n => handlers.notify.forEach(h => h({ time: Date.now(), ...n })), config: c => { demoCfg = { ...demoCfg, ...c }; handlers.config.forEach(h => h(demoCfg)); } };
+    window.__demo = {
+      send: n => handlers.notify.forEach(h => h({ time: Date.now(), ...n })),
+      config: c => { demoCfg = { ...demoCfg, ...c }; fire(); },
+      state: () => ({ mode, facing, dir, motion: player.name, busy, x }),
+    };
     return {
       onNotify: cb => handlers.notify.push(cb),
       onConfig: cb => handlers.config.push(cb),

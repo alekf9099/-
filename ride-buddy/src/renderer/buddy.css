@@ -16,13 +16,18 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
   position: absolute; bottom: 0; left: 0;
   width: var(--char-w);
   cursor: grab;
-  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .12));
   will-change: transform;
+}
+#rb-canvas { display: block; position: relative; }
+/* 바닥 그림자 */
+#buddy::before {
+  content: ''; position: absolute; left: 12%; right: 12%; bottom: 1px; height: 14px;
+  background: radial-gradient(closest-side, rgba(25, 18, 15, .32), rgba(25, 18, 15, 0));
 }
 #buddy.dragging { cursor: grabbing; }
 
 #badge {
-  position: absolute; top: 2px; left: 8%;
+  position: absolute; top: 18%; left: 14%; z-index: 2;
   min-width: 22px; height: 22px; padding: 0 6px; box-sizing: border-box;
   border-radius: 11px; background: #FF3B30; color: #fff;
   font: 700 12px/22px inherit; text-align: center;
