@@ -12,11 +12,13 @@ const { WindowsNotificationWatcher } = require('./watchers/windows-notifications
 const ASSETS = path.join(__dirname, '..', '..', 'assets');
 const SIZE_PX = { s: 130, m: 170, l: 230 };   // 캐릭터 가로 폭(DIP) — renderer/buddy.js 와 동일
 const BUBBLE_SPACE = 190;                       // 말풍선이 들어갈 위쪽 여백
-let SPRITE_RATIO = 1.25;                        // 3D 스프라이트 세로/가로 비율
-try {
-  const meta = require('../renderer/sprites/sprites.json');
-  SPRITE_RATIO = meta.frameH / meta.frameW;
-} catch { /* 기본값 사용 */ }
+function spriteMeta(skin) {
+  try {
+    return require(`../renderer/sprites/${skin}/sprites.json`);
+  } catch {
+    return { frameW: 1, frameH: 1.3, displayScale: 1 };
+  }
+}
 
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-transparent-visuals');
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -28,12 +30,15 @@ let server = null;
 let seq = 0;
 const recent = new Map(); // 중복 알림 방지
 
-function charHeight(w) { return Math.round(w * SPRITE_RATIO); }
+function charHeight(w, skin) {
+  const m = spriteMeta(skin);
+  return Math.round(w * (m.displayScale || 1) * m.frameH / m.frameW);
+}
 
 function overlayBounds() {
   const cfg = config.load();
   const { workArea } = screen.getPrimaryDisplay();
-  const h = Math.min(workArea.height, charHeight(SIZE_PX[cfg.size] || 170) + BUBBLE_SPACE);
+  const h = Math.min(workArea.height, charHeight(SIZE_PX[cfg.size] || 170, cfg.skin) + BUBBLE_SPACE);
   return { x: workArea.x, y: workArea.y + workArea.height - h, width: workArea.width, height: h };
 }
 
@@ -146,6 +151,12 @@ function buildMenu() {
     { label: '방해 금지 (졸기 모드)', type: 'checkbox', checked: cfg.dnd, click: i => set({ dnd: i.checked }) },
     { label: '알림음 (빵빵!)', type: 'checkbox', checked: cfg.sound, click: i => set({ sound: i.checked }) },
     { label: '메시지 내용 표시', type: 'checkbox', checked: cfg.showBody, click: i => set({ showBody: i.checked }) },
+    {
+      label: '캐릭터 스타일', submenu: [
+        { label: '2D (원본 일러스트)', type: 'radio', checked: cfg.skin !== '3d', click: () => set({ skin: '2d' }) },
+        { label: '3D (Blender 렌더)', type: 'radio', checked: cfg.skin === '3d', click: () => set({ skin: '3d' }) },
+      ],
+    },
     {
       label: '크기', submenu: [
         { label: '작게', type: 'radio', checked: cfg.size === 's', click: () => set({ size: 's' }) },

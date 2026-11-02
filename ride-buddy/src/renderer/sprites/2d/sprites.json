@@ -1,7 +1,10 @@
 {
+ "skin": "2d",
  "fps": 15,
  "frameW": 300,
- "frameH": 428,
+ "frameH": 332,
+ "displayScale": 1.45,
+ "headTop": 0.0982,
  "motions": {
   "ride_r": {
    "file": "ride_r.webp",

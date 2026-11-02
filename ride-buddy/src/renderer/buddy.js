@@ -1,7 +1,8 @@
 /*
- * Ride Buddy 렌더러 — 3D 스프라이트 캐릭터 + 이동 AI + 알림 말풍선 + 인터랙션
+ * Ride Buddy 렌더러 — 스프라이트 캐릭터(2D/3D) + 이동 AI + 알림 말풍선 + 인터랙션
  *
- * 캐릭터는 Blender(Cycles)로 렌더한 3D 모션 스프라이트(sprites/*.webp)를 canvas 로 재생합니다.
+ * 캐릭터 스타일(skin)은 2가지 — 2d: 원본 일러스트 컷아웃 리그 / 3d: Blender 렌더.
+ * 둘 다 같은 이름의 모션 스프라이트(sprites/<skin>/*.webp)를 canvas 로 재생합니다.
  *
  * 상태 흐름
  *   ride_r/l ⇄ idle_r/l   랜덤 주행·정차, 화면 끝에서 3D 유턴(turn)
@@ -10,7 +11,8 @@
  *   방해 금지 → face → sleep(졸기) + 미확인 배지, 해제 시 쌓인 알림을 차례로 읽어줌
  */
 (() => {
-  const META = window.RIDE_BUDDY_SPRITES;
+  const SKINS = window.RIDE_BUDDY_SKINS;            // { '2d': meta, '3d': meta }
+  let META = SKINS['2d'] || SKINS[Object.keys(SKINS)[0]];
   const SIZE_PX = { s: 130, m: 170, l: 230 };       // 캐릭터 가로 폭(px)
   const BASE_SPEED = 46;                            // px/s
   const HEAD_X = 0.5;                               // 머리 중심 (가로 비율)
@@ -25,12 +27,22 @@
   const bridge = window.rideBuddyAPI || makeDemoBridge();
 
   // ---------- 스프라이트 플레이어 ----------
-  const sheets = {};
-  for (const [name, m] of Object.entries(META.motions)) {
-    const img = new Image();
-    img.src = `sprites/${m.file}`;
-    sheets[name] = img;
+  const sheetCache = {};
+  let sheets = {};
+  function loadSkin(skin) {
+    const meta = SKINS[skin] || SKINS['2d'];
+    if (!sheetCache[meta.skin]) {
+      sheetCache[meta.skin] = {};
+      for (const [name, m] of Object.entries(meta.motions)) {
+        const img = new Image();
+        img.src = `sprites/${meta.skin}/${m.file}`;
+        sheetCache[meta.skin][name] = img;
+      }
+    }
+    META = meta;
+    sheets = sheetCache[meta.skin];
   }
+  loadSkin('2d');
   const player = {
     name: null, reverse: false, loop: true, t0: 0, onEnd: null, done: false,
     play(name, { reverse = false, loop, onEnd } = {}) {
@@ -65,7 +77,7 @@
   };
 
   // ---------- 상태 ----------
-  let cfg = { size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true };
+  let cfg = { skin: '2d', size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true };
   let charW = SIZE_PX.m, charH = charW * META.frameH / META.frameW;
   let x = 0, dir = 1;
   let mode = 'ride';           // ride | stop | anim(전환 중) | busy | sleep | drag
@@ -119,7 +131,8 @@
   function applyConfig(c) {
     const was = { ...cfg };
     cfg = { ...cfg, ...c };
-    charW = SIZE_PX[cfg.size] || SIZE_PX.m;
+    if (cfg.skin !== META.skin) loadSkin(cfg.skin);
+    charW = Math.round((SIZE_PX[cfg.size] || SIZE_PX.m) * (META.displayScale || 1));
     charH = Math.round(charW * META.frameH / META.frameW);
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(charW * dpr);
@@ -272,7 +285,7 @@
     const headX = x + charW * HEAD_X;
     const left = Math.max(8, Math.min(W - bw - 8, headX - bw / 2));
     bubble.style.left = left + 'px';
-    bubble.style.bottom = Math.round(charH * (1 - HEAD_TOP) + 14) + 'px';
+    bubble.style.bottom = Math.round(charH * (1 - (META.headTop ?? HEAD_TOP)) + 14) + 'px';
     bubble.style.setProperty('--tail-x', Math.max(22, Math.min(bw - 22, headX - left)) + 'px');
   }
 
@@ -395,13 +408,14 @@
       { app: 'Slack', icon: '#', color: '#4A154B', ink: '#fff', title: '#dev-배포', body: 'v1.4.0 프로덕션 배포 완료 🎉' },
       { app: '캘린더', icon: '📅', color: '#E8710A', ink: '#fff', title: '10분 후 일정', body: '팀 스탠드업 미팅 (회의실 B)' },
     ];
-    let k = 0, demoCfg = { size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true };
+    let k = 0, demoCfg = { skin: '2d', size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true };
     const fire = () => handlers.config.forEach(h => h(demoCfg));
     const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; bar.appendChild(b); };
     btn('🔔 알림 보내기', () => handlers.notify.forEach(h => h({ ...samples[k++ % samples.length], time: Date.now() })));
     btn('😴 방해 금지', () => { demoCfg = { ...demoCfg, dnd: !demoCfg.dnd }; fire(); });
     btn('⏸ 멈춤', () => { demoCfg = { ...demoCfg, paused: !demoCfg.paused }; fire(); });
     btn('🔍 크기', () => { demoCfg = { ...demoCfg, size: { s: 'm', m: 'l', l: 's' }[demoCfg.size] }; fire(); });
+    btn('🎨 2D/3D', () => { demoCfg = { ...demoCfg, skin: demoCfg.skin === '2d' ? '3d' : '2d' }; fire(); });
     document.body.appendChild(bar);
     window.__demo = {
       send: n => handlers.notify.forEach(h => h({ time: Date.now(), ...n })),

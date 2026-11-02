@@ -2,7 +2,7 @@
   "name": "ride-buddy",
   "productName": "Ride Buddy",
   "version": "1.0.0",
-  "description": "바탕화면을 3D 바이크 캐릭터가 천천히 돌아다니다가 알림이 오면 정면을 돌아보고 무슨 알림인지 말풍선으로 알려주는 데스크톱 앱",
+  "description": "바탕화면을 바이크 캐릭터(2D 원본 일러스트 / 3D 렌더)가 천천히 돌아다니다가 알림이 오면 무슨 알림인지 말풍선으로 알려주는 데스크톱 앱",
   "main": "src/main/main.js",
   "author": "alekf9099",
   "license": "UNLICENSED",
@@ -16,7 +16,9 @@
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux AppImage",
     "render3d": "python 3d/ride_buddy_3d.py --motions 3d/out --res 360 --samples 24",
-    "pack3d": "python 3d/pack_sprites.py 3d/out"
+    "render2d": "python 2d/build_2d.py --frames 2d/out",
+    "pack2d": "python tools/pack_sprites.py 2d/out --skin 2d --display-scale 1.45 --icons --icon-scale 0.42",
+    "pack3d": "python tools/pack_sprites.py 3d/out --skin 3d"
   },
   "build": {
     "appId": "com.alekf9099.ridebuddy",

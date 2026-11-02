@@ -1,0 +1,178 @@
+{
+  "fps": 15,
+  "frameSize": {
+    "w": 300,
+    "h": 332
+  },
+  "generatedBy": "3d/ride_buddy_3d.py + 3d/pack_sprites.py",
+  "motions": [
+    {
+      "name": "ride_r",
+      "label": "오른쪽으로 주행",
+      "loop": true,
+      "frames": 48,
+      "durationSec": 3.2,
+      "sheet": {
+        "file": "ride_r_sheet.webp",
+        "columns": 8,
+        "rows": 6
+      },
+      "webp": "ride_r.webp",
+      "gif": "ride_r.gif"
+    },
+    {
+      "name": "ride_l",
+      "label": "왼쪽으로 주행",
+      "loop": true,
+      "frames": 48,
+      "durationSec": 3.2,
+      "sheet": {
+        "file": "ride_l_sheet.webp",
+        "columns": 8,
+        "rows": 6
+      },
+      "webp": "ride_l.webp",
+      "gif": "ride_l.gif"
+    },
+    {
+      "name": "idle_r",
+      "label": "정차 (오른쪽)",
+      "loop": true,
+      "frames": 36,
+      "durationSec": 2.4,
+      "sheet": {
+        "file": "idle_r_sheet.webp",
+        "columns": 8,
+        "rows": 5
+      },
+      "webp": "idle_r.webp",
+      "gif": "idle_r.gif"
+    },
+    {
+      "name": "idle_l",
+      "label": "정차 (왼쪽)",
+      "loop": true,
+      "frames": 36,
+      "durationSec": 2.4,
+      "sheet": {
+        "file": "idle_l_sheet.webp",
+        "columns": 8,
+        "rows": 5
+      },
+      "webp": "idle_l.webp",
+      "gif": "idle_l.gif"
+    },
+    {
+      "name": "face_r",
+      "label": "오른쪽→정면 돌아보기",
+      "loop": false,
+      "frames": 6,
+      "durationSec": 0.4,
+      "sheet": {
+        "file": "face_r_sheet.webp",
+        "columns": 6,
+        "rows": 1
+      },
+      "webp": "face_r.webp",
+      "gif": "face_r.gif"
+    },
+    {
+      "name": "face_l",
+      "label": "왼쪽→정면 돌아보기",
+      "loop": false,
+      "frames": 6,
+      "durationSec": 0.4,
+      "sheet": {
+        "file": "face_l_sheet.webp",
+        "columns": 6,
+        "rows": 1
+      },
+      "webp": "face_l.webp",
+      "gif": "face_l.gif"
+    },
+    {
+      "name": "front",
+      "label": "정면 대기",
+      "loop": true,
+      "frames": 36,
+      "durationSec": 2.4,
+      "sheet": {
+        "file": "front_sheet.webp",
+        "columns": 8,
+        "rows": 5
+      },
+      "webp": "front.webp",
+      "gif": "front.gif"
+    },
+    {
+      "name": "notify",
+      "label": "알림 도착",
+      "loop": false,
+      "frames": 24,
+      "durationSec": 1.6,
+      "sheet": {
+        "file": "notify_sheet.webp",
+        "columns": 8,
+        "rows": 3
+      },
+      "webp": "notify.webp",
+      "gif": "notify.gif"
+    },
+    {
+      "name": "talk",
+      "label": "알림 읽어주기",
+      "loop": true,
+      "frames": 24,
+      "durationSec": 1.6,
+      "sheet": {
+        "file": "talk_sheet.webp",
+        "columns": 8,
+        "rows": 3
+      },
+      "webp": "talk.webp",
+      "gif": "talk.gif"
+    },
+    {
+      "name": "happy",
+      "label": "기쁨",
+      "loop": true,
+      "frames": 24,
+      "durationSec": 1.6,
+      "sheet": {
+        "file": "happy_sheet.webp",
+        "columns": 8,
+        "rows": 3
+      },
+      "webp": "happy.webp",
+      "gif": "happy.gif"
+    },
+    {
+      "name": "sleep",
+      "label": "졸기 (방해 금지)",
+      "loop": true,
+      "frames": 48,
+      "durationSec": 3.2,
+      "sheet": {
+        "file": "sleep_sheet.webp",
+        "columns": 8,
+        "rows": 6
+      },
+      "webp": "sleep.webp",
+      "gif": "sleep.gif"
+    },
+    {
+      "name": "turn",
+      "label": "유턴 (왼→오)",
+      "loop": false,
+      "frames": 12,
+      "durationSec": 0.8,
+      "sheet": {
+        "file": "turn_sheet.webp",
+        "columns": 8,
+        "rows": 2
+      },
+      "webp": "turn.webp",
+      "gif": "turn.gif"
+    }
+  ]
+}

@@ -4,3 +4,6 @@ out/
 # Blender 렌더 원본 프레임 (pack3d 결과물만 커밋)
 3d/out/
 3d/__pycache__/
+2d/out/
+2d/__pycache__/
+tools/__pycache__/

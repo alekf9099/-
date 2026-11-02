@@ -1,7 +1,7 @@
 """
 3D 렌더 프레임 → 앱용 스프라이트 + 배포용 모션 에셋 패킹
 =========================================================
-  python pack_sprites.py <render_dir> [--app ../src/renderer/sprites] [--out ../motions] [--width 300]
+  python tools/pack_sprites.py <render_dir> --skin 3d|2d [--width 300] [--icons]
 
 입력: <render_dir>/<motion>/frame_000.png ...  (ride_buddy_3d.py --motions 결과)
 출력:
@@ -32,10 +32,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('render_dir')
     here = os.path.dirname(os.path.abspath(__file__))
-    ap.add_argument('--app', default=os.path.join(here, '..', 'src', 'renderer', 'sprites'))
-    ap.add_argument('--out', default=os.path.join(here, '..', 'motions'))
+    ap.add_argument('--skin', default='3d', help='캐릭터 스타일 이름 (2d / 3d)')
+    ap.add_argument('--app')
+    ap.add_argument('--out')
     ap.add_argument('--width', type=int, default=300)
+    ap.add_argument('--display-scale', type=float, default=1.0, help='앱에서 표시 배율 (효과 여백이 큰 스킨 보정)')
+    ap.add_argument('--icons', action='store_true', help='front 프레임으로 앱/트레이 아이콘 생성')
+    ap.add_argument('--icon-scale', type=float, default=0.64, help='아이콘 크롭 크기 (캐릭터 높이 대비)')
     a = ap.parse_args()
+    a.app = a.app or os.path.join(here, '..', 'src', 'renderer', 'sprites', a.skin)
+    a.out = a.out or os.path.join(here, '..', 'motions', a.skin)
 
     motions = [m for m in MOTION_INFO if os.path.isdir(os.path.join(a.render_dir, m))]
     frames = {}
@@ -58,7 +64,12 @@ def main():
 
     os.makedirs(a.app, exist_ok=True)
     os.makedirs(a.out, exist_ok=True)
-    app_meta = {'fps': FPS, 'frameW': fw, 'frameH': fh, 'motions': {}}
+    head_top = 0.15
+    if 'front' in frames:
+        b0 = frames['front'][0].crop(bbox).getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox()
+        head_top = round(b0[1] / ch, 4)
+    app_meta = {'skin': a.skin, 'fps': FPS, 'frameW': fw, 'frameH': fh, 'displayScale': a.display_scale,
+                'headTop': head_top, 'motions': {}}
     out_meta = {'fps': FPS, 'frameSize': {'w': fw, 'h': fh}, 'generatedBy': '3d/ride_buddy_3d.py + 3d/pack_sprites.py', 'motions': []}
 
     for m in motions:
@@ -97,19 +108,20 @@ def main():
     json.dump(app_meta, open(os.path.join(a.app, 'sprites.json'), 'w'), ensure_ascii=False, indent=1)
     # 앱에서 fetch 없이 쓰도록 JS 로도 출력 (file:// + CSP 대응)
     with open(os.path.join(a.app, 'sprites.js'), 'w') as f:
-        f.write('window.RIDE_BUDDY_SPRITES = ' + json.dumps(app_meta, ensure_ascii=False) + ';\n')
+        f.write('window.RIDE_BUDDY_SKINS = window.RIDE_BUDDY_SKINS || {};\n')
+        f.write(f'window.RIDE_BUDDY_SKINS[{json.dumps(a.skin)}] = ' + json.dumps(app_meta, ensure_ascii=False) + ';\n')
     json.dump(out_meta, open(os.path.join(a.out, 'motions.json'), 'w'), ensure_ascii=False, indent=2)
 
     # 앱/트레이 아이콘: 정면 프레임에서 얼굴 부분 크롭
-    if 'front' in frames:
-        make_icons(frames['front'][0], os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets'))
+    if a.icons and 'front' in frames:
+        make_icons(frames['front'][0], os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets'), a.icon_scale)
 
 
-def make_icons(im, out_dir):
+def make_icons(im, out_dir, scale=0.64):
     os.makedirs(out_dir, exist_ok=True)
     b = im.getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox()
     h = b[3] - b[1]
-    size = int(h * 0.64)
+    size = int(h * scale)
     cx = (b[0] + b[2]) // 2
     top = b[1] - int(size * 0.02)
     face = im.crop((cx - size // 2, top, cx + size // 2, top + size))
