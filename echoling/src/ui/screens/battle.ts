@@ -22,6 +22,7 @@ import { endRun, processGrowth, run, seen, setBattleReward } from '../flow';
 import { markCaught, saveMeta } from '../../game/meta';
 import { bestLevel } from '../../game/advice';
 import { coach } from '../coach';
+import { playTrack } from '../audio';
 import { EL_ICON, ITEM_ICON, ACT_BG, ico, img } from '../assets';
 
 interface View {
@@ -93,9 +94,10 @@ register('battle', () => {
   };
   snapshot();
   renderAll();
+  playTrack(b.kind === 'boss' ? 'boss' : 'battle');
   if (b.kind === 'boss') {
     root.classList.add('boss-intro');
-    sfx('crit');
+    sfx('roar');
   }
   setTimeout(() => {
     if (!app.meta.tutorialDone) showTutorial();
@@ -532,7 +534,7 @@ async function play(events: BEvent[]): Promise<void> {
         break;
       }
       case 'phase': {
-        sfx('crit');
+        sfx('roar');
         haptic([40, 40, 80]);
         if (!app.meta.settings.reduceMotion) void anim(v.el.arena, 'shake', 350);
         void anim(v.el.arena, 'rage', 900);

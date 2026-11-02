@@ -5,6 +5,7 @@ import { ACTS, BLESSINGS, DAILY_MODIFIERS, MAP_ROWS, MAX_ASCENSION } from '../da
 import { BOSSES, SPECIES_LIST, getSpecies, wildPool } from '../data/species';
 import { CHARM_LIST, ITEMS, getCharm, type Charm } from '../data/charms';
 import { AFFIX_IDS } from '../data/affixes';
+import { lockedCharmsFor } from '../data/achievements';
 import { MOVE_LIST } from '../data/moves';
 import { generateMap } from './map';
 import { type BattleMonster, createMonster, evolvedFormFor, healPct, levelUp, maxHp } from './monster';
@@ -51,6 +52,10 @@ export function newRun(starterId: string, meta: MetaSave, mode: 'normal' | 'dail
     uidCounter: 0,
     ascension: Math.max(0, Math.min(MAX_ASCENSION, ascension)),
     snowball: 0,
+    lockedCharms: lockedCharmsFor(meta),
+    elitesWon: 0,
+    bossesWon: 0,
+    fusions: 0,
   };
   if (run.ascension >= 4) {
     run.items.potion = Math.max(0, (run.items.potion ?? 0) - 1);
@@ -225,6 +230,7 @@ function randomCharms(rng: Rng, run: RunState, n: number, minRarity?: 'rare', on
   const pool = CHARM_LIST.filter(
     (c) =>
       !run.charms.includes(c.id) &&
+      !run.lockedCharms?.includes(c.id) &&
       (!minRarity || c.rarity !== 'common') &&
       (!only || only.includes(c.rarity)) &&
       (c.rarity !== 'legend' || allowLegend || only?.includes('legend')),
@@ -395,6 +401,8 @@ export function applyBattleOutcome(run: RunState, b: BattleState): { caughtWhere
   const out: { caughtWhere?: 'party' | 'box' } = {};
   if (b.over === 'win' || b.over === 'caught') {
     run.battlesWon += 1;
+    if (b.kind === 'elite') run.elitesWon = (run.elitesWon ?? 0) + 1;
+    if (b.kind === 'boss') run.bossesWon = (run.bossesWon ?? 0) + 1;
     if (run.charms.includes('snowball')) run.snowball += 1;
     // 승리 후 숨 고르기: 파티 10% 회복 (+휴대 구급함 12%), 기절한 동료도 10%로 일어남
     const pct = 0.1 + (run.charms.includes('medkit') ? 0.12 : 0);

@@ -17,11 +17,13 @@ export function saveAll(): void {
 
 export type Route =
   | 'title' | 'starter' | 'map' | 'battle' | 'reward' | 'shop' | 'rest' | 'event' | 'treasure'
-  | 'runEnd' | 'dex' | 'lab' | 'settings' | 'actClear' | 'blessing';
+  | 'runEnd' | 'dex' | 'lab' | 'settings' | 'actClear' | 'blessing' | 'achievements';
 
 type ScreenFn = (arg?: any) => HTMLElement; // eslint-disable-line @typescript-eslint/no-explicit-any
 const routes: Partial<Record<Route, ScreenFn>> = {};
 export let currentRoute: Route = 'title';
+/** 화면 전환 훅 (배경음악 등) */
+export const routeHooks: ((r: Route, arg?: unknown) => void)[] = [];
 
 export function register(r: Route, fn: ScreenFn): void {
   routes[r] = fn;
@@ -32,5 +34,6 @@ export function go(r: Route, arg?: unknown): void {
   if (!fn) throw new Error('route not registered: ' + r);
   currentRoute = r;
   mount(fn(arg));
+  for (const hook of routeHooks) hook(r, arg);
   window.scrollTo(0, 0);
 }

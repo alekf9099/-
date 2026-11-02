@@ -533,3 +533,26 @@ h2 { font-size: 22px; }
 .charm-icon .ui-img { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4)); }
 .charm-hero { filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.45)); animation: float 3s ease-in-out infinite; }
 .bc-charm { width: 34px; height: 34px; }
+
+/* ── v0.5 업적 */
+.grid2.tiles .btn.tile { min-height: 70px; flex-direction: row; gap: 10px; justify-content: flex-start; padding: 10px 14px; }
+.grid2.tiles .btn.tile small { margin-left: auto; }
+.achv-pop { position: fixed; left: 50%; top: calc(12px + var(--safe-t)); transform: translate(-50%, -20px); width: min(420px, calc(100% - 24px)); display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-radius: 16px; background: linear-gradient(135deg, rgba(90, 60, 0, 0.96), rgba(40, 26, 6, 0.96)); border: 1.5px solid rgba(255, 216, 74, 0.75); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 216, 74, 0.3); z-index: 75; opacity: 0; transition: 0.25s; }
+.achv-pop.show { opacity: 1; transform: translate(-50%, 0); }
+.achv-pop small { color: #ffd84a; font-weight: 800; font-size: 11px; }
+.achv-pop b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 17px; }
+.achv-pop p { margin: 0; font-size: 12.5px; color: #f3e3b5; }
+.achv-ico { filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.45)); }
+.achv-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px; }
+.achv-summary > div { background: var(--panel); border: 1px solid var(--stroke); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.achv-summary small { color: var(--muted); font-size: 12px; }
+.achv-summary b { font-family: var(--font-num); font-weight: 400; font-size: 22px; }
+.achv-locked-row { display: flex; gap: 2px; flex-wrap: wrap; }
+.achv-locked-row .locked { filter: grayscale(1) brightness(0.45); }
+.achv-row { display: flex; gap: 12px; align-items: flex-start; }
+.achv-row:not(.got) .achv-ico { filter: grayscale(0.85) brightness(0.75); }
+.achv-row.got { border-color: rgba(255, 216, 74, 0.45); background: linear-gradient(135deg, rgba(255, 216, 74, 0.1), var(--panel)); }
+.achv-reward { color: #ffd84a; font-weight: 700; }
+.credits summary { cursor: pointer; font-weight: 800; }
+.credits p { margin: 6px 0 0; }
+.achv-summary .bar { flex: none; height: 6px; }

@@ -5,6 +5,7 @@ import { SPECIES_LIST, STARTERS, getSpecies } from '../../data/species';
 import { getMove } from '../../data/moves';
 import { ACTS, ASCENSION_RULES, DAILY_MODIFIERS, META_UPGRADES, STARTER_UNLOCK_COST } from '../../data/world';
 import { getCharm } from '../../data/charms';
+import { ACHIEVEMENTS } from '../../data/achievements';
 import { type DefeatCause, counterElements, defeatAdvice } from '../../game/advice';
 import { hashString } from '../../core/rng';
 import { defaultMeta } from '../../game/meta';
@@ -51,8 +52,9 @@ register('title', () => {
       h('button', { class: 'btn xl block daily', onclick: () => newRun('daily') },
         h('span', { class: 'btn-label' }, img(NODE_ICON.event, 28), `데일리 챌린지 ${playedToday ? '· 재도전' : ''}`),
         h('small', null, `오늘의 규칙: ${mod.name} — ${mod.desc}`)),
-      h('div', { class: 'grid3' },
+      h('div', { class: 'grid2 tiles' },
         h('button', { class: 'btn tile', onclick: () => go('dex') }, ico('dex', 26), h('span', null, '도감'), h('small', null, `${m.caught.length}/${SPECIES_LIST.filter((s) => s.rarity !== 'legend').length}`)),
+        h('button', { class: 'btn tile', onclick: () => go('achievements') }, ico('trophy', 26), h('span', null, '업적'), h('small', null, `${Object.keys(m.achievements ?? {}).length}/${ACHIEVEMENTS.length}`)),
         h('button', { class: 'btn tile', onclick: () => go('lab') }, ico('lab', 26), h('span', null, '연구소'), h('small', null, `💎 ${m.shards}`)),
         h('button', { class: 'btn tile', onclick: () => go('settings') }, ico('settings', 26), h('span', null, '설정'), h('small', null, `x${m.settings.speed} 속도`)),
       ),
@@ -228,9 +230,9 @@ register('settings', () => {
     bindSettings(s);
     saveAll();
   };
-  const toggle = (k: 'haptics' | 'sound' | 'reduceMotion', label: string, sub: string) =>
+  const toggle = (k: 'haptics' | 'sound' | 'music' | 'reduceMotion', label: string, sub: string) =>
     h('label', { class: 'card row between toggle' }, h('div', null, h('b', null, label), h('div', { class: 'muted small' }, sub)),
-      (() => { const i = h('input', { type: 'checkbox', role: 'switch' }) as HTMLInputElement; i.checked = s[k]; i.onchange = () => { set(k, i.checked); sfx('tap'); }; return i; })());
+      (() => { const i = h('input', { type: 'checkbox', role: 'switch' }) as HTMLInputElement; i.checked = s[k] !== false; i.onchange = () => { set(k, i.checked); sfx('tap'); }; return i; })());
   const speedSeg = h('div', { class: 'seg' }, ([1, 2, 3] as const).map((v) => h('button', { class: s.speed === v ? 'on' : '', onclick: (e: MouseEvent) => {
     set('speed', v);
     (e.currentTarget as HTMLElement).parentElement!.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i + 1 === v));
@@ -240,7 +242,8 @@ register('settings', () => {
     h('div', { class: 'list' },
       h('div', { class: 'card row between' }, h('div', null, h('b', null, '전투 속도'), h('div', { class: 'muted small' }, '연출 재생 속도')), speedSeg),
       toggle('haptics', '진동 (햅틱)', '타격·포획 시 진동 피드백'),
-      toggle('sound', '효과음', '합성 사운드'),
+      toggle('music', '배경음악', '타이틀 · 맵 · 전투 · 보스 테마'),
+      toggle('sound', '효과음', '타격 · 포획 · UI 사운드'),
       toggle('reduceMotion', '모션 줄이기', '흔들림·플래시 최소화 (멀미 방지)'),
       h('button', { class: 'btn danger block', onclick: async () => {
         if (!(await confirmSheet('데이터 초기화', '도감, 결정, 업그레이드, 진행 중인 런이 모두 삭제됩니다.', '초기화', true))) return;
@@ -252,7 +255,14 @@ register('settings', () => {
         go('title');
       } }, '데이터 초기화'),
     ),
-    h('p', { class: 'muted small center' }, 'ECHOLING은 오리지널 IP입니다. 모든 몬스터·아트·이름은 자체 제작.'),
+    h('details', { class: 'card credits' },
+      h('summary', null, '크레딧 · 라이선스'),
+      h('p', { class: 'small muted' }, '캐릭터·배경·아이콘: Canva AI로 제작한 ECHOLING 오리지널 아트'),
+      h('p', { class: 'small muted' }, '아이콘: Lucide (ISC) · 서체: Pretendard, Jua, Lilita One (SIL OFL)'),
+      h('p', { class: 'small muted' }, '음악 (CC0, OpenGameArt): Blue Meadow In Green Sky · Flowerbed Fields · Fast Fight · Determined Pursuit'),
+      h('p', { class: 'small muted' }, '효과음 (CC0): Kenney Interface Sounds · 80 CC0 RPG SFX · Level up/Power up/Coin get'),
+    ),
+    h('p', { class: 'muted small center' }, 'ECHOLING은 오리지널 IP입니다. 모든 몬스터·이름·세계관은 자체 제작.'),
   );
 });
 

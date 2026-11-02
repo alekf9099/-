@@ -44,7 +44,7 @@ export const EVENTS: GameEvent[] = [
         can: (r) => r.gold >= 60,
         apply: (r) => {
           const rng = runRng(r);
-          const pool = CHARM_LIST.filter((c) => !r.charms.includes(c.id));
+          const pool = CHARM_LIST.filter((c) => !r.charms.includes(c.id) && !r.lockedCharms?.includes(c.id));
           r.gold -= 60;
           if (!pool.length) {
             commitRng(r, rng);
@@ -232,7 +232,7 @@ export const EVENTS: GameEvent[] = [
         sub: '선두 에코링이 랜덤 부적 효과를 이해한다 (부적 획득, HP 30% 소모)',
         apply: (r) => {
           const rng = runRng(r);
-          const pool = CHARM_LIST.filter((c) => !r.charms.includes(c.id) && c.rarity === 'common');
+          const pool = CHARM_LIST.filter((c) => !r.charms.includes(c.id) && !r.lockedCharms?.includes(c.id) && c.rarity === 'common');
           const lead = r.party.find((m) => m.hp > 0) ?? r.party[0];
           lead.hp = Math.max(1, lead.hp - Math.ceil(maxHp(lead) * 0.3));
           if (!pool.length) {

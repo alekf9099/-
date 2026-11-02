@@ -9,6 +9,7 @@ import { advanceAct, battleRewards, makeShop, newRun, treasureRewards } from '..
 import type { BattleKind } from '../game/battle';
 import { todayKey } from '../core/rng';
 import { MAX_ASCENSION } from '../data/world';
+import { checkAchievements } from './achv';
 import type { DefeatCause } from '../game/advice';
 import { app, go, saveAll } from './app';
 import { h, openSheet, sleep } from './dom';
@@ -79,6 +80,7 @@ export function completeNode(): void {
   const r = run();
   const node = r.currentNodeId ? r.map.nodes[r.currentNodeId] : null;
   r.floorsCleared += 1;
+  checkAchievements();
   if (node?.type === 'boss') {
     r.pending = { kind: 'actClear' };
     saveAll();
@@ -112,8 +114,12 @@ export function setBattleReward(kind: BattleKind, title: string): void {
 
 export function endRun(victory: boolean, cause?: DefeatCause): void {
   const r = run();
+  checkAchievements({ victory });
   const shards = shardsForRun(r, victory);
   const m = app.meta;
+  m.stats.elites += r.elitesWon ?? 0;
+  m.stats.bosses += r.bossesWon ?? 0;
+  m.stats.fusions += r.fusions ?? 0;
   m.shards += shards;
   m.bestFloor = Math.max(m.bestFloor, r.floorsCleared + r.act * 100);
   if (victory) m.wins += 1;

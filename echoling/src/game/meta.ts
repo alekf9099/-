@@ -22,6 +22,9 @@ export function defaultMeta(): MetaSave {
     tutorialDone: false,
     maxAscension: 0,
     tipsSeen: [],
+    achievements: {},
+    unlockedCharms: [],
+    stats: { elites: 0, bosses: 0, fusions: 0 },
   };
 }
 
@@ -48,7 +51,7 @@ export function loadMeta(): MetaSave {
   try {
     const parsed = JSON.parse(raw) as Partial<MetaSave>;
     const d = defaultMeta();
-    return { ...d, ...parsed, settings: { ...d.settings, ...(parsed.settings ?? {}) } };
+    return { ...d, ...parsed, settings: { ...d.settings, ...(parsed.settings ?? {}) }, stats: { ...d.stats, ...(parsed.stats ?? {}) } };
   } catch {
     return defaultMeta();
   }

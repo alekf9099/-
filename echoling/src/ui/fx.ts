@@ -1,9 +1,11 @@
 // 햅틱 + 합성 효과음 (오디오 파일 0개 → APK 용량 절약)
 import type { Settings } from '../core/types';
+import { playSample, setMusicEnabled, type SfxName } from './audio';
 
 let settings: Settings = { speed: 1, haptics: true, sound: true, reduceMotion: false };
 export function bindSettings(s: Settings): void {
   settings = s;
+  setMusicEnabled(s.music !== false);
 }
 
 export function haptic(pattern: number | number[] = 12): void {
@@ -43,9 +45,22 @@ function tone(freq: number, dur: number, type: OscillatorType = 'sine', vol = 0.
   o.stop(t0 + dur + 0.02);
 }
 
-export type Sfx = 'tap' | 'hit' | 'crit' | 'super' | 'weak' | 'heal' | 'faint' | 'level' | 'capture' | 'shake' | 'win' | 'lose' | 'coin' | 'evolve' | 'buff' | 'debuff';
+export type Sfx = SfxName;
+
+/** 샘플 우선 재생, 로드 전/실패 시 아래 합성음으로 폴백. 햅틱은 항상 */
+const HAPTIC: Partial<Record<Sfx, number | number[]>> = { hit: 18, crit: [20, 30, 40], super: [25, 20, 25], weak: 8, faint: 60, level: [10, 40, 10], capture: [30, 50, 30, 50, 80], shake: 15, evolve: [20, 60, 20, 60, 120], roar: [40, 40, 80] };
 
 export function sfx(name: Sfx): void {
+  if (!settings.sound) return;
+  if (playSample(name)) {
+    const hp = HAPTIC[name];
+    if (hp) haptic(hp);
+    return;
+  }
+  synth(name);
+}
+
+function synth(name: Sfx): void {
   switch (name) {
     case 'tap': tone(660, 0.05, 'triangle', 0.04); break;
     case 'hit': tone(180, 0.12, 'square', 0.06, -90); haptic(18); break;
@@ -63,6 +78,10 @@ export function sfx(name: Sfx): void {
     case 'evolve': [392, 523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.18, 'sine', 0.06, 0, i * 0.12)); haptic([20, 60, 20, 60, 120]); break;
     case 'buff': tone(440, 0.15, 'sine', 0.05, 440); break;
     case 'debuff': tone(440, 0.15, 'sine', 0.05, -220); break;
+    case 'confirm': tone(880, 0.08, 'triangle', 0.05); tone(1320, 0.1, 'triangle', 0.04, 0, 0.05); break;
+    case 'close': tone(520, 0.06, 'triangle', 0.04, -120); break;
+    case 'error': tone(200, 0.15, 'square', 0.05); break;
+    case 'roar': tone(110, 0.5, 'sawtooth', 0.08, -50); haptic([40, 40, 80]); break;
   }
 }
 

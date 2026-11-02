@@ -8,6 +8,7 @@ import {
 
 const BASE = (import.meta.env?.BASE_URL ?? './').replace(/\/?$/, '/');
 const ui = (name: string) => `${BASE}ui/${name}.webp`;
+export const uiUrl = ui;
 
 export const NODE_ICON: Record<NodeType, string> = {
   battle: ui('node_battle'), trainer: ui('node_trainer'), elite: ui('node_elite'), event: ui('node_event'),

@@ -183,6 +183,12 @@ export interface RunState {
   ascension: number;
   /** 눈덩이 부적 누적 스택 */
   snowball: number;
+  /** 이번 런에서 아직 잠긴 부적 (업적으로 해금) */
+  lockedCharms?: string[];
+  /** 이번 런 통계 (업적 판정용) */
+  elitesWon?: number;
+  bossesWon?: number;
+  fusions?: number;
 }
 
 export type PendingScreen =
@@ -230,11 +236,19 @@ export interface MetaSave {
   maxAscension: number;
   /** 이미 본 코치 팁 ID */
   tipsSeen: string[];
+  /** 달성한 업적 ID → 달성 시각 */
+  achievements: Record<string, number>;
+  /** 업적으로 해금된 부적 */
+  unlockedCharms: string[];
+  /** 누적 통계 */
+  stats: { elites: number; bosses: number; fusions: number };
 }
 
 export interface Settings {
   speed: 1 | 2 | 3;
   haptics: boolean;
   sound: boolean;
+  /** 배경음악 */
+  music?: boolean;
   reduceMotion: boolean;
 }

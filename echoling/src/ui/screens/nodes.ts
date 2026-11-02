@@ -315,6 +315,7 @@ async function fusion(): Promise<boolean> {
   else r.box.splice(r.box.indexOf(donor), 1);
   if (!r.party.length && r.box.length) r.party.push(r.box.shift()!);
   const res = gainExp(target, Math.floor(total * 0.5));
+  r.fusions = (r.fusions ?? 0) + 1;
   sfx('evolve');
   await learnMoveModal(target, moveId);
   toast(`🧬 퓨전 완료! ${displayName(target)} Lv.${target.level}`, 'good');
