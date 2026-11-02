@@ -67,7 +67,7 @@ export interface BattleState {
 export type BEvent =
   | { t: 'msg'; text: string }
   | { t: 'use'; side: Side; move: string; name: string }
-  | { t: 'hit'; side: Side; dmg: number; hp: number; eff: number; crit: boolean; hitNo?: number }
+  | { t: 'hit'; side: Side; dmg: number; hp: number; eff: number; crit: boolean; hitNo?: number; /** 기술 직격이 아닌 피해 (연출 구분용) */ src?: 'recoil' | 'thorns' | 'burn' | 'poison' }
   | { t: 'miss'; side: Side }
   | { t: 'heal'; side: Side; amount: number; hp: number }
   | { t: 'status'; side: Side; status: StatusId | null }
@@ -511,19 +511,19 @@ function executeMove(state: BattleState, side: Side, moveIdx: number, rng: Rng, 
     if (ef.recoil) {
       const r = Math.max(1, Math.floor(total * ef.recoil));
       user.hp = Math.max(0, user.hp - r);
-      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false }, { t: 'msg', text: `${displayName(user)}은(는) 반동 피해를 입었다!` });
+      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false, src: 'recoil' }, { t: 'msg', text: `${displayName(user)}은(는) 반동 피해를 입었다!` });
     }
     // 가시 갑옷 반사
     if (hasCharm(state, tSide, 'thornMail') && user.hp > 0) {
       const r = Math.max(1, Math.floor(total * 0.2));
       user.hp = Math.max(0, user.hp - r);
-      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false }, { t: 'msg', text: '🌵 가시에 찔렸다!' });
+      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false, src: 'thorns' }, { t: 'msg', text: '🌵 가시에 찔렸다!' });
     }
     // 엘리트 가시 접두사
     if (hasAffix(state, tSide, 'thorns') && user.hp > 0) {
       const r = Math.max(1, Math.floor(total * 0.15));
       user.hp = Math.max(0, user.hp - r);
-      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false }, { t: 'msg', text: '🌵 엘리트의 가시가 반격했다!' });
+      ev.push({ t: 'hit', side, dmg: r, hp: user.hp, eff: 1, crit: false, src: 'thorns' }, { t: 'msg', text: '🌵 엘리트의 가시가 반격했다!' });
     }
     // 불꽃 공명2: 20% 화상
     if (hasRes2(state, side, 'blaze') && target.hp > 0 && !target.status && rng.chance(0.2)) {
@@ -781,7 +781,7 @@ function endOfTurn(state: BattleState, rng: Rng, ev: BEvent[]): void {
     if (m.status === 'burn' || m.status === 'poison') {
       const d = Math.max(1, Math.floor(mx * (m.status === 'burn' ? 1 / 16 : 1 / 8)));
       m.hp = Math.max(0, m.hp - d);
-      ev.push({ t: 'hit', side, dmg: d, hp: m.hp, eff: 1, crit: false }, { t: 'msg', text: `${displayName(m)}은(는) ${STATUS_NAME[m.status]} 피해를 입었다.` });
+      ev.push({ t: 'hit', side, dmg: d, hp: m.hp, eff: 1, crit: false, src: m.status }, { t: 'msg', text: `${displayName(m)}은(는) ${STATUS_NAME[m.status]} 피해를 입었다.` });
     }
     if (m.status === 'chill') {
       m.statusTurns = (m.statusTurns ?? 1) - 1;

@@ -24,6 +24,8 @@
 | 📸 **결과 카드** (v0.2) | 빌드·시드 요약 + 결과 복사로 공유 |
 | 🏆 **업적 16종** (v0.5) | 달성 시 결정 보상 · 특별 부적 7종 해금 |
 | 🎵 **BGM·효과음** (v0.5) | CC0 음원 4곡 + 효과음 20종, 화면별 자동 전환 |
+| ✨ **속성 이펙트** (v0.6) | 9속성 발사체·착탄 파티클 (Canva 텍스처), 기 모으기·히트스톱·회피 — [`docs/V06_VFX_MOTION.md`](docs/V06_VFX_MOTION.md) |
+| 🐾 **체형별 모션** (v0.6) | 7체형마다 다른 대기·공격·등장 동작, 방향성 넉백, 빈사 헐떡임 |
 | 📱 **모바일 UX** | 세로·한 손 조작, 하단 시트, 햅틱, AUTO·x3 배속, 백버튼, 노드 단위 자동저장 |
 
 ## 🎨 아트 파이프라인
@@ -37,6 +39,7 @@
 |---|---|---|
 | 배경 일러스트 (액트 3 + 타이틀) | Canva AI `generate-image` | `public/ui/bg_*.webp` (720×1280) |
 | 맵 노드 아이콘 8 · 아이템 아이콘 8 · 속성 엠블럼 8 | Canva AI `generate-image` | `public/ui/{node,item,el}_*.webp` (투명) |
+| 전투 이펙트 텍스처 9 (v0.6) | Canva AI `generate-image` → color-to-alpha | `public/fx/fx_*.webp` |
 | UI 컨트롤 아이콘 (뒤로·닫기·가방·파티 등) | [Lucide](https://lucide.dev) (ISC) | `src/ui/assets.ts` `ico()` |
 | 서체 | Pretendard(본문) · Jua(제목) · Lilita One(숫자/로고), OFL | `src/fonts/*.woff2` — **fonttools**로 게임 글자만 서브셋 (총 240KB) |
 

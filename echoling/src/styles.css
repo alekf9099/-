@@ -265,11 +265,7 @@ p { line-height: 1.5; }
 .b-sprite.enemy { margin-top: 8px; }
 .b-sprite .sprite { overflow: visible; transition: opacity 0.4s, transform 0.4s, filter 0.4s; }
 .b-sprite.fainted .sprite { opacity: 0; transform: translateY(30px) scale(0.85); }
-.b-sprite.lunge .sprite { animation: lunge-e 0.38s; }
-.b-sprite.player.lunge .sprite { animation: lunge-p 0.38s; }
-.b-sprite.cast .sprite { animation: cast 0.38s; filter: drop-shadow(0 0 14px var(--fx)); }
-.b-sprite.hurt .sprite { animation: hurt 0.42s; }
-.b-sprite.enter .sprite { animation: enter 0.42s; }
+.b-sprite.cast .sprite { animation: cast calc(0.42s * var(--spd, 1)); filter: drop-shadow(0 0 14px var(--fx)); }
 .b-sprite.absorbed .sprite { opacity: 0; transform: scale(0.1); filter: brightness(3); }
 .pop { position: absolute; top: 20%; left: 50%; transform: translateX(-50%); font-weight: 900; font-size: 26px; pointer-events: none; animation: pop 1.05s ease-out forwards; text-shadow: 0 2px 0 #000, 0 0 12px rgba(0, 0, 0, 0.6); white-space: nowrap; z-index: 3; }
 .pop.crit { color: #ffd84a; font-size: 34px; } .pop.super { color: #ff7a59; font-size: 30px; } .pop.weak { color: #a9a3c9; font-size: 20px; }
@@ -422,11 +418,7 @@ p { line-height: 1.5; }
 @keyframes twinkle { 50% { opacity: 0.2; } }
 @keyframes float { 50% { transform: translateY(-8px); } }
 @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.08); } }
-@keyframes lunge-e { 40% { transform: translate(-26px, 18px) scale(1.06); } }
-@keyframes lunge-p { 40% { transform: translate(26px, -18px) scale(1.06); } }
 @keyframes cast { 50% { transform: scale(1.08) translateY(-6px); } }
-@keyframes hurt { 0%, 100% { transform: none; filter: none; } 20% { transform: translateX(-8px); filter: brightness(2.2) saturate(0); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); filter: brightness(1.8) saturate(0); } 80% { transform: translateX(3px); } }
-@keyframes enter { from { transform: scale(0.2); opacity: 0; filter: brightness(3); } }
 @keyframes pop { 0% { opacity: 0; transform: translate(-50%, 10px) scale(0.6); } 15% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); } 30% { transform: translate(-50%, -10px) scale(1); } 100% { opacity: 0; transform: translate(-50%, -46px); } }
 @keyframes pop-in { from { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.08); } }
 @keyframes shake { 20% { transform: translate(-6px, 3px); } 40% { transform: translate(6px, -3px); } 60% { transform: translate(-4px, 2px); } 80% { transform: translate(3px, -1px); } }
@@ -556,3 +548,112 @@ h2 { font-size: 22px; }
 .credits summary { cursor: pointer; font-weight: 800; }
 .credits p { margin: 6px 0 0; }
 .achv-summary .bar { flex: none; height: 6px; }
+
+/* ═══════════ v0.6 체형 모션 + 전투 이펙트 레이어 ═══════════
+   - 공격 방향: --dx/--dy (적 = 왼쪽 아래로, 아군 = 오른쪽 위로)
+   - 모든 전투 모션 길이는 --spd(배속)에 맞춰 줄어듦 → x3에서도 동작이 잘리지 않음 */
+.vfx-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.b-sprite.enemy { --dx: -1; --dy: 1; }
+.b-sprite.player { --dx: 1; --dy: -1; }
+.b-sprite .sprite { transform-origin: 50% 100%; }
+
+/* ── 공격 (예비동작 → 내지르기 → 복귀) */
+.b-sprite.atk .sprite { animation: atk-pounce calc(0.56s * var(--spd, 1)) cubic-bezier(0.3, 0, 0.3, 1); }
+.b-sprite.atk .sprite[data-body="quad"] { animation-name: atk-charge; }
+.b-sprite.atk .sprite[data-body="bird"] { animation-name: atk-swoop; }
+.b-sprite.atk .sprite[data-body="blob"] { animation-name: atk-squash; }
+.b-sprite.atk .sprite[data-body="serpent"] { animation-name: atk-strike; }
+.b-sprite.atk .sprite[data-body="golem"] { animation-name: atk-slam; }
+@keyframes atk-pounce {
+  30% { transform: translate(calc(var(--dx) * -10px), calc(var(--dy) * -4px)) scale(1.08, 0.9); }
+  46% { transform: translate(calc(var(--dx) * 34px), calc(var(--dy) * 22px)) scale(0.94, 1.08); }
+  62% { transform: translate(calc(var(--dx) * 26px), calc(var(--dy) * 16px)) scale(1.04, 0.96); }
+}
+@keyframes atk-charge {
+  32% { transform: translate(calc(var(--dx) * -16px), 3px) scale(1.06, 0.9) rotate(calc(var(--dx) * -5deg)); }
+  48% { transform: translate(calc(var(--dx) * 50px), calc(var(--dy) * 30px)) scale(1.05, 0.96) rotate(calc(var(--dx) * 4deg)); }
+  64% { transform: translate(calc(var(--dx) * 40px), calc(var(--dy) * 24px)) scale(0.98, 1.02); }
+}
+@keyframes atk-swoop {
+  28% { transform: translate(calc(var(--dx) * -10px), -28px) rotate(calc(var(--dx) * -12deg)) scale(1.05); }
+  50% { transform: translate(calc(var(--dx) * 42px), calc(var(--dy) * 26px)) rotate(calc(var(--dx) * 16deg)) scale(0.94, 1.06); }
+  70% { transform: translate(calc(var(--dx) * 18px), calc(var(--dy) * 6px - 14px)) rotate(calc(var(--dx) * 4deg)); }
+}
+@keyframes atk-squash {
+  26% { transform: scale(1.3, 0.66); }
+  45% { transform: translate(calc(var(--dx) * 30px), calc(var(--dy) * 18px - 20px)) scale(0.78, 1.3); }
+  60% { transform: translate(calc(var(--dx) * 26px), calc(var(--dy) * 16px)) scale(1.2, 0.82); }
+  76% { transform: translate(calc(var(--dx) * 8px), calc(var(--dy) * 4px)) scale(0.95, 1.06); }
+}
+@keyframes atk-strike {
+  34% { transform: translate(calc(var(--dx) * -18px), calc(var(--dy) * -6px)) rotate(calc(var(--dx) * -10deg)) scale(0.94, 1.05); }
+  46% { transform: translate(calc(var(--dx) * 46px), calc(var(--dy) * 24px)) rotate(calc(var(--dx) * 7deg)) scale(1.14, 0.9); }
+  62% { transform: translate(calc(var(--dx) * 32px), calc(var(--dy) * 16px)) rotate(calc(var(--dx) * 2deg)); }
+}
+@keyframes atk-slam {
+  42% { transform: translate(calc(var(--dx) * -6px), -24px) scale(1.06, 1.1); }
+  54% { transform: translate(calc(var(--dx) * 18px), calc(var(--dy) * 12px + 4px)) scale(1.16, 0.84); }
+  70% { transform: translate(calc(var(--dx) * 14px), calc(var(--dy) * 10px)) scale(1.05, 0.96); }
+}
+
+/* ── 기 모으기 (EN 2 이상 대기술 예비동작) */
+.b-sprite.charging .sprite { animation: charging calc(0.3s * var(--spd, 1)) linear; filter: drop-shadow(0 0 18px var(--fx)) brightness(1.15); }
+@keyframes charging { 25% { transform: translateX(-2px) scale(1.02, 0.98); } 50% { transform: translateX(2px) scale(1.04, 0.96); } 75% { transform: translateX(-2px) scale(1.05, 0.95); } }
+
+/* ── 피격: 공격자 반대 방향으로 밀려남 + 백색 섬광 */
+.b-sprite.hurt .sprite { animation: hurt-kb calc(0.42s * var(--spd, 1)) ease-out; }
+.b-sprite.hurt-big .sprite { animation: hurt-kb-big calc(0.48s * var(--spd, 1)) ease-out; }
+@keyframes hurt-kb {
+  14% { transform: translate(calc(var(--dx) * -12px), calc(var(--dy) * -6px)) scale(0.94, 1.04); filter: brightness(2.4) saturate(0); }
+  34% { transform: translate(calc(var(--dx) * -7px), calc(var(--dy) * -3px)); filter: brightness(1.5) saturate(0.4); }
+  52% { transform: translate(calc(var(--dx) * -10px), calc(var(--dy) * -5px)); filter: brightness(1.9) saturate(0); }
+  74% { transform: translate(calc(var(--dx) * -3px), 0); filter: none; }
+}
+@keyframes hurt-kb-big {
+  12% { transform: translate(calc(var(--dx) * -24px), calc(var(--dy) * -12px)) rotate(calc(var(--dx) * -8deg)) scale(0.9, 1.08); filter: brightness(3) saturate(0); }
+  30% { transform: translate(calc(var(--dx) * -16px), calc(var(--dy) * -8px)) rotate(calc(var(--dx) * -4deg)); filter: brightness(1.4) sepia(1) hue-rotate(-40deg) saturate(3); }
+  50% { transform: translate(calc(var(--dx) * -20px), calc(var(--dy) * -10px)) rotate(calc(var(--dx) * -6deg)); filter: brightness(2.2) saturate(0); }
+  76% { transform: translate(calc(var(--dx) * -5px), 0) rotate(0); filter: none; }
+}
+
+/* ── 회피 */
+.b-sprite.dodge .sprite { animation: dodge calc(0.38s * var(--spd, 1)) ease-out; }
+@keyframes dodge { 35% { transform: translate(calc(var(--dy) * 22px), calc(var(--dx) * 10px)) skewX(calc(var(--dx) * 8deg)); opacity: 0.55; } }
+
+/* ── 등장: 떨어져 착지 → 출렁 (새는 옆에서 날아 들어옴) */
+.b-sprite.enter .sprite { animation: enter-drop calc(0.56s * var(--spd, 1)) cubic-bezier(0.3, 0, 0.4, 1); }
+.b-sprite.enter .sprite[data-body="bird"] { animation-name: enter-fly; }
+@keyframes enter-drop {
+  0% { transform: translateY(-80px) scale(0.55, 0.65); opacity: 0; filter: brightness(3); }
+  48% { transform: translateY(0) scale(1.16, 0.82); opacity: 1; filter: brightness(1.5); }
+  64% { transform: translateY(-14px) scale(0.94, 1.07); filter: none; }
+  80% { transform: translateY(0) scale(1.04, 0.96); }
+}
+@keyframes enter-fly {
+  0% { transform: translate(calc(var(--dx) * -140px), -50px) rotate(calc(var(--dx) * 18deg)) scale(0.7); opacity: 0; }
+  55% { transform: translate(calc(var(--dx) * 10px), -8px) rotate(calc(var(--dx) * -6deg)); opacity: 1; }
+  78% { transform: translateY(-4px) rotate(calc(var(--dx) * 2deg)); }
+}
+
+/* ── 대기 모션 (체형별, 전투 화면에서만) */
+.b-sprite .art-sprite img.art { animation-delay: var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="tall"] img.art { animation: idle-sway 3.2s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="quad"] img.art { animation: idle-quad 3.8s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="bird"] img.art { animation: idle-hover 1.5s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="bird"] .art-shadow { animation: shadow-hover 1.5s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="blob"] img.art { animation: idle-jelly 1.9s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="serpent"] img.art { animation: idle-coil 3s ease-in-out infinite var(--idle-d, 0s); }
+.b-sprite .art-sprite[data-body="golem"] img.art { animation: idle-heavy 4.2s ease-in-out infinite var(--idle-d, 0s); }
+/* 빈사(HP 25% 이하): 숨을 헐떡임 */
+.b-sprite.low .art-sprite img.art { animation: idle-pant 0.8s ease-in-out infinite; }
+@keyframes idle-sway { 25% { transform: rotate(1.4deg) scaleY(1.02); } 50% { transform: scaleY(0.995); } 75% { transform: rotate(-1.4deg) scaleY(1.02); } }
+@keyframes idle-quad {
+  18% { transform: scale(1.02, 0.985); } 36% { transform: none; } 54% { transform: scale(1.02, 0.985); }
+  70% { transform: none; } 77% { transform: translateY(-7%) scale(0.97, 1.04); } 84% { transform: scale(1.05, 0.95); } 90% { transform: none; }
+}
+@keyframes idle-hover { 0%, 100% { transform: translateY(-4%) rotate(-2deg); } 50% { transform: translateY(-11%) rotate(2deg); } }
+@keyframes shadow-hover { 0%, 100% { transform: scale(0.85); opacity: 0.8; } 50% { transform: scale(0.7); opacity: 0.5; } }
+@keyframes idle-jelly { 25% { transform: scale(1.06, 0.94); } 50% { transform: scale(0.97, 1.04); } 75% { transform: scale(1.03, 0.98); } }
+@keyframes idle-coil { 25% { transform: skewX(3deg) rotate(-1deg); } 75% { transform: skewX(-3deg) rotate(1deg); } }
+@keyframes idle-heavy { 50% { transform: translateY(-1%) scale(1.015, 1.025); } }
+@keyframes idle-pant { 50% { transform: translateY(1.5%) scale(1.035, 0.965); } }

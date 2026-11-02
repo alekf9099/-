@@ -88,3 +88,37 @@ function synth(name: Sfx): void {
 export function speedMult(): number {
   return settings.reduceMotion ? 0.6 : 1 / settings.speed;
 }
+
+// 발사음: 대역 통과 필터를 지나는 노이즈 스윕 (속성마다 음색 중심 주파수가 다름)
+let noiseBuf: AudioBuffer | null = null;
+const WHOOSH_HZ: Record<string, number> = { neutral: 1200, blaze: 900, tide: 650, bloom: 1500, volt: 3200, terra: 320, gale: 2100, umbra: 420, lumen: 2600 };
+export function whoosh(element: string, dur = 0.28): void {
+  const a = ac();
+  if (!a) return;
+  try {
+    if (!noiseBuf) {
+      noiseBuf = a.createBuffer(1, a.sampleRate * 0.6, a.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const t0 = a.currentTime;
+    const src = a.createBufferSource();
+    src.buffer = noiseBuf;
+    const f = a.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = element === 'volt' ? 6 : 1.6;
+    const hz = WHOOSH_HZ[element] ?? 1200;
+    f.frequency.setValueAtTime(hz * 0.5, t0);
+    f.frequency.exponentialRampToValueAtTime(hz * 1.4, t0 + dur * 0.6);
+    const g = a.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(element === 'terra' ? 0.16 : 0.1, t0 + dur * 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f).connect(g).connect(a.destination);
+    src.start(t0);
+    src.stop(t0 + dur + 0.02);
+    if (element === 'volt') [0, 0.05, 0.11].forEach((dl) => tone(2400 + Math.random() * 1200, 0.04, 'square', 0.025, -800, dl));
+  } catch {
+    /* 오디오 미지원 */
+  }
+}

@@ -226,7 +226,8 @@ export function spriteSvg(speciesId: string, opts: SpriteOpts = {}): string {
   if (!ART.has(speciesId)) return vectorSprite(speciesId, opts);
   const size = opts.size ?? 120;
   const cls = ['sprite', 'art-sprite', opts.className ?? '', opts.flip ? 'flip' : '', opts.shiny ? 'shiny' : '', opts.silhouette ? 'sil' : ''].join(' ');
-  return `<span class="${cls}" style="width:${size}px;height:${size}px" aria-hidden="true">
+  // data-body: 체형별 대기·공격 모션 (styles.css「v0.6 체형 모션」)
+  return `<span class="${cls}" data-body="${getSpecies(speciesId).look.body}" style="width:${size}px;height:${size}px" aria-hidden="true">
     <i class="art-shadow"></i>
     <span class="art-flip"><img class="art" src="${artUrl(speciesId)}" alt="" width="${size}" height="${size}" draggable="false" decoding="async"></span>
     ${opts.shiny ? '<i class="art-spark">✦</i>' : ''}

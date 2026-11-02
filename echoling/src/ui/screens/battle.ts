@@ -1,5 +1,5 @@
 // 전투 화면 — 엔진 이벤트를 순차 재생 (연출과 로직 분리)
-import type { ItemId, StatusId } from '../../core/types';
+import type { Element as El, ItemId, StatusId } from '../../core/types';
 import { Rng } from '../../core/rng';
 import { ELEMENTS, effLabel, effectiveness } from '../../data/elements';
 import { AFFIXES } from '../../data/affixes';
@@ -15,7 +15,7 @@ import { type BattleMonster, displayName, maxHp } from '../../game/monster';
 import { applyBattleOutcome, buildBattle, makeEncounter } from '../../game/run';
 import { app, register, saveAll } from '../app';
 import { bar, h, openSheet, sleep, toast, type Sheet } from '../dom';
-import { haptic, sfx, speedMult } from '../fx';
+import { haptic, sfx, speedMult, whoosh } from '../fx';
 import { elChips } from '../components';
 import { monSprite } from '../sprite';
 import { endRun, processGrowth, run, seen, setBattleReward } from '../flow';
@@ -24,6 +24,7 @@ import { bestLevel } from '../../game/advice';
 import { coach } from '../coach';
 import { playTrack } from '../audio';
 import { EL_ICON, ITEM_ICON, ACT_BG, ico, img } from '../assets';
+import { Vfx } from '../vfx';
 
 interface View {
   b: BattleState;
@@ -37,6 +38,10 @@ interface View {
   skip: boolean;
   /** 패배 분석용: 마지막으로 공격한 적과 기술 */
   lastFoe?: { speciesId: string; level: number; moveId: string };
+  /** ✨ 속성 이펙트 레이어 */
+  fx: Vfx;
+  /** 현재 재생 중인 기술 (착탄 이펙트 속성 결정) */
+  cur?: { side: Side; el: El };
 }
 
 let V: View | null = null;
@@ -88,15 +93,19 @@ register('battle', () => {
   };
   el.arena.addEventListener('pointerdown', skip);
   el.log.addEventListener('pointerdown', skip);
+  V?.fx.destroy();
   V = {
-    b, rng, busy: false, auto: false, el, skip: false,
+    b, rng, busy: false, auto: false, el, skip: false, fx: new Vfx(el.arena, app.meta.settings.reduceMotion),
     disp: { idx: { p: b.p.active, e: b.e.active }, hp: new Map(), status: new Map(), en: { p: b.p.en, e: b.e.en } },
   };
+  el.arena.style.setProperty('--spd', String(speedMult()));
   snapshot();
   renderAll();
   playTrack(b.kind === 'boss' ? 'boss' : 'battle');
   if (b.kind === 'boss') {
     root.classList.add('boss-intro');
+    // 등장 연출은 1회만 (남겨두면 스프라이트를 다시 그릴 때마다 재생됨)
+    setTimeout(() => root.classList.remove('boss-intro'), 1200);
     sfx('roar');
   }
   setTimeout(() => {
@@ -186,8 +195,17 @@ function renderSprite(side: Side): void {
   const m = dispMon(side);
   const box = side === 'p' ? V!.el.pSprite : V!.el.eSprite;
   const big = getSpecies(m.speciesId).rarity === 'legend';
-  box.innerHTML = monSprite(m, { size: big ? 190 : 150, flip: side === 'p' });
-  box.classList.toggle('fainted', (V!.disp.hp.get(m.uid) ?? m.hp) <= 0);
+  // 같은 개체면 다시 그리지 않음 → 대기 모션이 매 턴 처음부터 튀지 않음
+  const key = `${m.uid}:${m.speciesId}`;
+  if (box.dataset.key !== key || !box.firstElementChild) {
+    box.dataset.key = key;
+    box.innerHTML = monSprite(m, { size: big ? 190 : 150, flip: side === 'p' });
+    // 대기 모션 위상을 엇갈리게 (두 마리가 똑같이 움직이면 기계적으로 보임)
+    box.style.setProperty('--idle-d', `-${(Math.random() * 2).toFixed(2)}s`);
+  }
+  const hp = V!.disp.hp.get(m.uid) ?? m.hp;
+  box.classList.toggle('fainted', hp <= 0);
+  box.classList.toggle('low', hp > 0 && hp / maxHp(m) <= 0.25);
 }
 
 function renderTeamDots(): void {
@@ -324,6 +342,7 @@ function cycleSpeed(): void {
   const s = app.meta.settings;
   s.speed = (s.speed === 3 ? 1 : s.speed + 1) as 1 | 2 | 3;
   V!.el.speedBtn.textContent = `▶ x${s.speed}`;
+  V!.el.arena.style.setProperty('--spd', String(speedMult()));
   saveMeta(app.meta);
 }
 
@@ -423,10 +442,50 @@ function anim(elm: HTMLElement, cls: string, ms: number): Promise<void> {
   return wait(ms).then(() => elm.classList.remove(cls));
 }
 
+const sprOf = (side: Side): HTMLElement => (side === 'p' ? V!.el.pSprite : V!.el.eSprite);
+const other = (side: Side): Side => (side === 'p' ? 'e' : 'p');
+/** 이펙트 기준점: 스프라이트 몸통 중심 */
+const bodyAt = (side: Side) => V!.fx.centerOf(sprOf(side), 0.55);
+/** 연출 시간 (배속·빨리 감기 반영) */
+const T = (ms: number): number => (V?.skip ? 0 : ms * speedMult());
+const PROJ_MS: Record<El, number> = { neutral: 170, blaze: 360, tide: 340, bloom: 400, volt: 230, terra: 430, gale: 300, umbra: 420, lumen: 300 };
+
+/** use 직후 이 기술이 빗나가는지 (빗나가면 발사체가 상대를 스쳐 지나감) */
+function willMiss(events: BEvent[], i: number): boolean {
+  for (let j = i + 1; j < events.length; j++) {
+    const e = events[j];
+    if (e.t === 'miss') return true;
+    if (e.t === 'hit' || e.t === 'use' || e.t === 'end') return false;
+  }
+  return false;
+}
+
+/** ⚔️ 공격 연출: (대기술이면 기 모으기) → 체형별 공격 모션 → 속성 발사체 */
+async function attackFx(side: Side, element: El, cost: number, miss: boolean): Promise<void> {
+  const v = V!;
+  const spr = sprOf(side);
+  const body = getSpecies(dispMon(side).speciesId).look.body;
+  if (cost >= 2 && !v.skip) {
+    v.fx.charge(element, bodyAt(side), T(300));
+    void anim(spr, 'charging', 300);
+    await wait(300);
+  }
+  void anim(spr, 'atk', 560);
+  // 공격 모션의 「내지르는」 순간에 발사
+  await wait(body === 'golem' ? 300 : body === 'bird' ? 260 : 220);
+  if (body === 'golem' && !app.meta.settings.reduceMotion) void anim(v.el.arena, 'shake', 300);
+  const from = bodyAt(side);
+  let to = bodyAt(other(side));
+  if (miss) to = { x: to.x + (to.x - from.x) * 0.45, y: to.y + (to.y - from.y) * 0.45 - 30 };
+  if (!v.skip) whoosh(element);
+  await v.fx.projectile(element, from, to, T(PROJ_MS[element]));
+}
+
 async function play(events: BEvent[]): Promise<void> {
   const v = V!;
   const d = (ms: number) => wait(ms);
-  for (const e of events) {
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
     if (V !== v) return; // 화면 이탈
     switch (e.t) {
       case 'msg':
@@ -440,15 +499,31 @@ async function play(events: BEvent[]): Promise<void> {
           v.lastFoe = { speciesId: foe.speciesId, level: foe.level, moveId: e.move };
         }
         log(`${e.name}의 ${mv.name}!`);
-        const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
+        const spr = sprOf(e.side);
         spr.style.setProperty('--fx', ELEMENTS[mv.element].color);
-        await anim(spr, mv.power > 0 ? 'lunge' : 'cast', 380);
+        v.cur = { side: e.side, el: mv.element };
+        if (mv.power > 0) await attackFx(e.side, mv.element, mv.cost, willMiss(events, i));
+        else {
+          if (!v.skip) v.fx.charge(mv.element, bodyAt(e.side), T(380));
+          await anim(spr, 'cast', 420);
+        }
         break;
       }
       case 'hit': {
         const m = dispMon(e.side);
+        const spr = sprOf(e.side);
+        const at = bodyAt(e.side);
+        if (e.src === 'burn' || e.src === 'poison') v.fx.dot(e.src, at);
+        else if (e.src) v.fx.impact(e.src === 'thorns' ? 'bloom' : 'neutral', at, { small: true });
+        else {
+          const el = v.cur?.el ?? 'neutral';
+          // 연타기: 두 번째 타격부터는 짧은 발사체를 한 번 더
+          if (e.hitNo && e.hitNo > 1 && v.cur && !v.skip) await v.fx.projectile(el, bodyAt(v.cur.side), at, T(Math.min(180, PROJ_MS[el] * 0.5)));
+          v.fx.impact(el, at, { crit: e.crit, super: e.eff > 1 });
+          // 히트스톱: 강타 순간 한 박자 멈춤 → 타격감
+          if ((e.crit || e.eff > 1) && !v.skip) await sleep(70);
+        }
         v.disp.hp.set(m.uid, e.hp);
-        const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
         renderCard(e.side);
         renderTeamDots();
         pop(e.side, `-${e.dmg}`, e.crit ? 'crit' : e.eff > 1 ? 'super' : e.eff < 1 ? 'weak' : '');
@@ -463,18 +538,21 @@ async function play(events: BEvent[]): Promise<void> {
           sfx('weak');
           pop(e.side, effLabel(e.eff), 'tag-pop down');
         } else sfx('hit');
-        await anim(spr, 'hurt', 420);
+        await anim(spr, e.crit || e.eff > 1 ? 'hurt-big' : 'hurt', e.crit ? 480 : 420);
+        spr.classList.toggle('low', e.hp > 0 && e.hp / maxHp(m) <= 0.25);
         break;
       }
       case 'miss':
         pop(e.side, 'MISS', 'miss');
-        await d(300);
+        v.fx.whiff(bodyAt(e.side));
+        await anim(sprOf(e.side), 'dodge', 380);
         break;
       case 'heal': {
         const m = dispMon(e.side);
         v.disp.hp.set(m.uid, e.hp);
         renderCard(e.side);
         sfx('heal');
+        v.fx.aura('bloom', bodyAt(e.side), 'heal');
         pop(e.side, `+${e.amount}`, 'heal');
         await d(380);
         break;
@@ -485,6 +563,7 @@ async function play(events: BEvent[]): Promise<void> {
         renderCard(e.side);
         if (e.status) {
           sfx('debuff');
+          v.fx.aura(v.cur?.el ?? 'neutral', bodyAt(e.side), 'debuff');
           pop(e.side, STATUS_NAME[e.status], 'status st-' + e.status);
         }
         await d(200);
@@ -493,12 +572,15 @@ async function play(events: BEvent[]): Promise<void> {
       case 'stat':
         renderCard(e.side);
         sfx(e.delta > 0 ? 'buff' : 'debuff');
+        v.fx.aura(v.cur?.el ?? 'neutral', bodyAt(e.side), e.delta > 0 ? 'buff' : 'debuff');
         pop(e.side, `${{ atk: '공격', def: '방어', spd: '스피드' }[e.stat]} ${e.delta > 0 ? '▲' : '▼'}`, e.delta > 0 ? 'buff' : 'debuff');
         await d(380);
         break;
       case 'faint': {
         const spr = e.side === 'p' ? v.el.pSprite : v.el.eSprite;
         sfx('faint');
+        v.fx.poof(bodyAt(e.side));
+        spr.classList.remove('low');
         spr.classList.add('fainted');
         renderTeamDots();
         await d(650);
@@ -509,7 +591,10 @@ async function play(events: BEvent[]): Promise<void> {
         if (e.side === 'e') seen(v.b.e.team[e.idx].speciesId);
         renderSprite(e.side);
         renderCard(e.side);
-        await anim(e.side === 'p' ? v.el.pSprite : v.el.eSprite, 'enter', 420);
+        void anim(sprOf(e.side), 'enter', 560);
+        await wait(300);
+        v.fx.land(bodyAt(e.side), getSpecies(dispMon(e.side).speciesId).elements[0]);
+        await wait(260);
         break;
       case 'en':
         v.disp.en[e.side] = e.en;
@@ -548,6 +633,7 @@ async function play(events: BEvent[]): Promise<void> {
         for (const m of v.b.p.team) v.disp.hp.set(m.uid, m.hp);
         renderSprite('p');
         renderCard('p');
+        v.fx.aura('blaze', bodyAt('p'), 'heal');
         void anim(v.el.arena, 'revive-fx', 900);
         await d(900);
         break;
@@ -592,6 +678,7 @@ async function finish(): Promise<void> {
     sfx('lose');
     await sleep(1200);
     const lf = v.lastFoe ?? { speciesId: activeOf(b, 'e').speciesId, level: activeOf(b, 'e').level, moveId: '' };
+    v.fx.destroy();
     V = null;
     endRun(false, { enemySpecies: lf.speciesId, enemyLevel: lf.level, moveId: lf.moveId || undefined, myBestLevel: bestLevel(r.party), kind: b.kind });
     return;
@@ -607,6 +694,7 @@ async function finish(): Promise<void> {
   saveAll();
   await sleep(700);
   await processGrowth(b.pendingLearn);
+  v.fx.destroy();
   V = null;
   const node = r.map.nodes[r.currentNodeId!];
   setBattleReward(b.kind, b.kind === 'boss' ? '👑 보스 격파 보상' : node.type === 'elite' ? '💀 엘리트 격파!' : b.over === 'caught' ? '포획 성공!' : '전투 승리!');

@@ -74,5 +74,19 @@
     "catalyst",
     "luckyClover",
     "_spare_gem"
-  ]
+  ],
+  "vfxSheet": {
+    "media": "MAHZuXdS0f8",
+    "order": [
+      "fire",
+      "drop",
+      "leaf",
+      "spark",
+      "rock",
+      "wind",
+      "wisp",
+      "star",
+      "burst"
+    ]
+  }
 }
