@@ -1,82 +1,210 @@
 {
  "skin": "2d",
- "fps": 15,
+ "fps": 30,
  "frameW": 300,
  "frameH": 332,
  "displayScale": 1.45,
- "headTop": 0.0982,
+ "headTop": 0.0964,
  "motions": {
   "ride_r": {
    "file": "ride_r.webp",
-   "frames": 48,
+   "frames": 96,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 0,
+   "oy": 28,
+   "w": 244,
+   "h": 304
   },
   "ride_l": {
    "file": "ride_l.webp",
-   "frames": 48,
+   "frames": 96,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 56,
+   "oy": 28,
+   "w": 244,
+   "h": 304
   },
   "idle_r": {
    "file": "idle_r.webp",
-   "frames": 36,
+   "frames": 72,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 30,
+   "oy": 29,
+   "w": 214,
+   "h": 303
   },
   "idle_l": {
    "file": "idle_l.webp",
-   "frames": 36,
+   "frames": 72,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 56,
+   "oy": 29,
+   "w": 214,
+   "h": 303
   },
   "face_r": {
    "file": "face_r.webp",
-   "frames": 6,
-   "cols": 6,
-   "loop": false
+   "frames": 12,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 17,
+   "w": 190,
+   "h": 315
   },
   "face_l": {
    "file": "face_l.webp",
-   "frames": 6,
-   "cols": 6,
-   "loop": false
+   "frames": 12,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 12,
+   "w": 192,
+   "h": 320
   },
   "front": {
    "file": "front.webp",
-   "frames": 36,
+   "frames": 72,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 30,
+   "oy": 29,
+   "w": 214,
+   "h": 303
   },
   "notify": {
    "file": "notify.webp",
-   "frames": 24,
+   "frames": 48,
    "cols": 8,
-   "loop": false
+   "loop": false,
+   "ox": 46,
+   "oy": 0,
+   "w": 209,
+   "h": 332
   },
   "talk": {
    "file": "talk.webp",
-   "frames": 24,
+   "frames": 48,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 46,
+   "oy": 30,
+   "w": 208,
+   "h": 302
   },
   "happy": {
    "file": "happy.webp",
-   "frames": 24,
+   "frames": 48,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 53,
+   "oy": 7,
+   "w": 197,
+   "h": 325
   },
   "sleep": {
    "file": "sleep.webp",
-   "frames": 48,
+   "frames": 96,
    "cols": 8,
-   "loop": true
+   "loop": true,
+   "ox": 54,
+   "oy": 16,
+   "w": 190,
+   "h": 316
   },
   "turn": {
    "file": "turn.webp",
+   "frames": 24,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 12,
+   "w": 192,
+   "h": 320
+  },
+  "wheelie_r": {
+   "file": "wheelie_r.webp",
+   "frames": 66,
+   "cols": 8,
+   "loop": false,
+   "ox": 0,
+   "oy": 16,
+   "w": 245,
+   "h": 316
+  },
+  "rev": {
+   "file": "rev.webp",
+   "frames": 24,
+   "cols": 8,
+   "loop": true,
+   "ox": 0,
+   "oy": 35,
+   "w": 244,
+   "h": 297
+  },
+  "bow": {
+   "file": "bow.webp",
+   "frames": 30,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 31,
+   "w": 193,
+   "h": 301
+  },
+  "look_r": {
+   "file": "look_r.webp",
+   "frames": 78,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 30,
+   "w": 190,
+   "h": 302
+  },
+  "yawn_r": {
+   "file": "yawn_r.webp",
+   "frames": 72,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 25,
+   "w": 190,
+   "h": 307
+  },
+  "groove": {
+   "file": "groove.webp",
+   "frames": 48,
+   "cols": 8,
+   "loop": true,
+   "ox": 45,
+   "oy": 20,
+   "w": 200,
+   "h": 312
+  },
+  "wink": {
+   "file": "wink.webp",
+   "frames": 36,
+   "cols": 8,
+   "loop": false,
+   "ox": 54,
+   "oy": 30,
+   "w": 190,
+   "h": 302
+  },
+  "wave_out": {
+   "file": "wave_out.webp",
    "frames": 12,
    "cols": 8,
-   "loop": false
+   "loop": false,
+   "ox": 54,
+   "oy": 31,
+   "w": 206,
+   "h": 301
   }
  }
 }

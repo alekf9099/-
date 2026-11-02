@@ -1,38 +1,54 @@
 """
-3D 렌더 프레임 → 앱용 스프라이트 + 배포용 모션 에셋 패킹
-=========================================================
-  python tools/pack_sprites.py <render_dir> --skin 3d|2d [--width 300] [--icons]
+렌더 프레임 → 앱용 스프라이트 + 배포용 모션 에셋 패킹 (2D / 3D 공통)
+=====================================================================
+  python tools/pack_sprites.py <render_dir> --skin 2d|3d [--fps 30] [--width 300] [--display-scale 1.45] [--icons]
 
-입력: <render_dir>/<motion>/frame_000.png ...  (ride_buddy_3d.py --motions 결과)
+입력: <render_dir>/<motion>/frame_000.png ...
 출력:
-  app 폴더   : <motion>.webp (스프라이트 시트, 알파 포함) + sprites.json
-  out 폴더   : <motion>.webp (애니메이션 WebP, 투명) / <motion>.gif (200px) / <motion>_sheet.webp / motions.json
-모든 모션은 동일한 크롭 박스를 사용하므로 전환 시 캐릭터 위치가 흔들리지 않습니다.
+  앱  src/renderer/sprites/<skin>/ : <motion>.webp (스프라이트 시트) + sprites.json / sprites.js
+  배포 motions/<skin>/             : <motion>.webp (투명 애니메이션) / <motion>.gif (200px, 15fps) / motions.json
+
+- 모든 모션이 같은 기준 프레임(frameW x frameH)을 쓰므로 전환 시 캐릭터 위치가 흔들리지 않습니다.
+- 메모리 절약: 모션마다 실제로 그려지는 영역만 잘라(ox, oy, w, h) 시트로 저장합니다.
 """
 import argparse
+import glob
 import json
 import math
 import os
-import sys
 
 from PIL import Image
 
-sys.path.insert(0, os.path.dirname(__file__))
-FPS = 15
 MOTION_INFO = {
     'ride_r': ('오른쪽으로 주행', True), 'ride_l': ('왼쪽으로 주행', True),
     'idle_r': ('정차 (오른쪽)', True), 'idle_l': ('정차 (왼쪽)', True),
     'face_r': ('오른쪽→정면 돌아보기', False), 'face_l': ('왼쪽→정면 돌아보기', False),
     'front': ('정면 대기', True), 'notify': ('알림 도착', False), 'talk': ('알림 읽어주기', True),
     'happy': ('기쁨', True), 'sleep': ('졸기 (방해 금지)', True), 'turn': ('유턴 (왼→오)', False),
+    'wheelie_r': ('윌리 (앞바퀴 들기)', False), 'rev': ('제자리 공회전 "달달달달"', True),
+    'bow': ('꾸벅 인사 "감사하고~"', False), 'look_r': ('두리번', False), 'yawn_r': ('하품', False),
+    'groove': ('신나서 리듬 타기', True), 'wink': ('윙크', False), 'wave_out': ('손 내리기', False),
 }
 
 
+def alpha_box(im, th=6):
+    return im.getchannel('A').point(lambda v: 255 if v > th else 0).getbbox()
+
+
+def union(a, b):
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
 def main():
+    here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser()
     ap.add_argument('render_dir')
-    here = os.path.dirname(os.path.abspath(__file__))
-    ap.add_argument('--skin', default='3d', help='캐릭터 스타일 이름 (2d / 3d)')
+    ap.add_argument('--skin', default='2d', help='캐릭터 스타일 이름 (2d / 3d)')
+    ap.add_argument('--fps', type=int, default=15)
     ap.add_argument('--app')
     ap.add_argument('--out')
     ap.add_argument('--width', type=int, default=300)
@@ -42,84 +58,105 @@ def main():
     a = ap.parse_args()
     a.app = a.app or os.path.join(here, '..', 'src', 'renderer', 'sprites', a.skin)
     a.out = a.out or os.path.join(here, '..', 'motions', a.skin)
+    FPS = a.fps
 
-    motions = [m for m in MOTION_INFO if os.path.isdir(os.path.join(a.render_dir, m))]
-    frames = {}
-    bbox = None
+    dirs = sorted(d for d in os.listdir(a.render_dir) if os.path.isdir(os.path.join(a.render_dir, d)))
+    motions = [m for m in MOTION_INFO if m in dirs] + [m for m in dirs if m not in MOTION_INFO]
+    files = {m: sorted(glob.glob(os.path.join(a.render_dir, m, 'frame_*.png'))) for m in motions}
+
+    # 1차: 모션별 / 전체 실제 그림 영역
+    mbox, gbox = {}, None
     for m in motions:
-        d = os.path.join(a.render_dir, m)
-        fs = sorted(f for f in os.listdir(d) if f.endswith('.png'))
-        frames[m] = [Image.open(os.path.join(d, f)).convert('RGBA') for f in fs]
-        for im in frames[m]:
-            b = im.getchannel('A').point(lambda v: 255 if v > 6 else 0).getbbox()
-            if b:
-                bbox = b if bbox is None else (min(bbox[0], b[0]), min(bbox[1], b[1]), max(bbox[2], b[2]), max(bbox[3], b[3]))
+        b = None
+        for f in files[m]:
+            with Image.open(f) as im:
+                b = union(b, alpha_box(im.convert('RGBA')))
+        mbox[m] = b
+        gbox = union(gbox, b)
+    with Image.open(files[motions[0]][0]) as im:
+        W0, H0 = im.size
     pad = 6
-    W0, H0 = frames[motions[0]][0].size
-    bbox = (max(0, bbox[0] - pad), max(0, bbox[1] - pad), min(W0, bbox[2] + pad), min(H0, bbox[3] + pad))
-    cw, ch = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    gbox = (max(0, gbox[0] - pad), max(0, gbox[1] - pad), min(W0, gbox[2] + pad), min(H0, gbox[3] + pad))
+    cw, ch = gbox[2] - gbox[0], gbox[3] - gbox[1]
     scale = min(1.0, a.width / cw)
     fw, fh = round(cw * scale), round(ch * scale)
-    print(f'crop {bbox} → frame {fw}x{fh}')
+    print(f'crop {gbox} → frame {fw}x{fh} @ {FPS}fps')
 
     os.makedirs(a.app, exist_ok=True)
     os.makedirs(a.out, exist_ok=True)
+    for old in glob.glob(os.path.join(a.out, '*_sheet.webp')):   # 이전 버전 중복 시트 정리
+        os.remove(old)
+
+    def load(f):
+        with Image.open(f) as im:
+            im = im.convert('RGBA').crop(gbox)
+            return im.resize((fw, fh), Image.LANCZOS) if scale < 1 else im
+
     head_top = 0.15
-    if 'front' in frames:
-        b0 = frames['front'][0].crop(bbox).getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox()
-        head_top = round(b0[1] / ch, 4)
+    if 'front' in files:
+        f0 = load(files['front'][0])
+        b0 = alpha_box(f0, 20)
+        head_top = round(b0[1] / fh, 4)
     app_meta = {'skin': a.skin, 'fps': FPS, 'frameW': fw, 'frameH': fh, 'displayScale': a.display_scale,
                 'headTop': head_top, 'motions': {}}
-    out_meta = {'fps': FPS, 'frameSize': {'w': fw, 'h': fh}, 'generatedBy': '3d/ride_buddy_3d.py + 3d/pack_sprites.py', 'motions': []}
+    out_meta = {'fps': FPS, 'frameSize': {'w': fw, 'h': fh}, 'generatedBy': f'{a.skin} pipeline + tools/pack_sprites.py', 'motions': []}
 
+    total_px = 0
     for m in motions:
-        fr = [im.crop(bbox).resize((fw, fh), Image.LANCZOS) if scale < 1 else im.crop(bbox) for im in frames[m]]
+        fr = [load(f) for f in files[m]]
         n = len(fr)
+        # 2차: 이 모션이 실제로 쓰는 영역만 (기준 프레임 좌표)
+        b = None
+        for im in fr:
+            b = union(b, alpha_box(im))
+        ox, oy = max(0, b[0] - 2), max(0, b[1] - 2)
+        w, h = min(fw, b[2] + 2) - ox, min(fh, b[3] + 2) - oy
         cols = min(8, n)
         rows = math.ceil(n / cols)
-        sheet = Image.new('RGBA', (cols * fw, rows * fh), (0, 0, 0, 0))
+        sheet = Image.new('RGBA', (cols * w, rows * h), (0, 0, 0, 0))
         for i, im in enumerate(fr):
-            sheet.paste(im, ((i % cols) * fw, (i // cols) * fh))
-        sheet.save(os.path.join(a.app, f'{m}.webp'), 'WEBP', quality=88, method=6, alpha_quality=100)
-        label, loop = MOTION_INFO[m]
-        app_meta['motions'][m] = {'file': f'{m}.webp', 'frames': n, 'cols': cols, 'loop': loop}
+            sheet.paste(im.crop((ox, oy, ox + w, oy + h)), ((i % cols) * w, (i // cols) * h))
+        sheet.save(os.path.join(a.app, f'{m}.webp'), 'WEBP', quality=86, method=6, alpha_quality=100)
+        total_px += sheet.width * sheet.height
+        label, loop = MOTION_INFO.get(m, (m, True))
+        app_meta['motions'][m] = {'file': f'{m}.webp', 'frames': n, 'cols': cols, 'loop': loop, 'ox': ox, 'oy': oy, 'w': w, 'h': h}
 
-        # 배포용 에셋
-        sheet.save(os.path.join(a.out, f'{m}_sheet.webp'), 'WEBP', quality=88, method=6, alpha_quality=100)
-        fr[0].save(os.path.join(a.out, f'{m}.webp'), 'WEBP', save_all=True, append_images=fr[1:], duration=int(1000 / FPS),
-                   loop=0, quality=85, method=6, alpha_quality=90)
-        gw = 200  # GIF 는 용량 때문에 축소
-        gif = [im.resize((gw, round(fh * gw / fw)), Image.LANCZOS) for im in fr]
+        # 배포용: 투명 애니메이션 WebP (원래 fps) + GIF (200px, 최대 15fps)
+        fr[0].save(os.path.join(a.out, f'{m}.webp'), 'WEBP', save_all=True, append_images=fr[1:], duration=round(1000 / FPS),
+                   loop=0, quality=84, method=6, alpha_quality=90)
+        step = max(1, round(FPS / 15))
+        gw = 200
         g0 = []
-        for im in gif:  # GIF: 1비트 투명
-            bg = Image.new('RGBA', im.size, (0, 0, 0, 0))
+        for im in fr[::step]:
+            im = im.resize((gw, round(fh * gw / fw)), Image.LANCZOS)
             alpha = im.getchannel('A').point(lambda v: 255 if v > 128 else 0)
             p = im.convert('RGB').quantize(255, method=Image.Quantize.MEDIANCUT)
             p.paste(255, mask=Image.eval(alpha, lambda v: 255 - v))
             p.info['transparency'] = 255
             g0.append(p)
-        g0[0].save(os.path.join(a.out, f'{m}.gif'), save_all=True, append_images=g0[1:], duration=int(1000 / FPS),
+        g0[0].save(os.path.join(a.out, f'{m}.gif'), save_all=True, append_images=g0[1:], duration=round(1000 * step / FPS),
                    loop=0, transparency=255, disposal=2)
         out_meta['motions'].append({'name': m, 'label': label, 'loop': loop, 'frames': n, 'durationSec': round(n / FPS, 3),
-                                    'sheet': {'file': f'{m}_sheet.webp', 'columns': cols, 'rows': rows},
+                                    'sheet': {'file': f'../../src/renderer/sprites/{a.skin}/{m}.webp', 'columns': cols, 'rows': rows,
+                                              'cell': {'x': ox, 'y': oy, 'w': w, 'h': h}},
                                     'webp': f'{m}.webp', 'gif': f'{m}.gif'})
-        print(f'✔ {m:8s} {n:3d} frames')
+        print(f'✔ {m:10s} {n:3d} frames  cell {w}x{h}')
 
+    print(f'디코딩 메모리(전체 시트) ≈ {total_px * 4 / 1e6:.0f} MB')
     json.dump(app_meta, open(os.path.join(a.app, 'sprites.json'), 'w'), ensure_ascii=False, indent=1)
-    # 앱에서 fetch 없이 쓰도록 JS 로도 출력 (file:// + CSP 대응)
-    with open(os.path.join(a.app, 'sprites.js'), 'w') as f:
+    with open(os.path.join(a.app, 'sprites.js'), 'w') as f:   # file:// + CSP 대응 (fetch 없이 로드)
         f.write('window.RIDE_BUDDY_SKINS = window.RIDE_BUDDY_SKINS || {};\n')
         f.write(f'window.RIDE_BUDDY_SKINS[{json.dumps(a.skin)}] = ' + json.dumps(app_meta, ensure_ascii=False) + ';\n')
     json.dump(out_meta, open(os.path.join(a.out, 'motions.json'), 'w'), ensure_ascii=False, indent=2)
 
-    # 앱/트레이 아이콘: 정면 프레임에서 얼굴 부분 크롭
-    if a.icons and 'front' in frames:
-        make_icons(frames['front'][0], os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets'), a.icon_scale)
+    if a.icons and 'front' in files:
+        with Image.open(files['front'][0]) as im:
+            make_icons(im.convert('RGBA'), os.path.join(here, '..', 'assets'), a.icon_scale)
 
 
 def make_icons(im, out_dir, scale=0.64):
     os.makedirs(out_dir, exist_ok=True)
-    b = im.getchannel('A').point(lambda v: 255 if v > 20 else 0).getbbox()
+    b = alpha_box(im, 20)
     h = b[3] - b[1]
     size = int(h * scale)
     cx = (b[0] + b[2]) // 2

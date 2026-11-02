@@ -27,37 +27,80 @@
   const bridge = window.rideBuddyAPI || makeDemoBridge();
 
   // ---------- 스프라이트 플레이어 ----------
+  // - 모션별 시트는 처음 쓸 때 로드 (메모리 절약), 자주 쓰는 모션은 미리 로드
+  // - 없는 '_l' 모션은 '_r' 을 좌우 반전해서 재생, 스킨에 없는 모션은 비슷한 모션으로 대체
+  // - 모션이 바뀔 때 직전 화면을 짧게 페이드아웃 (크로스페이드) → 끊김 없는 전환
+  const FALLBACK = {
+    wheelie_r: 'ride_r', rev: 'notify', bow: 'happy', look_r: 'idle_r', yawn_r: 'idle_r',
+    groove: 'happy', wink: 'happy', wave_out: 'front',
+  };
+  const PRELOAD = ['ride_r', 'ride_l', 'idle_r', 'idle_l', 'turn', 'face_r', 'face_l', 'front', 'notify', 'talk', 'rev', 'bow', 'wave_out'];
   const sheetCache = {};
   let sheets = {};
-  function loadSkin(skin) {
-    const meta = SKINS[skin] || SKINS['2d'];
-    if (!sheetCache[meta.skin]) {
-      sheetCache[meta.skin] = {};
-      for (const [name, m] of Object.entries(meta.motions)) {
-        const img = new Image();
-        img.src = `sprites/${meta.skin}/${m.file}`;
-        sheetCache[meta.skin][name] = img;
-      }
+  function sheetFor(name) {
+    if (!sheets[name]) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = `sprites/${META.skin}/${META.motions[name].file}`;
+      sheets[name] = img;
     }
-    META = meta;
-    sheets = sheetCache[meta.skin];
+    return sheets[name];
+  }
+  function loadSkin(skin) {
+    META = SKINS[skin] || SKINS['2d'];
+    sheets = sheetCache[META.skin] = sheetCache[META.skin] || {};
+    PRELOAD.forEach(n => META.motions[n] && sheetFor(n));
+  }
+  /** 모션 이름 → { name(실제 시트), flip(좌우 반전) } */
+  function resolve(name) {
+    const M = META.motions;
+    if (M[name]) return { name, flip: false };
+    if (name.endsWith('_l')) {
+      const r = name.slice(0, -2) + '_r';
+      if (M[r]) return { name: r, flip: true };
+      if (FALLBACK[r]) return { name: FALLBACK[r].replace(/_r$/, '_l') in M ? FALLBACK[r].replace(/_r$/, '_l') : FALLBACK[r], flip: false };
+    }
+    if (FALLBACK[name] && M[FALLBACK[name]]) return { name: FALLBACK[name], flip: false };
+    return { name: 'front' in M ? 'front' : Object.keys(M)[0], flip: false };
   }
   loadSkin('2d');
+
+  const fadeCanvas = document.createElement('canvas');
+  const fadeCtx = fadeCanvas.getContext('2d');
+  const FADE_MS = 140;
   const player = {
-    name: null, reverse: false, loop: true, t0: 0, onEnd: null, done: false, elapsed: 0, rate: 1,
+    name: null, sheet: null, flip: false, reverse: false, loop: true, onEnd: null, done: false, elapsed: 0, rate: 1,
+    fadeUntil: 0, drewOnce: false,
     play(name, { reverse = false, loop, onEnd } = {}) {
-      const m = META.motions[name];
-      this.name = name;
+      const r = resolve(name);
+      const m = META.motions[r.name];
+      // 크로스페이드: 직전 화면 보관
+      if (this.drewOnce && (this.name !== name)) {
+        fadeCanvas.width = canvas.width; fadeCanvas.height = canvas.height;
+        fadeCtx.clearRect(0, 0, fadeCanvas.width, fadeCanvas.height);
+        fadeCtx.drawImage(canvas, 0, 0);
+        this.fadeUntil = performance.now() + FADE_MS;
+      }
+      this.name = name;                 // 요청한 이름 (흐름 판단용)
+      this.sheet = r.name;              // 실제 그릴 시트
+      this.flip = r.flip;
       this.reverse = reverse;
       this.loop = loop ?? m.loop;
       this.onEnd = onEnd || null;
       this.done = false;
-      this.t0 = performance.now();
       this.elapsed = 0;
+      sheetFor(r.name);
     },
     tick(dt) { this.elapsed += dt * this.rate; },
-    frameIndex(now) {
-      const m = META.motions[this.name];
+    /** 스킨이 바뀌면 지금 모션을 새 스킨 기준으로 다시 찾기 */
+    rebind() {
+      if (!this.name) return;
+      const r = resolve(this.name);
+      this.sheet = r.name; this.flip = r.flip;
+      if (!this.loop && this.elapsed * META.fps >= META.motions[r.name].frames) this.elapsed = 0;
+    },
+    frameIndex() {
+      const m = META.motions[this.sheet];
       let i = Math.floor(this.elapsed * META.fps);
       if (this.loop) i %= m.frames;
       else if (i >= m.frames) {
@@ -67,14 +110,25 @@
       return this.reverse ? m.frames - 1 - i : i;
     },
     draw(now) {
-      if (!this.name) return;
-      const m = META.motions[this.name];
-      const img = sheets[this.name];
-      const i = this.frameIndex(now);
+      if (!this.sheet) return;
+      const m = META.motions[this.sheet];
+      const img = sheetFor(this.sheet);
+      const i = this.frameIndex();
+      if (!img.complete || !img.naturalWidth) return;     // 로딩 중엔 직전 그림 유지
+      const cw = m.w || META.frameW, ch = m.h || META.frameH;
+      const k = canvas.width / META.frameW;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!img.complete || !img.naturalWidth) return;
-      const sx = (i % m.cols) * META.frameW, sy = Math.floor(i / m.cols) * META.frameH;
-      ctx.drawImage(img, sx, sy, META.frameW, META.frameH, 0, 0, canvas.width, canvas.height);
+      ctx.save();
+      if (this.flip) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(img, (i % m.cols) * cw, Math.floor(i / m.cols) * ch, cw, ch,
+        (m.ox || 0) * k, (m.oy || 0) * k, cw * k, ch * k);
+      ctx.restore();
+      if (now < this.fadeUntil) {
+        ctx.globalAlpha = (this.fadeUntil - now) / FADE_MS;
+        ctx.drawImage(fadeCanvas, 0, 0);
+        ctx.globalAlpha = 1;
+      }
+      this.drewOnce = true;
     },
   };
 
@@ -190,7 +244,8 @@
     let rot = b.lean + b.pitch * dir;
     let jx = 0, jy = 0;
     if (performance.now() < revUntil) {          // "달달달달" 엔진 공회전 떨림
-      jx = rand(-2.2, 2.2); jy = rand(-2.5, 1); rot += rand(-0.9, 0.9);
+      const k = META.motions.rev ? 0.35 : 1;    // 2D 는 공회전 모션 자체에 떨림이 있음
+      jx = rand(-2.2, 2.2) * k; jy = rand(-2.5, 1) * k; rot += rand(-0.9, 0.9) * k;
     }
     buddyEl.style.transform =
       `translate3d(${(x - charW / 2 + jx).toFixed(1)}px, ${(-lift + bump + jy).toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg) scale(${(s * (2 - sq)).toFixed(4)}, ${(s * sq).toFixed(4)})`;
@@ -215,7 +270,10 @@
     bike.onStop = cb;
   }
   function idle() {
-    if (cfg.dnd) return toFront(guard(() => { mode = 'sleep'; player.play('sleep'); }));
+    if (cfg.dnd) return toFront(guard(() => {
+      mode = 'sleep';
+      player.play('yawn_r', { onEnd: guard(() => player.play('sleep')) });   // 하품하고 잠들기
+    }));
     toSide(guard(() => {
       if (cfg.paused) stop(); else ride();
       nextDecision = performance.now() + rand(5000, 11000);
@@ -247,7 +305,7 @@
   function applyConfig(c) {
     const was = { ...cfg };
     cfg = { ...cfg, ...c };
-    if (cfg.skin !== META.skin) loadSkin(cfg.skin);
+    if (cfg.skin !== META.skin) { loadSkin(cfg.skin); player.rebind(); }
     charW = Math.round((SIZE_PX[cfg.size] || SIZE_PX.m) * (META.displayScale || 1));
     charH = Math.round(charW * META.frameH / META.frameW);
     const dpr = window.devicePixelRatio || 1;
@@ -274,6 +332,9 @@
     last = now;
     if (!busy && !dragging && !cfg.dnd && !cfg.paused && (mode === 'ride' || mode === 'stop')) {
       if (now > nextDecision) decide(now);
+    } else if (cfg.paused && !busy && !dragging && mode === 'stop' && now > nextDecision) {
+      idleVariant();
+      nextDecision = now + rand(6000, 12000);
     }
     if (!dragging) physics(dt, now);
     // 화면 끝: 제동 거리를 계산해 미리 브레이크 → 유턴
@@ -295,13 +356,33 @@
   function decide(now) {
     if (mode === 'ride') {
       const r = Math.random();
-      if (r < 0.3) { brakeThen(guard(stop)); nextDecision = now + rand(4000, 8000); }
-      else if (r < 0.42) { turn(); nextDecision = now + rand(6000, 12000); }
+      if (player.name.startsWith('wheelie')) { nextDecision = now + 1500; return; }
+      if (r < 0.26) { brakeThen(guard(stop)); nextDecision = now + rand(4000, 8000); }
+      else if (r < 0.38) { turn(); nextDecision = now + rand(6000, 12000); }
+      else if (r < 0.52 && bike.v > cruise() * 0.6) { wheelie(); nextDecision = now + rand(5000, 10000); }
       else { bike.vTarget = cruise() * rand(0.6, 1.45); nextDecision = now + rand(3000, 8000); }   // 속도 바꾸기
-    } else {
+    } else if (mode === 'stop') {
+      if (idleVariant()) { nextDecision = now + rand(3500, 6000); return; }
       if (Math.random() < 0.3) turn(); else ride();
       nextDecision = now + rand(6000, 14000);
     }
+  }
+  /** 달리면서 앞바퀴 들기 — 살짝 가속하면서 */
+  function wheelie() {
+    bike.vTarget = cruise() * 1.35;
+    const s = side();
+    player.play(`wheelie_${s}`, { onEnd: guard(() => { if (mode === 'ride') player.play(`ride_${side()}`); }) });
+  }
+  /** 정차 중 심심할 때: 두리번 / 하품 (아직 안 한 동작 위주) */
+  let lastVariant = '';
+  function idleVariant() {
+    if (mode !== 'stop' || Math.random() > 0.55) return false;
+    const pick = ['look', 'look', 'yawn'].filter(v => v !== lastVariant);
+    const v = pick[Math.floor(Math.random() * pick.length)];
+    lastVariant = v;
+    const s = side();
+    player.play(`${v}_${s}`, { onEnd: guard(() => { if (mode === 'stop') player.play(`idle_${side()}`); }) });
+    return true;
   }
 
   // ---------- 알림 ----------
@@ -326,8 +407,9 @@
       mode = 'busy';
       busy = true;
       toFront(guard(() => {
-        player.play('happy');
-        later(guard(() => { busy = false; idle(); }), 1100);
+        const pick = ['happy', 'groove', 'wink'][Math.floor(Math.random() * 3)];
+        player.play(pick);
+        later(guard(() => { busy = false; idle(); }), pick === 'wink' ? 1250 : 1600);
       }));
       return;
     }
@@ -338,11 +420,13 @@
     updateBadge();
     const n = current;
     toFront(guard(() => {
-      player.play('notify');
       if (cfg.catchphrase) {
-        catchphrase();                                   // 달달달달~ 감사하고~
+        player.play('rev');                              // 달달달달~ (제자리 공회전)
+        catchphrase();
+        later(guard(() => player.play('bow')), 680);     // 감사하고~ (꾸벅)
         later(guard(() => showBubble(n)), 1550);
       } else {
+        player.play('notify');
         if (cfg.sound) horn();
         later(guard(() => showBubble(n)), 900);
       }
@@ -417,7 +501,7 @@
       bEl.classList.toggle('typing', i > full.length);
       if (i < total) return later(tick, step);
       tEl.classList.remove('typing'); bEl.classList.remove('typing');
-      player.play('front');
+      player.play('wave_out', { onEnd: guard(() => player.play('front')) });   // 흔들던 손을 핸들로
       const hold = Math.min(9000, 3500 + total * 55);
       const bar = $('.bubble-progress i');
       bar.style.transition = 'none'; bar.style.transform = 'scaleX(1)';
@@ -565,11 +649,13 @@
     epoch++; clearTimers();
     busy = true;
     if (mode !== 'ride' && mode !== 'brake') mode = 'busy';
-    if (cfg.sound) horn();
+    const choices = ['happy', 'wink', 'groove'].concat(cfg.catchphrase ? ['bow', 'bow'] : []);
+    const pick = choices[Math.floor(Math.random() * choices.length)];
+    if (cfg.sound && pick !== 'bow') horn();
     toFront(guard(() => {
-      player.play('happy');
-      if (cfg.catchphrase) catchphrase(true);
-      later(guard(() => { busy = false; idle(); }), 1500);
+      player.play(pick);
+      if (pick === 'bow') catchphrase(true);
+      later(guard(() => { busy = false; idle(); }), { wink: 1250, bow: 1150 }[pick] || 1600);
     }));
   }
 
@@ -622,6 +708,10 @@
     window.__demo = {
       send: n => handlers.notify.forEach(h => h({ time: Date.now(), ...n })),
       config: c => { demoCfg = { ...demoCfg, ...c }; fire(); },
+      play: (name, opts) => player.play(name, opts || {}),   // 모션 미리보기 (디버그)
+      wheelie: () => { if (mode === 'ride') wheelie(); },
+      stopNow: () => brakeThen(guard(stop)),
+      idleVariant: () => idleVariant(),
       state: () => ({ mode, facing, dir, motion: player.name, busy, x: Math.round(x), v: Math.round(bike.v), z: +bike.z.toFixed(2), lean: +bike.lean.toFixed(1), pitch: +bike.pitch.toFixed(1), rate: +player.rate.toFixed(2) }),
     };
     return {

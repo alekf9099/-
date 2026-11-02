@@ -1,21 +1,27 @@
 {
-  "fps": 15,
+  "fps": 30,
   "frameSize": {
     "w": 300,
     "h": 332
   },
-  "generatedBy": "3d/ride_buddy_3d.py + 3d/pack_sprites.py",
+  "generatedBy": "2d pipeline + tools/pack_sprites.py",
   "motions": [
     {
       "name": "ride_r",
       "label": "오른쪽으로 주행",
       "loop": true,
-      "frames": 48,
+      "frames": 96,
       "durationSec": 3.2,
       "sheet": {
-        "file": "ride_r_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/ride_r.webp",
         "columns": 8,
-        "rows": 6
+        "rows": 12,
+        "cell": {
+          "x": 0,
+          "y": 28,
+          "w": 244,
+          "h": 304
+        }
       },
       "webp": "ride_r.webp",
       "gif": "ride_r.gif"
@@ -24,12 +30,18 @@
       "name": "ride_l",
       "label": "왼쪽으로 주행",
       "loop": true,
-      "frames": 48,
+      "frames": 96,
       "durationSec": 3.2,
       "sheet": {
-        "file": "ride_l_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/ride_l.webp",
         "columns": 8,
-        "rows": 6
+        "rows": 12,
+        "cell": {
+          "x": 56,
+          "y": 28,
+          "w": 244,
+          "h": 304
+        }
       },
       "webp": "ride_l.webp",
       "gif": "ride_l.gif"
@@ -38,12 +50,18 @@
       "name": "idle_r",
       "label": "정차 (오른쪽)",
       "loop": true,
-      "frames": 36,
+      "frames": 72,
       "durationSec": 2.4,
       "sheet": {
-        "file": "idle_r_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/idle_r.webp",
         "columns": 8,
-        "rows": 5
+        "rows": 9,
+        "cell": {
+          "x": 30,
+          "y": 29,
+          "w": 214,
+          "h": 303
+        }
       },
       "webp": "idle_r.webp",
       "gif": "idle_r.gif"
@@ -52,12 +70,18 @@
       "name": "idle_l",
       "label": "정차 (왼쪽)",
       "loop": true,
-      "frames": 36,
+      "frames": 72,
       "durationSec": 2.4,
       "sheet": {
-        "file": "idle_l_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/idle_l.webp",
         "columns": 8,
-        "rows": 5
+        "rows": 9,
+        "cell": {
+          "x": 56,
+          "y": 29,
+          "w": 214,
+          "h": 303
+        }
       },
       "webp": "idle_l.webp",
       "gif": "idle_l.gif"
@@ -66,12 +90,18 @@
       "name": "face_r",
       "label": "오른쪽→정면 돌아보기",
       "loop": false,
-      "frames": 6,
+      "frames": 12,
       "durationSec": 0.4,
       "sheet": {
-        "file": "face_r_sheet.webp",
-        "columns": 6,
-        "rows": 1
+        "file": "../../src/renderer/sprites/2d/face_r.webp",
+        "columns": 8,
+        "rows": 2,
+        "cell": {
+          "x": 54,
+          "y": 17,
+          "w": 190,
+          "h": 315
+        }
       },
       "webp": "face_r.webp",
       "gif": "face_r.gif"
@@ -80,12 +110,18 @@
       "name": "face_l",
       "label": "왼쪽→정면 돌아보기",
       "loop": false,
-      "frames": 6,
+      "frames": 12,
       "durationSec": 0.4,
       "sheet": {
-        "file": "face_l_sheet.webp",
-        "columns": 6,
-        "rows": 1
+        "file": "../../src/renderer/sprites/2d/face_l.webp",
+        "columns": 8,
+        "rows": 2,
+        "cell": {
+          "x": 54,
+          "y": 12,
+          "w": 192,
+          "h": 320
+        }
       },
       "webp": "face_l.webp",
       "gif": "face_l.gif"
@@ -94,12 +130,18 @@
       "name": "front",
       "label": "정면 대기",
       "loop": true,
-      "frames": 36,
+      "frames": 72,
       "durationSec": 2.4,
       "sheet": {
-        "file": "front_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/front.webp",
         "columns": 8,
-        "rows": 5
+        "rows": 9,
+        "cell": {
+          "x": 30,
+          "y": 29,
+          "w": 214,
+          "h": 303
+        }
       },
       "webp": "front.webp",
       "gif": "front.gif"
@@ -108,12 +150,18 @@
       "name": "notify",
       "label": "알림 도착",
       "loop": false,
-      "frames": 24,
+      "frames": 48,
       "durationSec": 1.6,
       "sheet": {
-        "file": "notify_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/notify.webp",
         "columns": 8,
-        "rows": 3
+        "rows": 6,
+        "cell": {
+          "x": 46,
+          "y": 0,
+          "w": 209,
+          "h": 332
+        }
       },
       "webp": "notify.webp",
       "gif": "notify.gif"
@@ -122,12 +170,18 @@
       "name": "talk",
       "label": "알림 읽어주기",
       "loop": true,
-      "frames": 24,
+      "frames": 48,
       "durationSec": 1.6,
       "sheet": {
-        "file": "talk_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/talk.webp",
         "columns": 8,
-        "rows": 3
+        "rows": 6,
+        "cell": {
+          "x": 46,
+          "y": 30,
+          "w": 208,
+          "h": 302
+        }
       },
       "webp": "talk.webp",
       "gif": "talk.gif"
@@ -136,12 +190,18 @@
       "name": "happy",
       "label": "기쁨",
       "loop": true,
-      "frames": 24,
+      "frames": 48,
       "durationSec": 1.6,
       "sheet": {
-        "file": "happy_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/happy.webp",
         "columns": 8,
-        "rows": 3
+        "rows": 6,
+        "cell": {
+          "x": 53,
+          "y": 7,
+          "w": 197,
+          "h": 325
+        }
       },
       "webp": "happy.webp",
       "gif": "happy.gif"
@@ -150,12 +210,18 @@
       "name": "sleep",
       "label": "졸기 (방해 금지)",
       "loop": true,
-      "frames": 48,
+      "frames": 96,
       "durationSec": 3.2,
       "sheet": {
-        "file": "sleep_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/sleep.webp",
         "columns": 8,
-        "rows": 6
+        "rows": 12,
+        "cell": {
+          "x": 54,
+          "y": 16,
+          "w": 190,
+          "h": 316
+        }
       },
       "webp": "sleep.webp",
       "gif": "sleep.gif"
@@ -164,15 +230,181 @@
       "name": "turn",
       "label": "유턴 (왼→오)",
       "loop": false,
-      "frames": 12,
+      "frames": 24,
       "durationSec": 0.8,
       "sheet": {
-        "file": "turn_sheet.webp",
+        "file": "../../src/renderer/sprites/2d/turn.webp",
         "columns": 8,
-        "rows": 2
+        "rows": 3,
+        "cell": {
+          "x": 54,
+          "y": 12,
+          "w": 192,
+          "h": 320
+        }
       },
       "webp": "turn.webp",
       "gif": "turn.gif"
+    },
+    {
+      "name": "wheelie_r",
+      "label": "윌리 (앞바퀴 들기)",
+      "loop": false,
+      "frames": 66,
+      "durationSec": 2.2,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/wheelie_r.webp",
+        "columns": 8,
+        "rows": 9,
+        "cell": {
+          "x": 0,
+          "y": 16,
+          "w": 245,
+          "h": 316
+        }
+      },
+      "webp": "wheelie_r.webp",
+      "gif": "wheelie_r.gif"
+    },
+    {
+      "name": "rev",
+      "label": "제자리 공회전 \"달달달달\"",
+      "loop": true,
+      "frames": 24,
+      "durationSec": 0.8,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/rev.webp",
+        "columns": 8,
+        "rows": 3,
+        "cell": {
+          "x": 0,
+          "y": 35,
+          "w": 244,
+          "h": 297
+        }
+      },
+      "webp": "rev.webp",
+      "gif": "rev.gif"
+    },
+    {
+      "name": "bow",
+      "label": "꾸벅 인사 \"감사하고~\"",
+      "loop": false,
+      "frames": 30,
+      "durationSec": 1.0,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/bow.webp",
+        "columns": 8,
+        "rows": 4,
+        "cell": {
+          "x": 54,
+          "y": 31,
+          "w": 193,
+          "h": 301
+        }
+      },
+      "webp": "bow.webp",
+      "gif": "bow.gif"
+    },
+    {
+      "name": "look_r",
+      "label": "두리번",
+      "loop": false,
+      "frames": 78,
+      "durationSec": 2.6,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/look_r.webp",
+        "columns": 8,
+        "rows": 10,
+        "cell": {
+          "x": 54,
+          "y": 30,
+          "w": 190,
+          "h": 302
+        }
+      },
+      "webp": "look_r.webp",
+      "gif": "look_r.gif"
+    },
+    {
+      "name": "yawn_r",
+      "label": "하품",
+      "loop": false,
+      "frames": 72,
+      "durationSec": 2.4,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/yawn_r.webp",
+        "columns": 8,
+        "rows": 9,
+        "cell": {
+          "x": 54,
+          "y": 25,
+          "w": 190,
+          "h": 307
+        }
+      },
+      "webp": "yawn_r.webp",
+      "gif": "yawn_r.gif"
+    },
+    {
+      "name": "groove",
+      "label": "신나서 리듬 타기",
+      "loop": true,
+      "frames": 48,
+      "durationSec": 1.6,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/groove.webp",
+        "columns": 8,
+        "rows": 6,
+        "cell": {
+          "x": 45,
+          "y": 20,
+          "w": 200,
+          "h": 312
+        }
+      },
+      "webp": "groove.webp",
+      "gif": "groove.gif"
+    },
+    {
+      "name": "wink",
+      "label": "윙크",
+      "loop": false,
+      "frames": 36,
+      "durationSec": 1.2,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/wink.webp",
+        "columns": 8,
+        "rows": 5,
+        "cell": {
+          "x": 54,
+          "y": 30,
+          "w": 190,
+          "h": 302
+        }
+      },
+      "webp": "wink.webp",
+      "gif": "wink.gif"
+    },
+    {
+      "name": "wave_out",
+      "label": "손 내리기",
+      "loop": false,
+      "frames": 12,
+      "durationSec": 0.4,
+      "sheet": {
+        "file": "../../src/renderer/sprites/2d/wave_out.webp",
+        "columns": 8,
+        "rows": 2,
+        "cell": {
+          "x": 54,
+          "y": 31,
+          "w": 206,
+          "h": 301
+        }
+      },
+      "webp": "wave_out.webp",
+      "gif": "wave_out.gif"
     }
   ]
 }

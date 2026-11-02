@@ -16,9 +16,9 @@
     "dist:mac": "electron-builder --mac dmg",
     "dist:linux": "electron-builder --linux AppImage",
     "render3d": "python 3d/ride_buddy_3d.py --motions 3d/out --res 360 --samples 24",
-    "render2d": "python 2d/build_2d.py --frames 2d/out",
-    "pack2d": "python tools/pack_sprites.py 2d/out --skin 2d --display-scale 1.45 --icons --icon-scale 0.42",
-    "pack3d": "python tools/pack_sprites.py 3d/out --skin 3d"
+    "render2d": "python 2d/build_2d.py --frames 2d/out --fps 30",
+    "pack2d": "python tools/pack_sprites.py 2d/out --skin 2d --fps 30 --display-scale 1.45 --icons --icon-scale 0.42",
+    "pack3d": "python tools/pack_sprites.py 3d/out --skin 3d --fps 15"
   },
   "build": {
     "appId": "com.alekf9099.ridebuddy",

@@ -26,7 +26,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, 'source', 'character_cut.png')
 FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
-FPS = 15
+FPS = 30
 TAU = math.tau
 
 LINE = (54, 37, 31, 255)          # 원본 외곽선 색
@@ -48,7 +48,7 @@ HEADLIGHT = (660, 790)
 EXHAUST_TIP = (70, 1020)
 GROUND_Y = 1362
 # 머리 뒤에 가려진 목/어깨 영역 (셔츠로 채움)
-SHOULDERS = [(222, 545), (250, 478), (320, 440), (500, 425), (690, 438), (772, 478), (800, 545)]
+SHOULDERS = [(222, 565), (262, 515), (330, 470), (500, 452), (668, 466), (742, 508), (800, 565)]
 
 # 오른손 (손 흔들기): 그립 잡은 손을 지우고 핸들바/그립을 다시 그린 뒤, 소매에서 팔을 들어 올림
 HAND_R_BOX = (730, 600, 850, 712)
@@ -140,6 +140,17 @@ class Rig:
         ImageDraw.Draw(hb).polygon(HEAD_BEHIND_MIRROR, fill=255)
         behind = np.array(hb) > 0
         head_np = ((alpha > 8) & (yy < 470) & ~mir_np) | ((ell | behind) & mir_np & (yy < 470)) | (ell & (yy >= 470))
+        # 어깨선 아래 머리(턱·볼 아래쪽)는 실제 피부 영역을 따라 잘라 외곽선이 남지 않게
+        rgb = np.array(src.convert('RGB')).astype(int)
+        skin = (rgb[..., 0] > 200) & (rgb[..., 1] > 160) & (rgb[..., 2] > 125) & (rgb[..., 0] - rgb[..., 2] > 18) & (alpha > 128)
+        n, lab = cv2.connectedComponents(skin.astype(np.uint8))
+        face = (lab == lab[HEAD['cy'] + 40, HEAD['cx']]).astype(np.uint8) * 255
+        face = cv2.morphologyEx(face, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+        cnts, _ = cv2.findContours(face, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        face = np.zeros_like(face)
+        cv2.drawContours(face, cnts, -1, 255, -1)
+        face = cv2.dilate(face, np.ones((15, 15), np.uint8)) > 0
+        head_np |= face & (yy >= 430) & (yy < 570) & ~mir_np
         head_m = Image.fromarray((head_np * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))
         self.head_mask = head_m
 
@@ -154,7 +165,7 @@ class Rig:
         a = np.array(src)
         sh = Image.new('L', src.size, 0)
         ImageDraw.Draw(sh).polygon(SHOULDERS, fill=255)
-        fill = head_np & (np.array(sh) > 0)
+        fill = head_np & ((np.array(sh) > 0) | (yy >= 500))   # 턱 아래(몸 안쪽)는 모두 셔츠로
         a[fill, :3] = SHIRT                             # 머리 뒤 목/어깨 = 셔츠색
         al = alpha.copy()
         al[head_np] = 0
@@ -324,17 +335,30 @@ class Rig:
         self.eye_crops = eyes
         return dict(head=head, no_eyes=no_eyes, no_mouth=no_mouth, blank=blank)
 
-    def compose_head(self, eyes='normal', mouth='w', mouth_h=24, blink=1.0):
-        """eyes: normal|closed|happy|wow   mouth: w|open|o   blink: 1=뜸, 0=감음"""
-        if eyes == 'normal' and blink < 0.999:
-            eyes = 'closed' if blink < 0.25 else 'half'
-        base_key = {(True, True): 'head', (False, True): 'no_eyes', (True, False): 'no_mouth', (False, False): 'blank'}
-        img = self.faces[base_key[(eyes == 'normal', mouth == 'w')]].copy()
+    # ---------- 머리 합성 (표정) ----------
+    HEAD_BOX = (190, 20, 820, 560)           # 덧그림 영역 (속도 최적화)
 
-        over = Image.new('RGBA', (self.size[0] * SS, self.size[1] * SS), (0, 0, 0, 0))
+    def compose_head(self, eyes='normal', mouth='w', mouth_h=24, blink=1.0, look=0.0):
+        """eyes: normal|closed|happy|wow|look|wink   mouth: w|open|o|yawn|grin|smile
+        blink: 1=뜸 0=감음   look: 눈동자 좌우 이동(px)"""
+        if eyes in ('normal', 'look') and blink < 0.999:
+            eyes = 'closed' if blink < 0.25 else 'half'
+        if eyes == 'normal' and abs(look) > 0.5:
+            eyes = 'look'
+        key = (eyes, mouth, int(round(mouth_h)), int(round(look)))
+        cache = self.__dict__.setdefault('_head_cache', {})
+        if key in cache:
+            return cache[key]
+
+        keep_eyes, keep_mouth = eyes == 'normal', mouth == 'w'
+        base_key = {(True, True): 'head', (False, True): 'no_eyes', (True, False): 'no_mouth', (False, False): 'blank'}
+        img = self.faces[base_key[(keep_eyes, keep_mouth)]].copy()
+
+        bx0, by0, bx1, by1 = self.HEAD_BOX
+        over = Image.new('RGBA', ((bx1 - bx0) * SS, (by1 - by0) * SS), (0, 0, 0, 0))
         d = ImageDraw.Draw(over)
         lw = 7 * SS
-        S = lambda p: (p[0] * SS, p[1] * SS)
+        S = lambda p: ((p[0] - bx0) * SS, (p[1] - by0) * SS)
 
         def curve(p0, c, p1, width=lw, color=LINE, n=24):
             pts = []
@@ -348,83 +372,166 @@ class Rig:
             for q in (pts[0], pts[-1]):
                 d.ellipse((q[0] - r, q[1] - r, q[0] + r, q[1] + r), fill=color)
 
+        def paste_eye(k, dx=0, dy=0, sx=1.0, sy=1.0):
+            crop, box = self.eye_crops[k]
+            ex, ey = (EYE_L if k == 'L' else EYE_R)
+            im = crop if (sx == 1 and sy == 1) else crop.resize((max(2, int(crop.width * sx)), max(2, int(crop.height * sy))), Image.LANCZOS)
+            img.alpha_composite(im, (int(ex - im.width / 2 + dx), int(ey - im.height / 2 + dy)))
+
+        def star(cx, cy, r, color=(255, 255, 255, 255)):
+            pts = []
+            for i in range(8):
+                a = math.pi / 4 * i
+                rr = r if i % 2 == 0 else r * 0.33
+                pts.append(S((cx + rr * math.sin(a), cy - rr * math.cos(a))))
+            d.polygon(pts, fill=color)
+
         for (x, y), k in ((EYE_L, 'L'), (EYE_R, 'R')):
             if eyes == 'closed':
                 curve((x - 30, y - 2), (x, y + 24), (x + 30, y - 2))
-            elif eyes == 'happy':
+            elif eyes == 'happy' or (eyes == 'wink' and k == 'R'):
                 curve((x - 30, y + 10), (x, y - 26), (x + 30, y + 10))
+            elif eyes == 'wink' and k == 'L':
+                paste_eye('L')
             elif eyes == 'half':
-                crop, box = self.eye_crops[k]
-                h = max(4, int(crop.height * 0.42))
-                sm = crop.resize((crop.width, h), Image.LANCZOS)
-                img.alpha_composite(sm, (box[0], int(y - h / 2 + 6)))
+                paste_eye(k, dy=6, sy=0.42)
+            elif eyes == 'look':
+                paste_eye(k, dx=look, dy=-abs(look) * 0.12)
             elif eyes == 'wow':
-                crop, box = self.eye_crops[k]
-                s = 1.24
-                big = crop.resize((int(crop.width * s), int(crop.height * s)), Image.LANCZOS)
-                img.alpha_composite(big, (int(x - big.width / 2), int(y - big.height / 2)))
-                sx, sy = x - 14, y + 16       # 반짝이 별
-                star = [S((sx, sy - 9)), S((sx + 3, sy - 3)), S((sx + 9, sy)), S((sx + 3, sy + 3)),
-                        S((sx, sy + 9)), S((sx - 3, sy + 3)), S((sx - 9, sy)), S((sx - 3, sy - 3))]
-                d.polygon(star, fill=(255, 255, 255, 255))
+                paste_eye(k, sx=1.24, sy=1.24)
+                star(x - 14, y + 16, 9)
 
         mx, my = MOUTH
+
+        def mouth_shape(box, radius, fill, tongue=None):
+            m = Image.new('L', over.size, 0)
+            ImageDraw.Draw(m).rounded_rectangle(box, radius=radius, fill=255)
+            inside = Image.new('RGBA', over.size, fill)
+            if tongue:
+                ImageDraw.Draw(inside).ellipse(tongue, fill=(238, 118, 124, 255))
+            over.paste(inside, (0, 0), m)
+            d.rounded_rectangle(box, radius=radius, outline=LINE, width=6 * SS)
+
         if mouth == 'open':
             h = mouth_h
-            box = (S((mx - 30, my - 10)), S((mx + 30, my - 10 + h)))
-            m = Image.new('L', over.size, 0)
-            ImageDraw.Draw(m).rounded_rectangle((box[0][0], box[0][1], box[1][0], box[1][1]), radius=int(min(h, 30) * SS * 0.48), fill=255)
-            inside = Image.new('RGBA', over.size, (126, 38, 36, 255))
-            ImageDraw.Draw(inside).ellipse(S((mx - 20, my - 10 + h * 0.55)) + S((mx + 20, my - 10 + h * 1.25)), fill=(238, 118, 124, 255))
-            over.paste(inside, (0, 0), m)
-            d.rounded_rectangle((box[0][0], box[0][1], box[1][0], box[1][1]), radius=int(min(h, 30) * SS * 0.48), outline=LINE, width=6 * SS)
+            (x0, y0), (x1, y1) = S((mx - 30, my - 10)), S((mx + 30, my - 10 + h))
+            mouth_shape((x0, y0, x1, y1), int(min(h, 30) * SS * 0.48), (126, 38, 36, 255),
+                        S((mx - 20, my - 10 + h * 0.55)) + S((mx + 20, my - 10 + h * 1.25)))
         elif mouth == 'o':
             d.ellipse(S((mx - 15, my - 8)) + S((mx + 15, my + 26)), fill=(126, 38, 36, 255), outline=LINE, width=6 * SS)
+        elif mouth == 'yawn':                      # 하품: 세로로 긴 타원
+            h = max(10, mouth_h)
+            box = S((mx - 22 - h * 0.08, my - 6)) + S((mx + 22 + h * 0.08, my - 6 + h))
+            m = Image.new('L', over.size, 0)
+            ImageDraw.Draw(m).ellipse(box, fill=255)
+            inside = Image.new('RGBA', over.size, (110, 30, 30, 255))
+            ImageDraw.Draw(inside).ellipse(S((mx - 18, my - 6 + h * 0.62)) + S((mx + 18, my - 6 + h * 1.15)), fill=(238, 118, 124, 255))
+            over.paste(inside, (0, 0), m)
+            d.ellipse(box, outline=LINE, width=6 * SS)
+        elif mouth == 'grin':                      # 이를 드러낸 씨익 (공회전)
+            (x0, y0), (x1, y1) = S((mx - 34, my - 8)), S((mx + 34, my + 20))
+            d.rounded_rectangle((x0, y0, x1, y1), radius=10 * SS, fill=(255, 255, 255, 255), outline=LINE, width=6 * SS)
+            d.line([S((mx - 30, my + 6)), S((mx + 30, my + 6))], fill=LINE, width=4 * SS)
+            for k in (-17, 0, 17):
+                d.line([S((mx + k, my - 6)), S((mx + k, my + 18))], fill=LINE, width=3 * SS)
+        elif mouth == 'smile':                     # 활짝 웃는 D 입
+            h = max(14, mouth_h)
+            pts = [S((mx - 32, my - 6))]
+            for i in range(21):
+                a = math.pi * i / 20
+                pts.append(S((mx - 32 * math.cos(a), my - 6 + h * math.sin(a))))
+            pts.append(S((mx + 32, my - 6)))
+            m = Image.new('L', over.size, 0)
+            ImageDraw.Draw(m).polygon(pts, fill=255)
+            inside = Image.new('RGBA', over.size, (126, 38, 36, 255))
+            ImageDraw.Draw(inside).ellipse(S((mx - 20, my - 6 + h * 0.5)) + S((mx + 20, my - 6 + h * 1.3)), fill=(238, 118, 124, 255))
+            over.paste(inside, (0, 0), m)
+            d.line(pts + [pts[0]], fill=LINE, width=6 * SS, joint='curve')
 
-        over = over.resize(self.size, Image.LANCZOS)
-        over.putalpha(ImageChops.multiply(over.getchannel('A'), self.head_mask))
-        img.alpha_composite(over)
+        over = over.resize((bx1 - bx0, by1 - by0), Image.LANCZOS)
+        full = Image.new('RGBA', self.size, (0, 0, 0, 0))
+        full.paste(over, (bx0, by0))
+        full.putalpha(ImageChops.multiply(full.getchannel('A'), self.head_mask))
+        img.alpha_composite(full)
+        cache[key] = img
         return img
 
 
 # ======================================================================================
 # 효과 (원본 선 스타일)
 # ======================================================================================
+def _fx_extent(it):
+    s = it.get('s', 1.0)
+    k = it['kind']
+    if k == 'speed':
+        return (it['x'] - 10, it['y'] - 10, it['x'] + it['len'] + 10, it['y'] + 10)
+    r = {'notice': 60 * s, 'heart': 50 * s, 'z': it.get('size', 40) * s, 'puff': it.get('r', 20) + 6, 'dust': it.get('r', 20) + 6,
+         'sweat': 34 * s, 'note': it.get('size', 60) * s, 'spark': 30 * s, 'tear': 26 * s}.get(k, 60)
+    return (it['x'] - r, it['y'] - r, it['x'] + r, it['y'] + r)
+
+
 def fx_layer(size, items):
     W, H = size
-    over = Image.new('RGBA', (W * SS, H * SS), (0, 0, 0, 0))
+    ex = [_fx_extent(it) for it in items]
+    x0 = int(max(0, min(e[0] for e in ex) - 8)); y0 = int(max(0, min(e[1] for e in ex) - 8))
+    x1 = int(min(W, max(e[2] for e in ex) + 8)); y1 = int(min(H, max(e[3] for e in ex) + 8))
+    if x1 <= x0 or y1 <= y0:
+        return None, (0, 0)
+    over = Image.new('RGBA', ((x1 - x0) * SS, (y1 - y0) * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(over)
     S = lambda v: v * SS
+    P = lambda x, y: ((x - x0) * SS, (y - y0) * SS)
+    fonts = {}
+
+    def font(px):
+        px = max(8, int(px))
+        if px not in fonts:
+            fonts[px] = ImageFont.truetype(FONT, px)
+        return fonts[px]
+
     for it in items:
         k = it['kind']
         x, y, s, a = it['x'], it['y'], it.get('s', 1.0), it.get('a', 1.0)
         al = int(255 * max(0, min(1, a)))
+        if al <= 0:
+            continue
         line = LINE[:3] + (al,)
         if k == 'notice':
             r = 50 * s
-            d.ellipse((S(x - r), S(y - r), S(x + r), S(y + r)), fill=(255, 216, 74, al), outline=line, width=int(S(7)))
-            d.rounded_rectangle((S(x - 7 * s), S(y - 30 * s), S(x + 7 * s), S(y + 8 * s)), radius=int(S(7 * s)), fill=line)
-            d.ellipse((S(x - 8 * s), S(y + 16 * s), S(x + 8 * s), S(y + 32 * s)), fill=line)
+            d.ellipse(P(x - r, y - r) + P(x + r, y + r), fill=(255, 216, 74, al), outline=line, width=int(S(7)))
+            d.rounded_rectangle(P(x - 7 * s, y - 30 * s) + P(x + 7 * s, y + 8 * s), radius=int(S(7 * s)), fill=line)
+            d.ellipse(P(x - 8 * s, y + 16 * s) + P(x + 8 * s, y + 32 * s), fill=line)
         elif k == 'heart':
             pts = []
             for i in range(60):
                 t = TAU * i / 60
                 hx = 16 * math.sin(t) ** 3
                 hy = -(13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t))
-                pts.append((S(x + hx * 2.6 * s), S(y + hy * 2.6 * s)))
-            d.polygon(pts, fill=(255, 107, 129, al), outline=line, width=int(S(6)))
-        elif k == 'z':
-            f = ImageFont.truetype(FONT, int(S(it['size'] * s)))
-            d.text((S(x), S(y)), it.get('text', 'Z'), font=f, fill=(142, 163, 201, al), stroke_width=int(S(5)), stroke_fill=line, anchor='mm')
+                pts.append(P(x + hx * 2.6 * s, y + hy * 2.6 * s))
+            d.polygon(pts, fill=it.get('color', (255, 107, 129)) + (al,), outline=line, width=int(S(6)))
+        elif k in ('z', 'note'):
+            col = it.get('color', (142, 163, 201))
+            d.text(P(x, y), it.get('text', 'Z'), font=font(S(it.get('size', 60) * s)), fill=col + (al,),
+                   stroke_width=int(S(5)), stroke_fill=line, anchor='mm')
         elif k == 'puff':
             r = it['r']
-            d.ellipse((S(x - r), S(y - r), S(x + r), S(y + r)), fill=(228, 231, 235, al), outline=(150, 158, 168, al), width=int(S(4)))
+            d.ellipse(P(x - r, y - r) + P(x + r, y + r), fill=(228, 231, 235, al), outline=(150, 158, 168, al), width=int(S(4)))
+        elif k == 'dust':
+            r = it['r']
+            d.ellipse(P(x - r, y - r * 0.7) + P(x + r, y + r * 0.7), fill=(214, 200, 182, al), outline=(168, 150, 128, al), width=int(S(3)))
         elif k == 'speed':
-            d.line([(S(x), S(y)), (S(x + it['len']), S(y))], fill=(150, 165, 182, al), width=int(S(9)), joint='curve')
-        elif k == 'sweat':
-            d.polygon([(S(x), S(y - 26 * s)), (S(x + 14 * s), S(y)), (S(x - 14 * s), S(y))], fill=(143, 211, 255, al))
-            d.ellipse((S(x - 14 * s), S(y - 12 * s), S(x + 14 * s), S(y + 16 * s)), fill=(143, 211, 255, al), outline=line, width=int(S(4)))
-    return over.resize((W, H), Image.LANCZOS)
+            d.line([P(x, y), P(x + it['len'], y)], fill=(150, 165, 182, al), width=int(S(9)), joint='curve')
+        elif k == 'sweat' or k == 'tear':
+            d.polygon([P(x, y - 26 * s), P(x + 14 * s, y), P(x - 14 * s, y)], fill=(143, 211, 255, al))
+            d.ellipse(P(x - 14 * s, y - 12 * s) + P(x + 14 * s, y + 16 * s), fill=(143, 211, 255, al), outline=line, width=int(S(4)))
+        elif k == 'spark':
+            pts = []
+            for i in range(8):
+                ang = math.pi / 4 * i + it.get('rot', 0)
+                rr = (26 if i % 2 == 0 else 9) * s
+                pts.append(P(x + rr * math.sin(ang), y - rr * math.cos(ang)))
+            d.polygon(pts, fill=it.get('color', (255, 228, 92)) + (al,), outline=line, width=int(S(4)))
+    return over.resize((x1 - x0, y1 - y0), Image.LANCZOS), (x0, y0)
 
 
 # ======================================================================================
@@ -433,16 +540,24 @@ def fx_layer(size, items):
 def affine(img, canvas_size, offset, pivot=(0, 0), dx=0, dy=0, rot=0.0, sx=1.0, sy=1.0):
     """레이어(img)를 canvas 의 offset 위치에 놓고 pivot(레이어 좌표) 기준 회전/스케일/이동"""
     px, py = pivot[0] + offset[0], pivot[1] + offset[1]
+    M = mat_about((px, py), rot, sx, sy, dx, dy) @ mat_t(offset[0], offset[1])
+    return warp(img, canvas_size, M)
+
+
+def mat_t(tx, ty):
+    return np.array([[1, 0, tx], [0, 1, ty], [0, 0, 1]], float)
+
+
+def mat_about(pivot, rot=0.0, sx=1.0, sy=1.0, dx=0, dy=0):
+    """pivot 기준 (스케일 → 회전) 후 (dx, dy) 이동하는 3x3 정방향 행렬"""
     c, s = math.cos(math.radians(rot)), math.sin(math.radians(rot))
-    # forward: p' = P + D + R*S*(p - P)  (p 는 캔버스 좌표)
-    A = np.array([[c * sx, -s * sy], [s * sx, c * sy]])
-    Ai = np.linalg.inv(A)
-    t = np.array([px + dx, py + dy])
-    # inverse: p = P + Ai (p' - t)
-    b = np.array([px, py]) - Ai @ t
-    # PIL: input = (a x + b y + c, d x + e y + f), input 좌표는 레이어 좌표 → offset 빼기
-    coeffs = (Ai[0, 0], Ai[0, 1], b[0] - offset[0], Ai[1, 0], Ai[1, 1], b[1] - offset[1])
-    return img.transform(canvas_size, Image.AFFINE, coeffs, resample=Image.BICUBIC)
+    A = np.array([[c * sx, -s * sy, 0], [s * sx, c * sy, 0], [0, 0, 1]], float)
+    return mat_t(pivot[0] + dx, pivot[1] + dy) @ A @ mat_t(-pivot[0], -pivot[1])
+
+
+def warp(img, canvas_size, M):
+    Mi = np.linalg.inv(M)
+    return img.transform(canvas_size, Image.AFFINE, tuple(Mi[:2].ravel()), resample=Image.BICUBIC)
 
 
 class Renderer:
@@ -461,65 +576,89 @@ class Renderer:
         """p: 포즈 dict → RGBA 프레임"""
         R = self.rig
         cs, off = self.size, self.off
-        out = Image.new('RGBA', cs, (0, 0, 0, 0))
+        body = Image.new('RGBA', cs, (0, 0, 0, 0))
 
-        # 그림자
-        sh = Image.new('RGBA', cs, (0, 0, 0, 0))
-        k = p.get('shadow', 1.0)
-        gx, gy = off[0] + 470, off[1] + GROUND_Y
-        ImageDraw.Draw(sh).ellipse((gx - 400 * k, gy - 20, gx + 400 * k, gy + 20), fill=(30, 22, 18, 70))
-        out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10)))
-
-        # 뒤 효과 (연기, 스피드라인)
-        back = [it for it in p.get('fx', []) if it['kind'] in ('puff', 'speed')]
+        # 뒤 효과 (연기, 먼지, 스피드라인)
+        back = [it for it in p.get('fx', []) if it['kind'] in ('puff', 'speed', 'dust')]
         if back:
-            out.alpha_composite(self.fx(back))
+            self.paste_fx(body, back)
 
         wave = p.get('wave')
         base = R.bases[(p.get('hazard') or '', wave is not None)]
-        bdy = p.get('base_dy', 0)
+        bdy, bdx = p.get('base_dy', 0), p.get('base_dx', 0)
         bsy = p.get('base_sy', 1.0)
-        out.alpha_composite(affine(base, cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy, sx=p.get('base_sx', 1.0)))
+        body.alpha_composite(affine(base, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy, sx=p.get('base_sx', 1.0)))
         if wave is not None:   # 미러 앞, 소매 안쪽에서 나오는 팔
-            out.alpha_composite(affine(R.arm(wave), cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy))
-            out.alpha_composite(affine(R.sleeve_r, cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy))
+            body.alpha_composite(affine(R.arm(wave), cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy))
+            body.alpha_composite(affine(R.sleeve_r, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy))
         if p.get('roll') is not None:
-            out.alpha_composite(affine(R.treads(p['roll']), cs, off, pivot=(470, GROUND_Y), dy=bdy))
+            body.alpha_composite(affine(R.treads(p['roll']), cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy))
 
         if p.get('headlight', 0) > 0:
             gl = Image.new('RGBA', cs, (0, 0, 0, 0))
-            hx, hy = HEADLIGHT[0] + off[0], HEADLIGHT[1] + off[1] + bdy
+            hx, hy = HEADLIGHT[0] + off[0] + bdx, HEADLIGHT[1] + off[1] + bdy
             r = 150
             ImageDraw.Draw(gl).ellipse((hx - r, hy - r, hx + r, hy + r), fill=(255, 244, 196, int(170 * p['headlight'])))
-            out.alpha_composite(gl.filter(ImageFilter.GaussianBlur(40)))
+            body.alpha_composite(gl.filter(ImageFilter.GaussianBlur(40)))
 
-        head = R.compose_head(p.get('eyes', 'normal'), p.get('mouth', 'w'), p.get('mouth_h', 24), p.get('blink', 1.0))
-        out.alpha_composite(affine(head, cs, off, pivot=NECK, dx=p.get('head_dx', 0), dy=bdy + p.get('head_dy', 0),
-                                   rot=p.get('head_rot', 0), sx=p.get('head_s', 1.0), sy=p.get('head_s', 1.0) * p.get('head_sy', 1.0)))
-        out.alpha_composite(affine(R.front, cs, off, pivot=(470, GROUND_Y), dy=bdy))
+        head = R.compose_head(p.get('eyes', 'normal'), p.get('mouth', 'w'), p.get('mouth_h', 24), p.get('blink', 1.0), p.get('look', 0.0))
+        hs = p.get('head_s', 1.0)
+        body.alpha_composite(affine(head, cs, off, pivot=NECK, dx=bdx + p.get('head_dx', 0), dy=bdy + p.get('head_dy', 0),
+                                    rot=p.get('head_rot', 0), sx=hs, sy=hs * p.get('head_sy', 1.0)))
+        body.alpha_composite(affine(R.front, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy))
 
-        frontfx = [it for it in p.get('fx', []) if it['kind'] not in ('puff', 'speed')]
+        frontfx = [it for it in p.get('fx', []) if it['kind'] not in ('puff', 'speed', 'dust')]
         if frontfx:
-            out.alpha_composite(self.fx(frontfx))
+            self.paste_fx(body, frontfx)
 
-        # 전체 변형 (점프/찌그러짐/좌우 반전)
-        gsx, gsy, gdy = p.get('sx', 1.0), p.get('sy', 1.0), p.get('dy', 0)
-        if gsx != 1 or gsy != 1 or gdy:
-            pivot = (self.cw / 2, off[1] + GROUND_Y)
-            out = affine(out, cs, (0, 0), pivot=pivot, dy=gdy, sx=gsx, sy=gsy)
+        # 전체 변형: 윌리 회전(뒷바퀴 접지점 기준) → 점프/찌그러짐/좌우 반전(바닥 중심 기준)
+        gsx, gsy, gdy, grot = p.get('sx', 1.0), p.get('sy', 1.0), p.get('dy', 0), p.get('rot', 0.0)
+        ground = (self.cw / 2, off[1] + GROUND_Y)
+        M = mat_about(ground, 0, gsx, gsy, 0, gdy)
+        if grot:
+            rp = p.get('rot_pivot', REAR_CONTACT)
+            M = M @ mat_about((rp[0] + off[0], rp[1] + off[1]), grot)
+        if not np.allclose(M, np.eye(3)):
+            body = warp(body, cs, M)
+
+        # 그림자 (항상 바닥에)
+        out = Image.new('RGBA', cs, (0, 0, 0, 0))
+        k = p.get('shadow', 1.0)
+        gx = self.cw / 2 + (off[0] + 470 - self.cw / 2) * gsx
+        gy = off[1] + GROUND_Y
+        rx = 400 * k * max(0.35, abs(gsx))
+        sh = Image.new('RGBA', cs, (0, 0, 0, 0))
+        ImageDraw.Draw(sh).ellipse((gx - rx, gy - 20, gx + rx, gy + 20), fill=(30, 22, 18, int(70 * min(1, k + 0.15))))
+        out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10)))
+        out.alpha_composite(body)
         return out
 
-    def fx(self, items):
+    def paste_fx(self, canvas, items):
         moved = [dict(it, x=it['x'] + self.off[0], y=it['y'] + self.off[1]) for it in items]
-        return fx_layer(self.size, moved)
+        layer, pos = fx_layer(self.size, moved)
+        if layer is not None:
+            canvas.alpha_composite(layer, pos)
 
 
 # ======================================================================================
 # 모션
 # ======================================================================================
+REAR_CONTACT = (175, 1248)        # 뒷바퀴 접지점 (윌리 회전 축)
+FRONT_CONTACT = (640, 1360)       # 앞바퀴 접지점
+
 MOTIONS = {
+    # 기존 (30fps 로 재렌더)
     'ride_r': 3.2, 'ride_l': 3.2, 'idle_r': 2.4, 'idle_l': 2.4, 'face_r': 0.4, 'face_l': 0.4,
     'front': 2.4, 'notify': 1.6, 'talk': 1.6, 'happy': 1.6, 'sleep': 3.2, 'turn': 0.8,
+    # 신규
+    'wheelie_r': 2.2,   # 윌리 (앞바퀴 들기) — 왼쪽은 앱에서 좌우 반전
+    'rev': 0.8,         # 제자리 공회전 "달달달달"
+    'bow': 1.0,         # 꾸벅 인사 "감사하고~"
+    'look_r': 2.6,      # 두리번 (눈동자 + 고개)
+    'yawn_r': 2.4,      # 하품
+    'groove': 1.6,      # 신나서 리듬 타기 + 음표
+    'wink': 1.2,        # 윙크 + 반짝
+    'wave_out': 0.4,    # 흔들던 손 내리기
 }
 
 
@@ -528,51 +667,77 @@ def ease(x):
     return x * x * (3 - 2 * x)
 
 
+def ease_out(x, p=3):
+    x = min(max(x, 0.0), 1.0)
+    return 1 - (1 - x) ** p
+
+
 def back_out(x, s=1.7):
     x = min(max(x, 0.0), 1.0) - 1
     return x * x * ((s + 1) * x + s) + 1
 
 
-def blink_at(t, at, dur=0.27):
+def seg(t, a, b):
+    """t 가 [a, b] 구간에서 0→1"""
+    return min(max((t - a) / (b - a), 0.0), 1.0)
+
+
+def blink_at(t, at, dur=0.24):
     d = abs(t - at)
-    if d > dur / 2:
-        return 1.0
-    return d / (dur / 2)
+    return 1.0 if d > dur / 2 else d / (dur / 2)
+
+
+def engine_vib(t, amp=2.0, hz=7.5):
+    return amp * math.sin(TAU * hz * t)
+
+
+def exhaust(t, period=0.8, n=4, big=1.0, dy=0.0):
+    fx = []
+    for i in range(n):
+        ph = ((t / period) + i / n) % 1.0
+        fx.append(dict(kind='puff', x=EXHAUST_TIP[0] - 170 * ph * big, y=EXHAUST_TIP[1] - 70 * ph + dy,
+                       r=(12 + 30 * ph) * big, a=(1 - ph) ** 1.3))
+    return fx
+
+
+def speedlines(t, period=0.6):
+    fx = []
+    for i, (yy, ln) in enumerate(((560, 120), (880, 160), (1180, 110))):
+        ph = ((t / period) + i / 3) % 1.0
+        fx.append(dict(kind='speed', x=-40 - 160 * ph, y=yy, len=ln, a=math.sin(ph * math.pi) * 0.75))
+    return fx
 
 
 def pose(motion, t):
     L = MOTIONS[motion]
     p = {}
     if motion in ('ride_r', 'ride_l'):
-        vib = 3 if int(round(t * FPS)) % 2 else -3
+        vib = engine_vib(t)
         p['base_dy'] = vib
-        p['head_dy'] = -10 * (0.5 + 0.5 * math.sin(t / 0.8 * TAU - 0.9))
+        p['head_dy'] = -10 * (0.5 + 0.5 * math.sin(t / 0.8 * TAU - 0.9)) + vib * 0.5
         p['head_rot'] = 2.2 * math.sin(t / 1.6 * TAU)
         p['blink'] = blink_at(t, 2.4)
         p['roll'] = (t / 0.4) % 1.0
-        fx = []
-        for i in range(4):
-            ph = ((t / 0.8) + i / 4) % 1.0
-            fx.append(dict(kind='puff', x=EXHAUST_TIP[0] - 170 * ph, y=EXHAUST_TIP[1] - 70 * ph + vib, r=12 + 30 * ph, a=(1 - ph) ** 1.3))
-        for i, (yy, ln) in enumerate(((560, 120), (880, 160), (1180, 110))):
-            ph = ((t / 0.6) + i / 3) % 1.0
-            fx.append(dict(kind='speed', x=-40 - 160 * ph, y=yy, len=ln, a=math.sin(ph * math.pi) * 0.75))
-        p['fx'] = fx
+        p['fx'] = exhaust(t, dy=vib) + speedlines(t)
         if motion == 'ride_l':
             p['sx'] = -1
     elif motion in ('idle_r', 'idle_l', 'front'):
         b = 0.5 + 0.5 * math.sin(t / 1.2 * TAU)
         p['base_sy'] = 1 + 0.006 * b
+        p['base_dy'] = engine_vib(t, 0.8)             # 시동 걸린 채 미세 진동
         p['head_dy'] = -5 * b
         p['head_rot'] = 2.0 * math.sin(t / L * TAU)
         p['blink'] = blink_at(t, 1.0 if motion != 'front' else 1.4)
+        if t % 1.2 < 0.6:
+            p['fx'] = exhaust(t, period=1.2, n=2, big=0.6)
         if motion == 'idle_l':
             p['sx'] = -1
     elif motion == 'face_r':
-        k = math.sin(min(t / (L - 1 / FPS), 1) * math.pi)
+        k = math.sin(ease(t / (L - 1 / FPS)) * math.pi)
         p['dy'] = -22 * k
         p['sy'] = 1 + 0.03 * k
         p['sx'] = 1 - 0.02 * k
+        p['head_rot'] = -3 * k
     elif motion in ('face_l', 'turn'):
         k = ease(t / (L - 1 / FPS))
         sx = -1 + 2 * k
@@ -580,6 +745,13 @@ def pose(motion, t):
         p['dy'] = -34 * math.sin(k * math.pi)
         p['sy'] = 1 + 0.04 * math.sin(k * math.pi)
         p['shadow'] = 0.75 + 0.25 * abs(sx)
+        p['head_rot'] = 5 * math.sin(k * math.pi) * (1 if k < 0.5 else -1)
+        if motion == 'turn':
+            p['roll'] = (t / 0.3) % 1.0
+            if k > 0.75:   # 착지 흙먼지
+                q = seg(k, 0.75, 1.0)
+                p['fx'] = [dict(kind='dust', x=FRONT_CONTACT[0] + 60 * q, y=FRONT_CONTACT[1] - 10, r=20 + 30 * q, a=1 - q),
+                           dict(kind='dust', x=REAR_CONTACT[0] - 60 * q, y=REAR_CONTACT[1] + 40, r=18 + 26 * q, a=1 - q)]
     elif motion == 'notify':
         hop = math.sin(min(t / 0.5, 1) * math.pi)
         p['eyes'], p['mouth'] = 'wow', 'o'
@@ -593,10 +765,8 @@ def pose(motion, t):
         p['headlight'] = 0.5 + 0.5 * math.sin(t / 0.4 * TAU)
         p['wave'] = 54 + 16 * math.sin(t / 0.4 * TAU) * min(1, t / 0.3)
         pop = back_out(t / 0.45)
-        fx = [dict(kind='notice', x=860, y=70, s=max(0.05, pop))]
         sw = (t % 0.8) / 0.8
-        fx.append(dict(kind='sweat', x=245, y=150 + 40 * sw, s=1.0, a=1 - sw))
-        p['fx'] = fx
+        p['fx'] = [dict(kind='notice', x=860, y=70, s=max(0.05, pop)), dict(kind='sweat', x=245, y=150 + 40 * sw, s=1.0, a=1 - sw)]
     elif motion == 'talk':
         p['mouth'] = 'open'
         p['mouth_h'] = 14 + 24 * (0.5 + 0.5 * math.sin(t / 0.4 * TAU))
@@ -605,13 +775,21 @@ def pose(motion, t):
         p['blink'] = blink_at(t, 1.2)
         p['hazard'] = 'on' if (int(t / 0.4) % 2) == 0 else 'off'
         p['wave'] = 54 + 14 * math.sin(t / 0.4 * TAU)
+    elif motion == 'wave_out':
+        k = ease(t / (L - 1 / FPS))
+        p['wave'] = 54 - 50 * k
+        p['head_rot'] = 2.0 * (1 - k)
+        p['mouth'] = 'smile' if k < 0.6 else 'w'
+        p['mouth_h'] = 20
     elif motion == 'happy':
         bnc = abs(math.sin(t / 0.8 * TAU))
         p['eyes'] = 'happy'
+        p['mouth'], p['mouth_h'] = 'smile', 22 + 8 * bnc
         p['dy'] = -34 * bnc
         p['sy'] = 1 + 0.035 * (bnc - 0.5)
         p['sx'] = 1 - 0.02 * (bnc - 0.5)
         p['head_rot'] = 4 * math.sin(t / 0.8 * TAU)
+        p['base_dy'] = engine_vib(t, 1.0)
         fx = []
         for i, (hx, hy) in enumerate(((150, 170), (880, 130))):
             ph = ((t / 1.6) + i * 0.5) % 1.0
@@ -630,11 +808,172 @@ def pose(motion, t):
             fx.append(dict(kind='z', x=800 + 70 * q + i * 10, y=150 - 150 * q, size=sz, text=txt,
                            s=0.6 + 0.5 * math.sin(q * math.pi), a=math.sin(q * math.pi) * 1.3))
         p['fx'] = fx
+
+    # ---------------- 신규 모션 ----------------
+    elif motion == 'wheelie_r':
+        # 들기(0~0.55) → 균형 잡기(~1.5) → 내려오기(~1.8) → 착지 반동(~2.2)
+        hold_end = -17 + 1.6 * math.sin((1.5 - 0.55) / 0.45 * TAU)
+        if t < 0.55:
+            a = -17 * back_out(t / 0.55, 1.2)
+        elif t < 1.5:
+            a = -17 + 1.6 * math.sin((t - 0.55) / 0.45 * TAU)
+        elif t < 1.8:
+            q = seg(t, 1.5, 1.8)
+            a = hold_end * (1 - q * q)
+        else:
+            a = 0.0
+        land = seg(t, 1.8, 2.2)
+        squash = math.sin(land * math.pi) * (1 - land) if t >= 1.8 else 0
+        p['rot'] = a
+        p['sy'] = 1 - 0.06 * squash
+        p['sx'] = 1 + 0.03 * squash
+        p['head_rot'] = -a * 0.4 + 2 * math.sin(t / 0.45 * TAU) * (1 if 0.55 < t < 1.5 else 0)
+        p['head_dy'] = 12 * squash - 4 * min(1, -a / 17)
+        p['shadow'] = 1 - 0.25 * min(1, -a / 17)
+        if t < 0.35:
+            p['eyes'], p['mouth'] = 'wow', 'o'
+        elif t < 1.75:
+            p['eyes'], p['mouth'], p['mouth_h'] = 'happy', 'smile', 30
+        else:
+            p['mouth'], p['mouth_h'] = 'smile', 22
+        p['roll'] = (t / 0.25) % 1.0
+        p['base_dy'] = engine_vib(t, 2.5, 10)
+        fx = exhaust(t, period=0.5, n=4, big=1.3) + speedlines(t, 0.45)
+        if t >= 1.78:   # 앞바퀴 착지 흙먼지 + 반짝
+            q = seg(t, 1.78, 2.2)
+            fx += [dict(kind='dust', x=FRONT_CONTACT[0] - 40 - 90 * q, y=FRONT_CONTACT[1] - 6, r=24 + 40 * q, a=(1 - q) * 0.95),
+                   dict(kind='dust', x=FRONT_CONTACT[0] + 90 + 90 * q, y=FRONT_CONTACT[1] - 12, r=20 + 34 * q, a=(1 - q) * 0.9),
+                   dict(kind='spark', x=FRONT_CONTACT[0] + 150, y=FRONT_CONTACT[1] - 120 - 40 * q, s=0.9 * (1 - q * 0.5), a=1 - q, rot=q)]
+        p['fx'] = fx
+    elif motion == 'rev':
+        # 제자리 공회전: 강한 차체 진동, 앞으로 숙인 자세, 씨익 웃음, 배기 연기 펑펑, 뒷바퀴 헛돌기
+        p['base_dy'] = engine_vib(t, 4.5, 10)
+        p['base_dx'] = engine_vib(t + 0.025, 1.5, 10)
+        p['sy'] = 0.985
+        p['head_dy'] = 7 + engine_vib(t + 0.03, 2.5, 10)
+        p['head_dx'] = engine_vib(t + 0.05, 2.0, 10)
+        p['head_rot'] = 1.8 * math.sin(t / 0.4 * TAU)
+        p['eyes'], p['mouth'] = 'normal', 'grin'
+        p['hazard'] = 'on' if (int(t / 0.2) % 2) == 0 else 'off'
+        p['headlight'] = 0.35 + 0.35 * math.sin(t / 0.2 * TAU)
+        p['roll'] = (t / 0.2) % 1.0
+        fx = exhaust(t, period=0.4, n=5, big=1.5)
+        for i in range(3):
+            q = ((t / 0.4) + i / 3) % 1.0
+            fx.append(dict(kind='dust', x=REAR_CONTACT[0] - 30 - 160 * q, y=REAR_CONTACT[1] + 60 - 50 * q, r=18 + 40 * q, a=(1 - q) * 0.85))
+        p['fx'] = fx
+    elif motion == 'bow':
+        k = math.sin(ease(t / L) * math.pi)            # 숙였다가 올라옴
+        p['head_dy'] = 30 * k
+        p['head_sy'] = 1 - 0.08 * k
+        p['head_rot'] = 3 * k
+        p['base_sy'] = 1 - 0.012 * k
+        p['eyes'] = 'happy'
+        p['mouth'], p['mouth_h'] = 'smile', 18 + 8 * k
+        fx = []
+        if t > 0.25:
+            q = seg(t, 0.25, L)
+            fx += [dict(kind='spark', x=200 - 40 * q, y=170 - 70 * q, s=0.6 + 0.4 * math.sin(q * math.pi), a=math.sin(q * math.pi), rot=q * 2),
+                   dict(kind='spark', x=830 + 40 * q, y=150 - 80 * q, s=0.5 + 0.4 * math.sin(q * math.pi), a=math.sin(q * math.pi), rot=-q * 2),
+                   dict(kind='heart', x=860 + 30 * q, y=260 - 90 * q, s=0.45 + 0.3 * q, a=math.sin(q * math.pi))]
+        p['fx'] = fx
+    elif motion == 'look_r':
+        # 가운데 → 왼쪽 → 오른쪽 → 가운데 (고개 + 눈동자, 눈동자가 고개보다 먼저 감)
+        def track(tt):
+            if tt < 0.3:
+                return 0.0
+            if tt < 0.7:
+                return -ease(seg(tt, 0.3, 0.7))
+            if tt < 1.1:
+                return -1.0
+            if tt < 1.6:
+                return -1 + 2 * ease(seg(tt, 1.1, 1.6))
+            if tt < 2.0:
+                return 1.0
+            return 1 - ease(seg(tt, 2.0, 2.45))
+        eye = track(t + 0.08)
+        head = track(t - 0.04)
+        p['look'] = 10 * eye
+        p['head_dx'] = 7 * head
+        p['head_rot'] = 4.5 * head
+        p['head_dy'] = -3 * abs(head)
+        p['blink'] = blink_at(t, 1.35, 0.2)
+        p['base_dy'] = engine_vib(t, 0.8)
+    elif motion == 'yawn_r':
+        open_k = ease(seg(t, 0.15, 0.75)) * (1 - ease(seg(t, 1.45, 1.95)))
+        p['mouth'] = 'yawn' if open_k > 0.12 else 'w'
+        p['mouth_h'] = 14 + 50 * open_k
+        p['eyes'] = 'closed' if 0.35 < t < 1.75 else 'normal'
+        if 1.75 <= t < 2.3:
+            p['blink'] = 0.5 if t < 2.05 else 1.0          # 졸린 반쯤 뜬 눈
+        p['head_rot'] = -6 * open_k
+        p['head_dy'] = -10 * open_k
+        p['head_sy'] = 1 + 0.03 * open_k
+        p['base_sy'] = 1 + 0.01 * open_k
+        p['base_dy'] = engine_vib(t, 0.8)
+        fx = []
+        if 0.9 < t < 1.9:
+            q = seg(t, 0.9, 1.9)
+            fx.append(dict(kind='tear', x=EYE_R[0] + 42, y=EYE_R[1] + 10 + 30 * q, s=0.55, a=math.sin(q * math.pi)))
+        p['fx'] = fx
+    elif motion == 'groove':
+        beat = t / 0.4
+        sway = math.sin(t / 0.8 * TAU)
+        bounce = abs(math.sin(beat * math.pi))
+        p['eyes'] = 'happy'
+        p['mouth'] = 'open' if int(beat) % 2 == 0 else 'smile'
+        p['mouth_h'] = 16 + 12 * bounce
+        p['head_dx'] = 7 * sway
+        p['head_rot'] = 7 * sway
+        p['head_dy'] = -10 * bounce
+        p['dy'] = -14 * bounce
+        p['sy'] = 1 - 0.02 * (1 - bounce)
+        p['sx'] = 1 + 0.01 * sway
+        p['hazard'] = 'on' if int(beat) % 2 == 0 else 'off'
+        p['headlight'] = 0.3 * bounce
+        notes = [('♪', (155, 123, 255)), ('♫', (79, 179, 255)), ('♪', (255, 120, 160))]
+        fx = []
+        for i, (ch, col) in enumerate(notes):
+            q = ((t / 1.6) + i / 3) % 1.0
+            side = -1 if i % 2 == 0 else 1
+            fx.append(dict(kind='note', text=ch, color=col, size=70,
+                           x=(150 if side < 0 else 860) + side * 30 * q + 18 * math.sin(q * TAU),
+                           y=230 - 200 * q, s=0.7 + 0.4 * math.sin(q * math.pi), a=math.sin(q * math.pi) * 1.4))
+        p['fx'] = fx
+    elif motion == 'wink':
+        k = ease(seg(t, 0.12, 0.3)) * (1 - ease(seg(t, 0.85, 1.05)))
+        p['eyes'] = 'wink' if k > 0.5 else 'normal'
+        p['mouth'], p['mouth_h'] = ('smile', 20) if k > 0.3 else ('w', 24)
+        p['head_rot'] = 7 * k
+        p['head_dx'] = 5 * k
+        p['head_dy'] = -4 * k
+        p['base_dy'] = engine_vib(t, 0.8)
+        fx = []
+        if 0.25 < t < 1.0:
+            q = seg(t, 0.25, 1.0)
+            fx += [dict(kind='spark', x=EYE_R[0] + 95 + 25 * q, y=EYE_R[1] - 60 - 30 * q, s=0.5 + 0.5 * math.sin(q * math.pi), a=math.sin(q * math.pi), rot=q * 1.5),
+                   dict(kind='heart', x=EYE_R[0] + 150 + 30 * q, y=EYE_R[1] - 10 - 60 * q, s=0.35 + 0.25 * q, a=math.sin(q * math.pi))]
+        p['fx'] = fx
     return p
 
 
 # ======================================================================================
+_R = None
+
+
+def _init():
+    global _R
+    _R = Renderer()
+
+
+def _render_task(args):
+    name, i, out_dir = args
+    _R.frame(pose(name, i / FPS)).save(os.path.join(out_dir, name, f'frame_{i:03d}.png'))
+    return name
+
+
 def main():
+    global FPS
     ap = argparse.ArgumentParser()
     ap.add_argument('--cut')
     ap.add_argument('--frames')
@@ -642,24 +981,28 @@ def main():
     ap.add_argument('--still')
     ap.add_argument('--motion', default='idle_r')
     ap.add_argument('--t', type=float, default=0.0)
+    ap.add_argument('--fps', type=int, default=FPS)
+    ap.add_argument('--jobs', type=int, default=os.cpu_count() or 2)
     a = ap.parse_args()
+    FPS = a.fps
     if a.cut:
         make_cut(a.cut)
-    if not (a.frames or a.still):
-        return
-    R = Renderer()
     if a.still:
-        R.frame(pose(a.motion, a.t)).save(a.still)
+        Renderer().frame(pose(a.motion, a.t)).save(a.still)
     if a.frames:
         only = [x for x in a.only.split(',') if x]
+        tasks = []
         for name, L in MOTIONS.items():
             if only and name not in only:
                 continue
-            d = os.path.join(a.frames, name)
-            os.makedirs(d, exist_ok=True)
-            n = int(round(L * FPS))
-            for i in range(n):
-                R.frame(pose(name, i / FPS)).save(os.path.join(d, f'frame_{i:03d}.png'))
+            os.makedirs(os.path.join(a.frames, name), exist_ok=True)
+            tasks += [(name, i, a.frames) for i in range(int(round(L * FPS)))]
+        import multiprocessing as mp
+        done = {}
+        with mp.get_context('fork').Pool(a.jobs, initializer=_init) as pool:
+            for name in pool.imap_unordered(_render_task, tasks, chunksize=4):
+                done[name] = done.get(name, 0) + 1
+        for name, n in done.items():
             print(f'[motion] {name} {n} frames', flush=True)
 
 
