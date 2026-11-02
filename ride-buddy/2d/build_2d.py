@@ -62,6 +62,26 @@ SKIN_SHADE = (240, 200, 176)
 TIRES = [dict(cx=630, cy=1143, rx=118, ry=196, a0=-65, span=150, w=8),
          dict(cx=168, cy=1160, rx=66, ry=86, a0=50, span=120, w=5)]
 
+# ---- 워프 리그 (Live2D 방식 부드러운 변형) ----
+REAR_AXLE, FRONT_AXLE = (180, 1140), (585, 1150)
+STEER = (610, 700)                 # 조향축 (핸들·전조등 회전 중심)
+SEAT = (450, 780)                  # 라이더 엉덩이 (라이더 회전 중심)
+SEAT_F = (SEAT[0] - REAR_AXLE[0]) / (FRONT_AXLE[0] - REAR_AXLE[0])
+ZONE_FRONT = dict(
+    circles=[(660, 790, 108), (490, 780, 44), (790, 808, 44), (237, 467, 62), (848, 568, 60), (283, 606, 52), (790, 682, 56)],
+    lines=[([(225, 606), (330, 640), (430, 668), (560, 690), (700, 690), (855, 706)], 42),
+           ([(237, 467), (330, 640)], 24), ([(848, 568), (760, 662)], 24)],
+    polys=[[(500, 870), (790, 870), (770, 935), (520, 935)]])
+ZONE_WHEEL_F = dict(ellipses=[(625, 1150, 172, 222)], polys=[[(535, 945), (600, 905), (705, 905), (782, 958), (786, 1012), (535, 1012)]])
+ZONE_WHEEL_R = dict(ellipses=[(190, 1150, 108, 108)], ymin=1112)
+ZONE_RIDER = dict(polys=[[(300, 470), (780, 470), (805, 560), (775, 650), (700, 690), (560, 700), (430, 690), (330, 690)],
+                         [(140, 520), (250, 485), (335, 560), (350, 700), (305, 770), (195, 770), (140, 700)],
+                         [(690, 515), (785, 520), (808, 600), (775, 662), (700, 672)]])
+THIGH_POLY = [(186, 690), (360, 690), (366, 888), (186, 888)]
+KNEE = (284, 862)                  # 발 내릴 때 정강이 시작점
+PEG = (300, 930)                   # 발판 (발 올린 상태)
+FOOT_GROUND = (244, 1270)          # 발 내린 상태 발목 위치
+
 # 캔버스: 캐릭터 중심(가로) 기준 좌우 대칭 여백 → 좌우 반전 시 위치가 흔들리지 않음
 PAD_X, PAD_T, PAD_B = 190, 170, 24
 
@@ -112,6 +132,23 @@ def mirror_mask(src):
     d.ellipse((x - r, y - r, x + r, y + r), fill=255)
     d.line([(x + 25, y + 35), (x + 75, y + 110)], fill=255, width=20)   # 미러 대
     return m.filter(ImageFilter.GaussianBlur(0.9))
+
+
+def premult(im):
+    a = np.asarray(im, np.float32) / 255.0
+    a[..., :3] *= a[..., 3:4]
+    return a
+
+
+def unpremult(a):
+    out = a.copy()
+    al = np.clip(out[..., 3:4], 1e-6, 1)
+    out[..., :3] = np.where(out[..., 3:4] > 1e-4, out[..., :3] / al, 0)
+    return Image.fromarray(np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8))
+
+
+def remap_pm(pm, mx, my):
+    return cv2.remap(pm, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
 
 
 def inpaint_rgba(im, mask, radius=7):
@@ -191,6 +228,81 @@ class Rig:
         self.sleeve_r = self.base.copy()
         self.sleeve_r.putalpha(sm)
         self.faces = self.face_variants()
+        self.build_zones()
+
+    # ---------- 워프 (부드러운 변형) ----------
+    def zone_mask(self, z):
+        m = Image.new('L', self.size, 0)
+        d = ImageDraw.Draw(m)
+        for (x, y, r) in z.get('circles', []):
+            d.ellipse((x - r, y - r, x + r, y + r), fill=255)
+        for (x, y, rx, ry) in z.get('ellipses', []):
+            d.ellipse((x - rx, y - ry, x + rx, y + ry), fill=255)
+        for pts, w in z.get('lines', []):
+            d.line(pts, fill=255, width=w, joint='curve')
+            for (x, y) in pts:
+                d.ellipse((x - w / 2, y - w / 2, x + w / 2, y + w / 2), fill=255)
+        for pts in z.get('polys', []):
+            d.polygon(pts, fill=255)
+        a = np.array(m) > 0
+        if 'ymin' in z:
+            a[:z['ymin']] = False
+        return a
+
+    def build_zones(self):
+        """영역별 가중치: 앞부분(핸들·전조등·손·미러) > 앞바퀴 > 뒷바퀴 > 라이더 > 차체(나머지)"""
+        W, H = self.size
+        label = np.full((H, W), 0, np.uint8)          # 0 = body
+        rider = self.zone_mask(ZONE_RIDER)
+        label[rider] = 4
+        thigh = Image.new('L', self.size, 0)
+        ImageDraw.Draw(thigh).polygon(THIGH_POLY, fill=255)
+        thigh_np = np.array(thigh) > 0
+        label[thigh_np & ~rider] = 5                  # 허벅지: 라이더/차체 반반
+        label[self.zone_mask(ZONE_WHEEL_R)] = 3
+        label[self.zone_mask(ZONE_WHEEL_F)] = 2
+        label[self.zone_mask(ZONE_FRONT)] = 1
+        sig = 11
+        ws = {}
+        for name, ids in (('body', [0]), ('front', [1]), ('wf', [2]), ('wr', [3]), ('rider', [4])):
+            ws[name] = cv2.GaussianBlur(np.isin(label, ids).astype(np.float32), (0, 0), sig)
+        th = cv2.GaussianBlur((label == 5).astype(np.float32), (0, 0), sig)
+        ws['rider'] += th * 0.6
+        ws['body'] += th * 0.4
+        tot = sum(ws.values()) + 1e-6
+        self.zones = {k: (v / tot).astype(np.float32) for k, v in ws.items()}
+        self.gx, self.gy = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
+        # 프리멀티 알파 (워프 시 가장자리 번짐 방지)
+        self.pm = {}
+        for key, im in self.bases.items():
+            self.pm[key] = premult(im)
+        self.pm_front = premult(self.front)
+        tm = ImageChops.multiply(thigh.filter(ImageFilter.GaussianBlur(1)), self.base.getchannel('A'))
+        self.thigh_mask = np.array(tm, np.float32) / 255
+        sm = np.array(self.sleeve_r.getchannel('A'), np.float32) / 255
+        self.sleeve_mask = sm
+
+    def warp_maps(self, T):
+        """T: 영역별 3x3 행렬 dict → cv2.remap 용 역방향 맵"""
+        X, Y = self.gx, self.gy
+        Dx = np.zeros_like(X); Dy = np.zeros_like(Y)
+        for k, w in self.zones.items():
+            M = T.get(k)
+            if M is None:
+                continue
+            dx = (M[0, 0] - 1) * X + M[0, 1] * Y + M[0, 2]
+            dy = M[1, 0] * X + (M[1, 1] - 1) * Y + M[1, 2]
+            Dx += w * dx; Dy += w * dy
+        # 역변환 근사 1회 보정: p = q - D(q - D(q))
+        mx0, my0 = X - Dx, Y - Dy
+        Dx2 = cv2.remap(Dx, mx0, my0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        Dy2 = cv2.remap(Dy, mx0, my0, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+        return X - Dx2, Y - Dy2, (Dx, Dy)
+
+    def point(self, D, pt):
+        """원본 좌표 pt 가 워프 후 어디로 가는지 (정방향 변위)"""
+        x, y = int(round(pt[0])), int(round(pt[1]))
+        return (pt[0] + float(D[0][y, x]), pt[1] + float(D[1][y, x]))
 
     # ---------- 손 흔들기 ----------
     def erase_hand(self, img):
@@ -572,44 +684,74 @@ class Renderer:
         self.off = (int(self.cw / 2 - self.cx), PAD_T)
         self.size = (self.cw, self.ch)
 
+    @staticmethod
+    def transforms(p):
+        """포즈 → 영역별 변형 행렬 (원본 좌표)"""
+        yF = p.get('susp_f', 0.0) + p.get('body_dy', 0.0)
+        yR = p.get('susp_r', 0.0) + p.get('body_dy', 0.0)
+        theta = math.degrees(math.atan2(yF - yR, FRONT_AXLE[0] - REAR_AXLE[0]))
+        body = mat_t(p.get('body_dx', 0.0), yR) @ mat_about(REAR_AXLE, theta)
+        return {
+            'body': body,
+            'front': body @ mat_about(STEER, p.get('steer', 0.0)),
+            'rider': body @ mat_t(p.get('rider_dx', 0.0), p.get('rider_dy', 0.0)) @ mat_about(SEAT, p.get('rider_rot', 0.0)),
+            'wf': mat_t(0, p.get('wf', 0.0)),
+            'wr': mat_t(0, p.get('wr', 0.0)),
+        }
+
     def frame(self, p):
         """p: 포즈 dict → RGBA 프레임"""
         R = self.rig
         cs, off = self.size, self.off
+        T = self.transforms(p)
+        mx, my, D = R.warp_maps(T)
         body = Image.new('RGBA', cs, (0, 0, 0, 0))
 
         # 뒤 효과 (연기, 먼지, 스피드라인)
         back = [it for it in p.get('fx', []) if it['kind'] in ('puff', 'speed', 'dust')]
         if back:
-            self.paste_fx(body, back)
+            self.paste_fx(body, back, D)
 
         wave = p.get('wave')
-        base = R.bases[(p.get('hazard') or '', wave is not None)]
-        bdy, bdx = p.get('base_dy', 0), p.get('base_dx', 0)
-        bsy = p.get('base_sy', 1.0)
-        body.alpha_composite(affine(base, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy, sx=p.get('base_sx', 1.0)))
+        base_pm = remap_pm(R.pm[(p.get('hazard') or '', wave is not None)], mx, my)
+        body.alpha_composite(unpremult(base_pm), off)
+
+        to_canvas = mat_t(*off)
         if wave is not None:   # 미러 앞, 소매 안쪽에서 나오는 팔
-            body.alpha_composite(affine(R.arm(wave), cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy))
-            body.alpha_composite(affine(R.sleeve_r, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy, sy=bsy))
+            body.alpha_composite(warp(R.arm(wave), cs, to_canvas @ T['rider']))
+            sm = cv2.remap(R.sleeve_mask, mx, my, cv2.INTER_LINEAR, borderValue=0)
+            body.alpha_composite(unpremult(base_pm * sm[..., None]), off)
+
+        foot = p.get('foot', 0.0)
+        if foot > 0.01:        # 발 내리기: 정강이+신발을 그리고 그 위에 허벅지를 다시 올림
+            knee = R.point(D, KNEE)
+            peg = R.point(D, PEG)
+            k = ease(foot)
+            ankle = (peg[0] + (FOOT_GROUND[0] - peg[0]) * k - 34 * math.sin(math.pi * k),
+                     peg[1] + (FOOT_GROUND[1] - peg[1]) * k + p.get('foot_dy', 0.0) * k)
+            body.alpha_composite(self.leg(knee, ankle, min(1.0, foot / 0.2)), off)
+            tm = cv2.remap(R.thigh_mask, mx, my, cv2.INTER_LINEAR, borderValue=0)
+            body.alpha_composite(unpremult(base_pm * tm[..., None]), off)
+
         if p.get('roll') is not None:
-            body.alpha_composite(affine(R.treads(p['roll']), cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy))
+            body.alpha_composite(R.treads(p['roll']), (off[0], off[1] + int(round(p.get('wf', 0)))))
 
         if p.get('headlight', 0) > 0:
+            hx, hy = apply_pt(T['front'], HEADLIGHT)
             gl = Image.new('RGBA', cs, (0, 0, 0, 0))
-            hx, hy = HEADLIGHT[0] + off[0] + bdx, HEADLIGHT[1] + off[1] + bdy
-            r = 150
+            hx, hy, r = hx + off[0], hy + off[1], 150
             ImageDraw.Draw(gl).ellipse((hx - r, hy - r, hx + r, hy + r), fill=(255, 244, 196, int(170 * p['headlight'])))
             body.alpha_composite(gl.filter(ImageFilter.GaussianBlur(40)))
 
         head = R.compose_head(p.get('eyes', 'normal'), p.get('mouth', 'w'), p.get('mouth_h', 24), p.get('blink', 1.0), p.get('look', 0.0))
         hs = p.get('head_s', 1.0)
-        body.alpha_composite(affine(head, cs, off, pivot=NECK, dx=bdx + p.get('head_dx', 0), dy=bdy + p.get('head_dy', 0),
-                                    rot=p.get('head_rot', 0), sx=hs, sy=hs * p.get('head_sy', 1.0)))
-        body.alpha_composite(affine(R.front, cs, off, pivot=(470, GROUND_Y), dx=bdx, dy=bdy))
+        Mh = to_canvas @ T['rider'] @ mat_about(NECK, p.get('head_rot', 0), hs, hs * p.get('head_sy', 1.0), p.get('head_dx', 0), p.get('head_dy', 0))
+        body.alpha_composite(warp(head, cs, Mh))
+        body.alpha_composite(unpremult(remap_pm(R.pm_front, mx, my)), off)
 
         frontfx = [it for it in p.get('fx', []) if it['kind'] not in ('puff', 'speed', 'dust')]
         if frontfx:
-            self.paste_fx(body, frontfx)
+            self.paste_fx(body, frontfx, D)
 
         # 전체 변형: 윌리 회전(뒷바퀴 접지점 기준) → 점프/찌그러짐/좌우 반전(바닥 중심 기준)
         gsx, gsy, gdy, grot = p.get('sx', 1.0), p.get('sy', 1.0), p.get('dy', 0), p.get('rot', 0.0)
@@ -623,43 +765,138 @@ class Renderer:
 
         # 그림자 (항상 바닥에)
         out = Image.new('RGBA', cs, (0, 0, 0, 0))
-        k = p.get('shadow', 1.0)
+        sk = p.get('shadow', 1.0)
         gx = self.cw / 2 + (off[0] + 470 - self.cw / 2) * gsx
         gy = off[1] + GROUND_Y
-        rx = 400 * k * max(0.35, abs(gsx))
+        rx = 400 * sk * max(0.35, abs(gsx))
         sh = Image.new('RGBA', cs, (0, 0, 0, 0))
-        ImageDraw.Draw(sh).ellipse((gx - rx, gy - 20, gx + rx, gy + 20), fill=(30, 22, 18, int(70 * min(1, k + 0.15))))
-        out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(10)))
+        dsh = ImageDraw.Draw(sh)
+        dsh.ellipse((gx - rx, gy - 20, gx + rx, gy + 20), fill=(30, 22, 18, int(70 * min(1, sk + 0.15))))
+        if foot > 0.3:
+            fx_ = self.cw / 2 + (off[0] + FOOT_GROUND[0] + 34 - self.cw / 2) * gsx
+            fy_ = off[1] + FOOT_GROUND[1] + 74
+            dsh.ellipse((fx_ - 70, fy_ - 12, fx_ + 70, fy_ + 12), fill=(30, 22, 18, int(60 * min(1, (foot - 0.3) / 0.5))))
+        out.alpha_composite(sh.filter(ImageFilter.GaussianBlur(9)))
         out.alpha_composite(body)
         return out
 
-    def paste_fx(self, canvas, items):
-        moved = [dict(it, x=it['x'] + self.off[0], y=it['y'] + self.off[1]) for it in items]
+    def leg(self, knee, ankle, alpha):
+        """정강이(살짝 굽은 통통한 종아리) + 흰 양말 + 운동화 — 원본 선 스타일, 원본 좌표 레이어"""
+        W, H = self.rig.size
+        x0 = int(min(knee[0], ankle[0]) - 150); x1 = int(max(knee[0], ankle[0]) + 170)
+        y0 = int(min(knee[1], ankle[1]) - 70); y1 = int(max(knee[1], ankle[1]) + 110)
+        ov = Image.new('RGBA', ((x1 - x0) * SS, (y1 - y0) * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        P = lambda x, y: ((x - x0) * SS, (y - y0) * SS)
+        kx, ky = knee
+        ax, ay = ankle
+        L = math.hypot(ax - kx, ay - ky) or 1
+        ux, uy = (ax - kx) / L, (ay - ky) / L
+        nx, ny = -uy, ux
+        cx, cy = (kx + ax) / 2 - nx * 22, (ky + ay) / 2 - ny * 22     # 무릎이 살짝 앞으로 굽음
+
+        def center(t):
+            return ((1 - t) ** 2 * kx + 2 * (1 - t) * t * cx + t * t * ax, (1 - t) ** 2 * ky + 2 * (1 - t) * t * cy + t * t * ay)
+
+        def halfw(t):        # 무릎 → 종아리(통통) → 발목
+            return 50 + 8 * math.sin(math.pi * min(t / 0.6, 1)) - 18 * max(0, (t - 0.45) / 0.55) ** 1.4
+
+        def outline(extra):
+            left, right = [], []
+            n = 28
+            for i in range(n + 1):
+                t = i / n
+                x, y = center(t)
+                x2, y2 = center(min(1, t + 0.01))
+                x1_, y1_ = center(max(0, t - 0.01))
+                tx, ty = x2 - x1_, y2 - y1_
+                tl = math.hypot(tx, ty) or 1
+                qx, qy = -ty / tl, tx / tl
+                w = halfw(t) + extra
+                left.append(P(x + qx * w, y + qy * w)); right.append(P(x - qx * w, y - qy * w))
+            return left + right[::-1]
+        d.polygon(outline(7), fill=LINE)
+        d.ellipse(P(ax - 39, ay - 39) + P(ax + 39, ay + 39), fill=LINE)
+        d.polygon(outline(0), fill=SKIN + (255,))
+        # 종아리 음영 (뒤쪽)
+        sh = []
+        for i in range(16):
+            t = 0.12 + 0.7 * i / 15
+            x, y = center(t)
+            sh.append(P(x - nx * (halfw(t) - 12), y - ny * (halfw(t) - 12)))
+        d.line(sh, fill=SKIN_SHADE + (255,), width=12 * SS, joint='curve')
+        # 흰 양말
+        sx0, sy0 = center(0.84)
+        sock = [P(sx0 + nx * 40, sy0 + ny * 40), P(ax + nx * 36, ay + ny * 36), P(ax - nx * 36, ay - ny * 36), P(sx0 - nx * 40, sy0 - ny * 40)]
+        d.polygon(sock, fill=(250, 248, 244, 255), outline=LINE, width=6 * SS)
+        d.line([P(sx0 + nx * 34 + ux * 12, sy0 + ny * 34 + uy * 12), P(sx0 - nx * 34 + ux * 12, sy0 - ny * 34 + uy * 12)], fill=(214, 210, 204, 255), width=4 * SS)
+        # 운동화: 통통한 앞코 + 두꺼운 흰 밑창 + 끈
+        fx_, fy_ = ax + 30, ay + 34
+        rot = math.radians(10)
+
+        def shoe_pts(rx_, ry_, dy=0):
+            pts = []
+            for i in range(56):
+                t = TAU * i / 56
+                ex = rx_ * math.cos(t)
+                ey = ry_ * math.sin(t) * (0.82 if math.sin(t) < 0 and math.cos(t) < 0 else 1.0)
+                if math.cos(t) > 0:
+                    ey *= 1.08                       # 앞코 통통
+                pts.append(P(fx_ + ex * math.cos(rot) - ey * math.sin(rot), fy_ + dy + ex * math.sin(rot) + ey * math.cos(rot)))
+            return pts
+        d.polygon(shoe_pts(86, 30, 16), fill=(246, 244, 240, 255), outline=LINE, width=7 * SS)     # 밑창
+        d.polygon(shoe_pts(80, 40, 0), fill=(52, 44, 42, 255), outline=LINE, width=7 * SS)         # 갑피
+        d.ellipse(P(fx_ + 26, fy_ - 26) + P(fx_ + 58, fy_ - 10), fill=(110, 100, 96, 255))         # 하이라이트
+        for k in range(3):                                                                            # 끈
+            lx, ly = fx_ - 24 + k * 14, fy_ - 26 + k * 3
+            d.line([P(lx - 8, ly - 4), P(lx + 8, ly + 4)], fill=(240, 236, 230, 255), width=4 * SS)
+        layer = ov.resize((x1 - x0, y1 - y0), Image.LANCZOS)
+        if alpha < 1:
+            layer.putalpha(layer.getchannel('A').point(lambda v: int(v * alpha)))
+        full = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        full.alpha_composite(layer, (max(0, x0), max(0, y0)), (max(0, -x0), max(0, -y0)))
+        return full
+
+    def paste_fx(self, canvas, items, D=None):
+        moved = []
+        for it in items:
+            it = dict(it)
+            if D is not None and it.get('anchor') == 'body':      # 차체를 따라가는 효과 (배기 연기)
+                nx_, ny_ = self.rig.point(D, (min(max(it['ax'], 0), self.rig.size[0] - 1), min(max(it['ay'], 0), self.rig.size[1] - 1)))
+                it['x'] += nx_ - it['ax']; it['y'] += ny_ - it['ay']
+            it['x'] += self.off[0]; it['y'] += self.off[1]
+            moved.append(it)
         layer, pos = fx_layer(self.size, moved)
         if layer is not None:
             canvas.alpha_composite(layer, pos)
 
 
+def apply_pt(M, pt):
+    v = M @ np.array([pt[0], pt[1], 1.0])
+    return float(v[0]), float(v[1])
+
+
 # ======================================================================================
-# 모션
+# 모션 — 스프링 시뮬레이션으로 자연스러운 2차 움직임
+#   앞/뒤 서스펜션(바퀴는 땅, 차체가 출렁) · 라이더 관성(한 박자 늦게) · 머리 관성 · 라이더↔차체 반작용
 # ======================================================================================
 REAR_CONTACT = (175, 1248)        # 뒷바퀴 접지점 (윌리 회전 축)
 FRONT_CONTACT = (640, 1360)       # 앞바퀴 접지점
 
 MOTIONS = {
-    # 기존 (30fps 로 재렌더)
-    'ride_r': 3.2, 'ride_l': 3.2, 'idle_r': 2.4, 'idle_l': 2.4, 'face_r': 0.4, 'face_l': 0.4,
-    'front': 2.4, 'notify': 1.6, 'talk': 1.6, 'happy': 1.6, 'sleep': 3.2, 'turn': 0.8,
-    # 신규
-    'wheelie_r': 2.2,   # 윌리 (앞바퀴 들기) — 왼쪽은 앱에서 좌우 반전
-    'rev': 0.8,         # 제자리 공회전 "달달달달"
-    'bow': 1.0,         # 꾸벅 인사 "감사하고~"
-    'look_r': 2.6,      # 두리번 (눈동자 + 고개)
-    'yawn_r': 2.4,      # 하품
-    'groove': 1.6,      # 신나서 리듬 타기 + 음표
-    'wink': 1.2,        # 윙크 + 반짝
-    'wave_out': 0.4,    # 흔들던 손 내리기
+    'ride_r': 3.2, 'ride_l': 3.2,       # 주행 (노면 요철 → 바퀴 → 서스펜션 → 라이더)
+    'brake_r': 1.0,                     # ★ 브레이크: 앞쏠림(포크 눌림) → 정지 → 왼발 내리기
+    'go_r': 0.6,                        # ★ 출발: 발 올리기 → 뒤 눌림(가속) → 라이더 뒤로
+    'idle_r': 2.4, 'idle_l': 2.4,       # 정차 (발 내리고 체중 이동)
+    'face_r': 0.4, 'face_l': 0.4, 'turn': 0.8,
+    'front': 2.4, 'notify': 1.6, 'talk': 1.6, 'wave_out': 0.4,
+    'happy': 1.6, 'groove': 1.6, 'wink': 1.2, 'bow': 1.0,
+    'look_r': 2.6, 'yawn_r': 2.4, 'sleep': 3.2,
+    'wheelie_r': 2.2, 'rev': 0.8,
 }
+LOOPS = {'ride_r', 'ride_l', 'idle_r', 'idle_l', 'front', 'talk', 'happy', 'groove', 'sleep', 'rev'}
+STANDING = {'idle_r', 'idle_l', 'face_r', 'face_l', 'turn', 'front', 'notify', 'talk', 'wave_out', 'happy', 'groove',
+            'wink', 'bow', 'look_r', 'yawn_r', 'sleep', 'rev'}
 
 
 def ease(x):
@@ -687,6 +924,132 @@ def blink_at(t, at, dur=0.24):
     return 1.0 if d > dur / 2 else d / (dur / 2)
 
 
+def bump(t, tb, amp, w=0.13):
+    """노면 요철: 바퀴가 위로(-) 들렸다 내려옴"""
+    return -amp * math.sin(math.pi * (t - tb) / w) if tb <= t <= tb + w else 0.0
+
+
+def wheelie_angle(t):
+    hold_end = -17 + 1.6 * math.sin((1.5 - 0.55) / 0.45 * TAU)
+    if t < 0.55:
+        return -17 * back_out(t / 0.55, 1.2)
+    if t < 1.5:
+        return -17 + 1.6 * math.sin((t - 0.55) / 0.45 * TAU)
+    if t < 1.8:
+        q = seg(t, 1.5, 1.8)
+        return hold_end * (1 - q * q)
+    return 0.0
+
+
+def drivers(motion, t):
+    """시뮬레이션 입력: 바퀴 높이(wf, wr), 서스펜션 목표(dF, dR), 라이더 목표(x, y, rot)"""
+    L = MOTIONS[motion]
+    d = dict(wf=0.0, wr=0.0, dF=0.0, dR=0.0, rx=0.0, ry=0.0, rr=0.0)
+    if motion in LOOPS:
+        t = t % L
+    if motion in ('ride_r', 'ride_l'):
+        for tb, amp in ((0.35, 8), (1.55, 5), (2.45, 7)):
+            d['wf'] += bump(t, tb, amp)
+            d['wr'] += bump(t, tb + 0.15, amp * 0.9)
+        d['rr'] = 1.1 * math.sin(t / L * TAU)
+        d['rx'] = 1.5 * math.sin(t / 1.6 * TAU)
+    elif motion == 'brake_r':
+        env = ease(seg(t, 0, 0.3)) * (1 - ease(seg(t, 0.42, 0.6)))
+        d.update(dF=15 * env, dR=-4 * env, rx=10 * env, ry=4 * env, rr=4.5 * env)
+    elif motion == 'go_r':
+        env = math.sin(math.pi * min(t / 0.5, 1.0))
+        d.update(dF=-8 * env, dR=7 * env, rx=-9 * env, ry=-2 * env, rr=-4 * env)
+    elif motion in ('idle_r', 'idle_l', 'front', 'look_r', 'face_r', 'face_l', 'wave_out', 'talk', 'wink'):
+        d['ry'] = 1.5 * math.sin(t / 1.2 * TAU)
+        d['rr'] = -1.3 + 0.7 * math.sin(t / 2.4 * TAU)        # 발 디딘 쪽으로 살짝 기댐
+    elif motion == 'turn':
+        k = ease(t / (L - 1 / FPS))
+        d['rr'] = -4 * math.sin(k * math.pi)
+        d['ry'] = -4 * math.sin(k * math.pi)
+    elif motion == 'notify':
+        hop = math.sin(math.pi * min(t / 0.45, 1.0))
+        d['ry'] = -14 * hop                                     # 라이더가 엉덩이를 들썩 → 착지 때 서스펜션 눌림
+        d['rr'] = -1.3
+    elif motion == 'happy':
+        d['ry'] = -11 * abs(math.sin(t / 0.8 * TAU))
+    elif motion == 'groove':
+        d['ry'] = -8 * abs(math.sin(t / 0.4 * math.pi))
+        d['rr'] = 4.0 * math.sin(t / 0.8 * TAU)
+        d['rx'] = 5 * math.sin(t / 0.8 * TAU)
+    elif motion == 'bow':
+        k = math.sin(ease(t / L) * math.pi)
+        d.update(ry=8 * k, rr=3.5 * k, rx=4 * k)
+    elif motion == 'yawn_r':
+        k = ease(seg(t, 0.15, 0.75)) * (1 - ease(seg(t, 1.45, 1.95)))
+        d.update(ry=-5 * k, rr=-3 * k, rx=-3 * k)                # 기지개: 뒤로 젖힘
+    elif motion == 'sleep':
+        d.update(ry=6 + 1.6 * math.sin(t / 1.6 * TAU), rr=2.6, rx=2)
+    elif motion == 'rev':
+        d.update(dR=6 + 2.5 * math.sin(t / 0.2 * TAU), dF=-2, rx=3, ry=3, rr=2.5)
+    elif motion == 'wheelie_r':
+        lift = min(1.0, -wheelie_angle(t) / 17)
+        d.update(dR=7 * lift, dF=-10 * lift, rx=-11 * lift, ry=-3 * lift, rr=-6 * lift)
+        if 1.78 <= t <= 1.98:
+            d['dF'] += 18 * math.sin(math.pi * (t - 1.78) / 0.2)   # 착지 충격
+    return d
+
+
+_SIM = {}
+
+
+def simulate(motion):
+    """스프링-댐퍼 적분 (dt=1/600). 루프 모션은 3주기 예열 → 끊김 없는 반복"""
+    if motion in _SIM:
+        return _SIM[motion]
+    L = MOTIONS[motion]
+    n = int(round(L * FPS))
+    dt = 1 / 600
+    kF, cF, kR, cR = 900, 36, 760, 34
+    kRy, cRy, kRx, cRx, kRr, cRr = 240, 17, 200, 18, 170, 15
+    kH, cH = 320, 16
+    loop = motion in LOOPS
+    t = -3 * L if loop else 0.0
+    d0 = drivers(motion, t)
+    yF, yR = d0['wf'] + d0['dF'], d0['wr'] + d0['dR']
+    seat0 = yR + SEAT_F * (yF - yR)
+    st = dict(yF=yF, vF=0.0, yR=yR, vR=0.0, y=seat0 + d0['ry'], vy=0.0, x=d0['rx'], vx=0.0, r=d0['rr'], vr=0.0, h=seat0 + d0['ry'], vh=0.0)
+    out = {}
+    frame_times = [(i, i / FPS) for i in range(n)]
+    fi = 0
+    while fi < n:
+        d = drivers(motion, t)
+        seat = st['yR'] + SEAT_F * (st['yF'] - st['yR'])
+        press = (st['y'] - (seat + d['ry']))           # 라이더가 누르는 정도 → 차체 반작용
+        tF = d['wf'] + d['dF'] + 0.35 * press
+        tR = d['wr'] + d['dR'] + 0.35 * press
+        st['vF'] += (-kF * (st['yF'] - tF) - cF * st['vF']) * dt
+        st['vR'] += (-kR * (st['yR'] - tR) - cR * st['vR']) * dt
+        st['yF'] += st['vF'] * dt
+        st['yR'] += st['vR'] * dt
+        st['vy'] += (-kRy * (st['y'] - (seat + d['ry'])) - cRy * st['vy']) * dt
+        st['y'] += st['vy'] * dt
+        st['vx'] += (-kRx * (st['x'] - d['rx']) - cRx * st['vx']) * dt
+        st['x'] += st['vx'] * dt
+        st['vr'] += (-kRr * (st['r'] - d['rr']) - cRr * st['vr']) * dt
+        st['r'] += st['vr'] * dt
+        st['vh'] += (-kH * (st['h'] - st['y']) - cH * st['vh']) * dt
+        st['h'] += st['vh'] * dt
+        while fi < n and t >= frame_times[fi][1] - 1e-9:
+            seat_now = st['yR'] + SEAT_F * (st['yF'] - st['yR'])
+            out[fi] = dict(wf=d['wf'], wr=d['wr'], susp_f=st['yF'] - d['wf'] * 0, susp_r=st['yR'],
+                           rider_dy=st['y'] - seat_now, rider_dx=st['x'], rider_rot=st['r'], head_lag=st['h'] - st['y'])
+            fi += 1
+        t += dt
+    _SIM[motion] = out
+    return out
+
+
+def sim_at(motion, t):
+    s = simulate(motion)
+    i = int(round(t * FPS))
+    return s[min(i, len(s) - 1)]
+
+
 def engine_vib(t, amp=2.0, hz=7.5):
     return amp * math.sin(TAU * hz * t)
 
@@ -696,7 +1059,7 @@ def exhaust(t, period=0.8, n=4, big=1.0, dy=0.0):
     for i in range(n):
         ph = ((t / period) + i / n) % 1.0
         fx.append(dict(kind='puff', x=EXHAUST_TIP[0] - 170 * ph * big, y=EXHAUST_TIP[1] - 70 * ph + dy,
-                       r=(12 + 30 * ph) * big, a=(1 - ph) ** 1.3))
+                       r=(12 + 30 * ph) * big, a=(1 - ph) ** 1.3, anchor='body', ax=EXHAUST_TIP[0] + 30, ay=EXHAUST_TIP[1]))
     return fx
 
 
@@ -710,22 +1073,53 @@ def speedlines(t, period=0.6):
 
 def pose(motion, t):
     L = MOTIONS[motion]
-    p = {}
+    sim = sim_at(motion, t)
+    p = dict(wf=sim['wf'], wr=sim['wr'], susp_f=sim['susp_f'] - sim['wf'] + sim['wf'], susp_r=sim['susp_r'],
+             rider_dx=sim['rider_dx'], rider_dy=sim['rider_dy'], rider_rot=sim['rider_rot'])
+    head_lag = sim['head_lag']
+    p['head_dy'] = clamp(head_lag * 0.8, -10, 10)
+    p['foot'] = 1.0 if motion in STANDING else 0.0
+    p['steer'] = 0.0
+
     if motion in ('ride_r', 'ride_l'):
-        vib = engine_vib(t)
-        p['base_dy'] = vib
-        p['head_dy'] = -10 * (0.5 + 0.5 * math.sin(t / 0.8 * TAU - 0.9)) + vib * 0.5
-        p['head_rot'] = 2.2 * math.sin(t / 1.6 * TAU)
+        p['body_dy'] = engine_vib(t, 0.9)
+        p['steer'] = 1.4 * math.sin(t / 1.6 * TAU + 0.6) + 0.12 * (sim['wf'])
+        p['head_rot'] = 2.0 * math.sin(t / 1.6 * TAU - 0.5)
         p['blink'] = blink_at(t, 2.4)
         p['roll'] = (t / 0.4) % 1.0
-        p['fx'] = exhaust(t, dy=vib) + speedlines(t)
+        p['fx'] = exhaust(t) + speedlines(t)
         if motion == 'ride_l':
             p['sx'] = -1
+    elif motion == 'brake_r':
+        # 브레이크 → 정지 → 발 내리기
+        v = max(0.0, 1 - t / 0.5)
+        p['roll'] = ((t - t * t / 1.0) / 0.4) % 1.0 if t < 0.5 else (0.25 / 0.4) % 1.0
+        p['foot'] = ease(seg(t, 0.32, 0.72))
+        p['foot_dy'] = -10 * math.sin(math.pi * seg(t, 0.32, 0.72))   # 발을 살짝 들었다가 디딤
+        p['eyes'] = 'normal'
+        p['head_rot'] = 2.5 * math.sin(math.pi * seg(t, 0, 0.6))
+        p['steer'] = -2.0 * ease(seg(t, 0.4, 0.8))
+        p['body_dy'] = engine_vib(t, 0.9 * v + 0.4)
+        fx = exhaust(t, period=0.8, n=3, big=0.8)
+        if 0.66 < t < 1.0:
+            q = seg(t, 0.66, 1.0)
+            fx += [dict(kind='dust', x=FOOT_GROUND[0] - 70 - 50 * q, y=FOOT_GROUND[1] + 38, r=16 + 22 * q, a=(1 - q) * 0.8),
+                   dict(kind='dust', x=FOOT_GROUND[0] + 110 + 50 * q, y=FOOT_GROUND[1] + 36, r=14 + 20 * q, a=(1 - q) * 0.8)]
+        p['fx'] = fx
+    elif motion == 'go_r':
+        p['foot'] = 1 - ease(seg(t, 0.0, 0.24))
+        p['foot_dy'] = -14 * math.sin(math.pi * seg(t, 0.0, 0.24))
+        p['roll'] = ((t * t / 0.6) / 0.4) % 1.0
+        p['head_rot'] = -2.5 * math.sin(math.pi * min(t / 0.5, 1))
+        p['eyes'], p['mouth'], p['mouth_h'] = 'normal', 'smile', 18
+        p['body_dy'] = engine_vib(t, 1.2)
+        fx = exhaust(t, period=0.3, n=3, big=1.4)
+        q = seg(t, 0.05, 0.6)
+        fx += [dict(kind='dust', x=REAR_CONTACT[0] - 40 - 150 * q, y=REAR_CONTACT[1] + 40 - 30 * q, r=18 + 34 * q, a=(1 - q) * 0.9)]
+        p['fx'] = fx
     elif motion in ('idle_r', 'idle_l', 'front'):
-        b = 0.5 + 0.5 * math.sin(t / 1.2 * TAU)
-        p['base_sy'] = 1 + 0.006 * b
-        p['base_dy'] = engine_vib(t, 0.8)             # 시동 걸린 채 미세 진동
-        p['head_dy'] = -5 * b
+        p['body_dy'] = engine_vib(t, 0.5)
+        p['steer'] = -2.0 + 0.6 * math.sin(t / 2.4 * TAU)
         p['head_rot'] = 2.0 * math.sin(t / L * TAU)
         p['blink'] = blink_at(t, 1.0 if motion != 'front' else 1.4)
         if t % 1.2 < 0.6:
@@ -734,30 +1128,22 @@ def pose(motion, t):
             p['sx'] = -1
     elif motion == 'face_r':
         k = math.sin(ease(t / (L - 1 / FPS)) * math.pi)
-        p['dy'] = -22 * k
-        p['sy'] = 1 + 0.03 * k
-        p['sx'] = 1 - 0.02 * k
         p['head_rot'] = -3 * k
+        p['steer'] = -2.0
     elif motion in ('face_l', 'turn'):
         k = ease(t / (L - 1 / FPS))
         sx = -1 + 2 * k
         p['sx'] = sx if abs(sx) > 0.04 else (0.04 if sx >= 0 else -0.04)
-        p['dy'] = -34 * math.sin(k * math.pi)
-        p['sy'] = 1 + 0.04 * math.sin(k * math.pi)
+        p['dy'] = -10 * math.sin(k * math.pi)
+        p['sy'] = 1 + 0.02 * math.sin(k * math.pi)
         p['shadow'] = 0.75 + 0.25 * abs(sx)
         p['head_rot'] = 5 * math.sin(k * math.pi) * (1 if k < 0.5 else -1)
+        p['steer'] = -4 * math.sin(k * math.pi)
         if motion == 'turn':
-            p['roll'] = (t / 0.3) % 1.0
-            if k > 0.75:   # 착지 흙먼지
-                q = seg(k, 0.75, 1.0)
-                p['fx'] = [dict(kind='dust', x=FRONT_CONTACT[0] + 60 * q, y=FRONT_CONTACT[1] - 10, r=20 + 30 * q, a=1 - q),
-                           dict(kind='dust', x=REAR_CONTACT[0] - 60 * q, y=REAR_CONTACT[1] + 40, r=18 + 26 * q, a=1 - q)]
+            p['roll'] = (t / 0.4) % 1.0
     elif motion == 'notify':
         hop = math.sin(min(t / 0.5, 1) * math.pi)
         p['eyes'], p['mouth'] = 'wow', 'o'
-        p['dy'] = -46 * hop
-        p['sy'] = 1 + 0.05 * hop
-        p['sx'] = 1 - 0.03 * hop
         p['head_s'] = 1 + 0.03 * hop
         p['head_rot'] = 4 * math.sin(t / 0.4 * TAU) * min(1, t / 0.5)
         on = (int(t / 0.2) % 2) == 0
@@ -767,29 +1153,30 @@ def pose(motion, t):
         pop = back_out(t / 0.45)
         sw = (t % 0.8) / 0.8
         p['fx'] = [dict(kind='notice', x=860, y=70, s=max(0.05, pop)), dict(kind='sweat', x=245, y=150 + 40 * sw, s=1.0, a=1 - sw)]
+        p['steer'] = -2.0
     elif motion == 'talk':
         p['mouth'] = 'open'
         p['mouth_h'] = 14 + 24 * (0.5 + 0.5 * math.sin(t / 0.4 * TAU))
         p['head_rot'] = 2.0 * math.sin(t / 0.8 * TAU)
-        p['head_dy'] = -3 * (0.5 + 0.5 * math.sin(t / 0.4 * TAU))
+        p['head_dy'] += -3 * (0.5 + 0.5 * math.sin(t / 0.4 * TAU))
         p['blink'] = blink_at(t, 1.2)
         p['hazard'] = 'on' if (int(t / 0.4) % 2) == 0 else 'off'
         p['wave'] = 54 + 14 * math.sin(t / 0.4 * TAU)
+        p['steer'] = -2.0
     elif motion == 'wave_out':
         k = ease(t / (L - 1 / FPS))
         p['wave'] = 54 - 50 * k
         p['head_rot'] = 2.0 * (1 - k)
         p['mouth'] = 'smile' if k < 0.6 else 'w'
         p['mouth_h'] = 20
+        p['steer'] = -2.0
     elif motion == 'happy':
         bnc = abs(math.sin(t / 0.8 * TAU))
         p['eyes'] = 'happy'
         p['mouth'], p['mouth_h'] = 'smile', 22 + 8 * bnc
-        p['dy'] = -34 * bnc
-        p['sy'] = 1 + 0.035 * (bnc - 0.5)
-        p['sx'] = 1 - 0.02 * (bnc - 0.5)
         p['head_rot'] = 4 * math.sin(t / 0.8 * TAU)
-        p['base_dy'] = engine_vib(t, 1.0)
+        p['body_dy'] = engine_vib(t, 0.6)
+        p['steer'] = -2 + 1.5 * math.sin(t / 0.8 * TAU)
         fx = []
         for i, (hx, hy) in enumerate(((150, 170), (880, 130))):
             ph = ((t / 1.6) + i * 0.5) % 1.0
@@ -799,36 +1186,21 @@ def pose(motion, t):
         ph = t / L
         p['eyes'] = 'closed'
         p['head_rot'] = -3.5 - 2 * math.sin(ph * TAU)
-        p['head_dy'] = 6 + 4 * math.sin(ph * TAU)
-        b = 0.5 + 0.5 * math.sin(t / 1.6 * TAU)
-        p['base_sy'] = 1 + 0.008 * b
+        p['head_dy'] += 6 + 4 * math.sin(ph * TAU)
+        p['steer'] = -3.0
         fx = []
         for i, (sz, txt) in enumerate(((78, 'Z'), (60, 'z'), (46, 'z'))):
             q = (ph + i / 3) % 1.0
             fx.append(dict(kind='z', x=800 + 70 * q + i * 10, y=150 - 150 * q, size=sz, text=txt,
                            s=0.6 + 0.5 * math.sin(q * math.pi), a=math.sin(q * math.pi) * 1.3))
         p['fx'] = fx
-
-    # ---------------- 신규 모션 ----------------
     elif motion == 'wheelie_r':
-        # 들기(0~0.55) → 균형 잡기(~1.5) → 내려오기(~1.8) → 착지 반동(~2.2)
-        hold_end = -17 + 1.6 * math.sin((1.5 - 0.55) / 0.45 * TAU)
-        if t < 0.55:
-            a = -17 * back_out(t / 0.55, 1.2)
-        elif t < 1.5:
-            a = -17 + 1.6 * math.sin((t - 0.55) / 0.45 * TAU)
-        elif t < 1.8:
-            q = seg(t, 1.5, 1.8)
-            a = hold_end * (1 - q * q)
-        else:
-            a = 0.0
+        a = wheelie_angle(t)
         land = seg(t, 1.8, 2.2)
         squash = math.sin(land * math.pi) * (1 - land) if t >= 1.8 else 0
         p['rot'] = a
-        p['sy'] = 1 - 0.06 * squash
-        p['sx'] = 1 + 0.03 * squash
+        p['sy'] = 1 - 0.03 * squash
         p['head_rot'] = -a * 0.4 + 2 * math.sin(t / 0.45 * TAU) * (1 if 0.55 < t < 1.5 else 0)
-        p['head_dy'] = 12 * squash - 4 * min(1, -a / 17)
         p['shadow'] = 1 - 0.25 * min(1, -a / 17)
         if t < 0.35:
             p['eyes'], p['mouth'] = 'wow', 'o'
@@ -837,39 +1209,38 @@ def pose(motion, t):
         else:
             p['mouth'], p['mouth_h'] = 'smile', 22
         p['roll'] = (t / 0.25) % 1.0
-        p['base_dy'] = engine_vib(t, 2.5, 10)
+        p['body_dy'] = engine_vib(t, 1.5, 10)
+        p['steer'] = 2.5 * math.sin(t / 0.45 * TAU) * (1 if 0.55 < t < 1.5 else 0)   # 균형 잡는 핸들
         fx = exhaust(t, period=0.5, n=4, big=1.3) + speedlines(t, 0.45)
-        if t >= 1.78:   # 앞바퀴 착지 흙먼지 + 반짝
+        if t >= 1.78:
             q = seg(t, 1.78, 2.2)
             fx += [dict(kind='dust', x=FRONT_CONTACT[0] - 40 - 90 * q, y=FRONT_CONTACT[1] - 6, r=24 + 40 * q, a=(1 - q) * 0.95),
                    dict(kind='dust', x=FRONT_CONTACT[0] + 90 + 90 * q, y=FRONT_CONTACT[1] - 12, r=20 + 34 * q, a=(1 - q) * 0.9),
                    dict(kind='spark', x=FRONT_CONTACT[0] + 150, y=FRONT_CONTACT[1] - 120 - 40 * q, s=0.9 * (1 - q * 0.5), a=1 - q, rot=q)]
         p['fx'] = fx
     elif motion == 'rev':
-        # 제자리 공회전: 강한 차체 진동, 앞으로 숙인 자세, 씨익 웃음, 배기 연기 펑펑, 뒷바퀴 헛돌기
-        p['base_dy'] = engine_vib(t, 4.5, 10)
-        p['base_dx'] = engine_vib(t + 0.025, 1.5, 10)
-        p['sy'] = 0.985
-        p['head_dy'] = 7 + engine_vib(t + 0.03, 2.5, 10)
-        p['head_dx'] = engine_vib(t + 0.05, 2.0, 10)
+        p['body_dy'] = engine_vib(t, 3.0, 10)
+        p['body_dx'] = engine_vib(t + 0.025, 1.2, 10)
+        p['head_dx'] = engine_vib(t + 0.05, 1.5, 10)
         p['head_rot'] = 1.8 * math.sin(t / 0.4 * TAU)
         p['eyes'], p['mouth'] = 'normal', 'grin'
         p['hazard'] = 'on' if (int(t / 0.2) % 2) == 0 else 'off'
         p['headlight'] = 0.35 + 0.35 * math.sin(t / 0.2 * TAU)
         p['roll'] = (t / 0.2) % 1.0
+        p['steer'] = 1.5 * math.sin(t / 0.2 * TAU)
         fx = exhaust(t, period=0.4, n=5, big=1.5)
         for i in range(3):
             q = ((t / 0.4) + i / 3) % 1.0
             fx.append(dict(kind='dust', x=REAR_CONTACT[0] - 30 - 160 * q, y=REAR_CONTACT[1] + 60 - 50 * q, r=18 + 40 * q, a=(1 - q) * 0.85))
         p['fx'] = fx
     elif motion == 'bow':
-        k = math.sin(ease(t / L) * math.pi)            # 숙였다가 올라옴
-        p['head_dy'] = 30 * k
+        k = math.sin(ease(t / L) * math.pi)
+        p['head_dy'] += 22 * k
         p['head_sy'] = 1 - 0.08 * k
         p['head_rot'] = 3 * k
-        p['base_sy'] = 1 - 0.012 * k
         p['eyes'] = 'happy'
         p['mouth'], p['mouth_h'] = 'smile', 18 + 8 * k
+        p['steer'] = -2.0
         fx = []
         if t > 0.25:
             q = seg(t, 0.25, L)
@@ -878,7 +1249,6 @@ def pose(motion, t):
                    dict(kind='heart', x=860 + 30 * q, y=260 - 90 * q, s=0.45 + 0.3 * q, a=math.sin(q * math.pi))]
         p['fx'] = fx
     elif motion == 'look_r':
-        # 가운데 → 왼쪽 → 오른쪽 → 가운데 (고개 + 눈동자, 눈동자가 고개보다 먼저 감)
         def track(tt):
             if tt < 0.3:
                 return 0.0
@@ -891,26 +1261,27 @@ def pose(motion, t):
             if tt < 2.0:
                 return 1.0
             return 1 - ease(seg(tt, 2.0, 2.45))
-        eye = track(t + 0.08)
-        head = track(t - 0.04)
+        eye, head = track(t + 0.08), track(t - 0.04)
         p['look'] = 10 * eye
         p['head_dx'] = 7 * head
         p['head_rot'] = 4.5 * head
-        p['head_dy'] = -3 * abs(head)
+        p['head_dy'] += -3 * abs(head)
+        p['rider_rot'] += 1.5 * track(t - 0.12)                 # 몸도 살짝 따라 돔
         p['blink'] = blink_at(t, 1.35, 0.2)
-        p['base_dy'] = engine_vib(t, 0.8)
+        p['body_dy'] = engine_vib(t, 0.5)
+        p['steer'] = -2.0
     elif motion == 'yawn_r':
         open_k = ease(seg(t, 0.15, 0.75)) * (1 - ease(seg(t, 1.45, 1.95)))
         p['mouth'] = 'yawn' if open_k > 0.12 else 'w'
         p['mouth_h'] = 14 + 50 * open_k
         p['eyes'] = 'closed' if 0.35 < t < 1.75 else 'normal'
         if 1.75 <= t < 2.3:
-            p['blink'] = 0.5 if t < 2.05 else 1.0          # 졸린 반쯤 뜬 눈
+            p['blink'] = 0.5 if t < 2.05 else 1.0
         p['head_rot'] = -6 * open_k
-        p['head_dy'] = -10 * open_k
+        p['head_dy'] += -10 * open_k
         p['head_sy'] = 1 + 0.03 * open_k
-        p['base_sy'] = 1 + 0.01 * open_k
-        p['base_dy'] = engine_vib(t, 0.8)
+        p['body_dy'] = engine_vib(t, 0.5)
+        p['steer'] = -2.0
         fx = []
         if 0.9 < t < 1.9:
             q = seg(t, 0.9, 1.9)
@@ -925,12 +1296,9 @@ def pose(motion, t):
         p['mouth_h'] = 16 + 12 * bounce
         p['head_dx'] = 7 * sway
         p['head_rot'] = 7 * sway
-        p['head_dy'] = -10 * bounce
-        p['dy'] = -14 * bounce
-        p['sy'] = 1 - 0.02 * (1 - bounce)
-        p['sx'] = 1 + 0.01 * sway
         p['hazard'] = 'on' if int(beat) % 2 == 0 else 'off'
         p['headlight'] = 0.3 * bounce
+        p['steer'] = -2 + 2.5 * sway
         notes = [('♪', (155, 123, 255)), ('♫', (79, 179, 255)), ('♪', (255, 120, 160))]
         fx = []
         for i, (ch, col) in enumerate(notes):
@@ -946,8 +1314,10 @@ def pose(motion, t):
         p['mouth'], p['mouth_h'] = ('smile', 20) if k > 0.3 else ('w', 24)
         p['head_rot'] = 7 * k
         p['head_dx'] = 5 * k
-        p['head_dy'] = -4 * k
-        p['base_dy'] = engine_vib(t, 0.8)
+        p['head_dy'] += -4 * k
+        p['rider_rot'] += 1.5 * k
+        p['body_dy'] = engine_vib(t, 0.5)
+        p['steer'] = -2.0
         fx = []
         if 0.25 < t < 1.0:
             q = seg(t, 0.25, 1.0)
@@ -955,6 +1325,10 @@ def pose(motion, t):
                    dict(kind='heart', x=EYE_R[0] + 150 + 30 * q, y=EYE_R[1] - 10 - 60 * q, s=0.35 + 0.25 * q, a=math.sin(q * math.pi))]
         p['fx'] = fx
     return p
+
+
+def clamp(v, a, b):
+    return min(b, max(a, v))
 
 
 # ======================================================================================

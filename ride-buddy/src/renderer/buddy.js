@@ -74,8 +74,9 @@
     play(name, { reverse = false, loop, onEnd } = {}) {
       const r = resolve(name);
       const m = META.motions[r.name];
-      // 크로스페이드: 직전 화면 보관
-      if (this.drewOnce && (this.name !== name)) {
+      // 크로스페이드: 직전 화면 보관 (자세가 이어지게 설계된 전환 모션은 제외 — 겹쳐 보이는 잔상 방지)
+      const seamless = /^(turn|face_|go_|brake_|wave_out|wheelie_)/.test(name) || /^wheelie_/.test(this.name || '');
+      if (this.drewOnce && this.name !== name && !seamless) {
         fadeCanvas.width = canvas.width; fadeCanvas.height = canvas.height;
         fadeCtx.clearRect(0, 0, fadeCanvas.width, fadeCanvas.height);
         fadeCtx.drawImage(canvas, 0, 0);
@@ -133,7 +134,7 @@
   };
 
   // ---------- 상태 ----------
-  let cfg = { skin: '2d', size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true, catchphrase: true };
+  let cfg = { skin: '2d', size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true, catchphrase: true };
   let charW = SIZE_PX.m, charH = charW * META.frameH / META.frameW;
   let x = 0, dir = 1;          // x = 캐릭터 중심(가로, px)
   let mode = 'ride';           // ride | brake | stop | anim(전환 중) | busy | sleep
@@ -209,12 +210,12 @@
     // 기울기(차선 변경 방향) + 피치(가속=앞들림, 브레이크=앞쏠림)
     const leanTarget = (clamp(b.zv * 40 * dir, -9, 9) + Math.sin(now / 900) * 0.6) * Math.min(1, spd * 1.4);   // 멈추면 바로 섬
     b.lean += (leanTarget - b.lean) * Math.min(1, dt * 5);
-    const pitchTarget = clamp(-b.acc * 0.04, -5, 6.5);   // 가속(+) → 음수(앞 들림), 브레이크 → 앞쏠림
+    const pitchTarget = clamp(-b.acc * (META.motions.brake_r ? 0.012 : 0.04), -2.5, 3);   // 서스펜션은 스프라이트가 표현 → 전체 기울기는 살짝만
     b.pitch += (pitchTarget - b.pitch) * Math.min(1, dt * 9);
 
     // 서스펜션: 노면 요철
     if (b.v > 8 && now > b.nextBump) {
-      b.susV -= rand(28, 70) * clamp(spd, 0.4, 1.3);
+      b.susV -= rand(28, 70) * clamp(spd, 0.4, 1.3) * (META.motions.brake_r ? 0.2 : 1);   // 바퀴가 뜨지 않도록 약하게
       b.nextBump = now + rand(450, 2200) / Math.max(0.5, spd);
     }
     const susA = -PHYS.SPRING * b.susY - PHYS.DAMP * b.susV;
@@ -254,10 +255,15 @@
 
   // ---------- 동작 단위 ----------
   function ride() {
+    const fromStop = bike.v < 6;
     mode = 'ride'; facing = side();
     bike.brake = 0; bike.onStop = null;
     bike.vTarget = cruise() * rand(0.8, 1.25);
-    player.play(`ride_${side()}`);
+    if (fromStop && META.motions.go_r) {             // 출발: 발 올리고 뒤가 눌리며 튀어나감
+      player.play(`go_${side()}`, { onEnd: guard(() => { if (mode === 'ride' && !player.name.startsWith('wheelie')) player.play(`ride_${side()}`); }) });
+    } else {
+      player.play(`ride_${side()}`);
+    }
   }
   function stop() { mode = 'stop'; facing = side(); bike.vTarget = 0; bike.brake = 0; player.play(`idle_${side()}`); }
   /** 브레이크를 밟아 멈춘 뒤 cb */
@@ -267,7 +273,12 @@
     mode = 'brake';
     bike.vTarget = 0;
     bike.brake = decel;
-    bike.onStop = cb;
+    if (META.motions.brake_r) {                      // 브레이크: 앞쏠림 → 정지 → 발 내리기 (모션이 끝난 뒤 다음 동작)
+      player.play(`brake_${side()}`);
+      bike.onStop = () => { if (player.name.startsWith('brake') && !player.done) player.onEnd = cb; else cb(); };
+    } else {
+      bike.onStop = cb;
+    }
   }
   function idle() {
     if (cfg.dnd) return toFront(guard(() => {

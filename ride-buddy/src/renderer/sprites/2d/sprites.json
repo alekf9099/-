@@ -2,9 +2,9 @@
  "skin": "2d",
  "fps": 30,
  "frameW": 300,
- "frameH": 332,
+ "frameH": 315,
  "displayScale": 1.45,
- "headTop": 0.0964,
+ "headTop": 0.0476,
  "motions": {
   "ride_r": {
    "file": "ride_r.webp",
@@ -12,19 +12,19 @@
    "cols": 8,
    "loop": true,
    "ox": 0,
-   "oy": 28,
-   "w": 244,
-   "h": 304
+   "oy": 13,
+   "w": 246,
+   "h": 302
   },
   "ride_l": {
    "file": "ride_l.webp",
    "frames": 96,
    "cols": 8,
    "loop": true,
-   "ox": 56,
-   "oy": 28,
-   "w": 244,
-   "h": 304
+   "ox": 54,
+   "oy": 13,
+   "w": 246,
+   "h": 302
   },
   "idle_r": {
    "file": "idle_r.webp",
@@ -32,19 +32,19 @@
    "cols": 8,
    "loop": true,
    "ox": 30,
-   "oy": 29,
-   "w": 214,
-   "h": 303
+   "oy": 13,
+   "w": 213,
+   "h": 302
   },
   "idle_l": {
    "file": "idle_l.webp",
    "frames": 72,
    "cols": 8,
    "loop": true,
-   "ox": 56,
-   "oy": 29,
-   "w": 214,
-   "h": 303
+   "ox": 57,
+   "oy": 13,
+   "w": 213,
+   "h": 302
   },
   "face_r": {
    "file": "face_r.webp",
@@ -52,9 +52,9 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 17,
-   "w": 190,
-   "h": 315
+   "oy": 14,
+   "w": 189,
+   "h": 301
   },
   "face_l": {
    "file": "face_l.webp",
@@ -62,9 +62,9 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 12,
+   "oy": 6,
    "w": 192,
-   "h": 320
+   "h": 309
   },
   "front": {
    "file": "front.webp",
@@ -72,9 +72,9 @@
    "cols": 8,
    "loop": true,
    "ox": 30,
-   "oy": 29,
-   "w": 214,
-   "h": 303
+   "oy": 13,
+   "w": 213,
+   "h": 302
   },
   "notify": {
    "file": "notify.webp",
@@ -82,9 +82,9 @@
    "cols": 8,
    "loop": false,
    "ox": 46,
-   "oy": 0,
-   "w": 209,
-   "h": 332
+   "oy": 7,
+   "w": 208,
+   "h": 308
   },
   "talk": {
    "file": "talk.webp",
@@ -92,7 +92,7 @@
    "cols": 8,
    "loop": true,
    "ox": 46,
-   "oy": 30,
+   "oy": 13,
    "w": 208,
    "h": 302
   },
@@ -101,10 +101,10 @@
    "frames": 48,
    "cols": 8,
    "loop": true,
-   "ox": 53,
-   "oy": 7,
-   "w": 197,
-   "h": 325
+   "ox": 54,
+   "oy": 1,
+   "w": 195,
+   "h": 314
   },
   "sleep": {
    "file": "sleep.webp",
@@ -112,9 +112,9 @@
    "cols": 8,
    "loop": true,
    "ox": 54,
-   "oy": 16,
-   "w": 190,
-   "h": 316
+   "oy": 0,
+   "w": 189,
+   "h": 315
   },
   "turn": {
    "file": "turn.webp",
@@ -122,9 +122,9 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 12,
+   "oy": 5,
    "w": 192,
-   "h": 320
+   "h": 310
   },
   "wheelie_r": {
    "file": "wheelie_r.webp",
@@ -132,9 +132,9 @@
    "cols": 8,
    "loop": false,
    "ox": 0,
-   "oy": 16,
-   "w": 245,
-   "h": 316
+   "oy": 3,
+   "w": 249,
+   "h": 312
   },
   "rev": {
    "file": "rev.webp",
@@ -142,9 +142,9 @@
    "cols": 8,
    "loop": true,
    "ox": 0,
-   "oy": 35,
-   "w": 244,
-   "h": 297
+   "oy": 14,
+   "w": 242,
+   "h": 301
   },
   "bow": {
    "file": "bow.webp",
@@ -152,7 +152,7 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 31,
+   "oy": 14,
    "w": 193,
    "h": 301
   },
@@ -162,9 +162,9 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 30,
-   "w": 190,
-   "h": 302
+   "oy": 12,
+   "w": 189,
+   "h": 303
   },
   "yawn_r": {
    "file": "yawn_r.webp",
@@ -172,19 +172,19 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 25,
-   "w": 190,
-   "h": 307
+   "oy": 7,
+   "w": 189,
+   "h": 308
   },
   "groove": {
    "file": "groove.webp",
    "frames": 48,
    "cols": 8,
    "loop": true,
-   "ox": 45,
-   "oy": 20,
-   "w": 200,
-   "h": 312
+   "ox": 46,
+   "oy": 6,
+   "w": 199,
+   "h": 309
   },
   "wink": {
    "file": "wink.webp",
@@ -192,8 +192,8 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 30,
-   "w": 190,
+   "oy": 13,
+   "w": 189,
    "h": 302
   },
   "wave_out": {
@@ -202,9 +202,29 @@
    "cols": 8,
    "loop": false,
    "ox": 54,
-   "oy": 31,
-   "w": 206,
+   "oy": 14,
+   "w": 205,
    "h": 301
+  },
+  "brake_r": {
+   "file": "brake_r.webp",
+   "frames": 30,
+   "cols": 8,
+   "loop": false,
+   "ox": 21,
+   "oy": 13,
+   "w": 229,
+   "h": 302
+  },
+  "go_r": {
+   "file": "go_r.webp",
+   "frames": 18,
+   "cols": 8,
+   "loop": false,
+   "ox": 0,
+   "oy": 12,
+   "w": 244,
+   "h": 303
   }
  }
 }

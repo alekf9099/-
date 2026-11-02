@@ -28,6 +28,7 @@ MOTION_INFO = {
     'wheelie_r': ('윌리 (앞바퀴 들기)', False), 'rev': ('제자리 공회전 "달달달달"', True),
     'bow': ('꾸벅 인사 "감사하고~"', False), 'look_r': ('두리번', False), 'yawn_r': ('하품', False),
     'groove': ('신나서 리듬 타기', True), 'wink': ('윙크', False), 'wave_out': ('손 내리기', False),
+    'brake_r': ('브레이크 → 정지 → 발 내리기', False), 'go_r': ('출발 (발 올리기 + 가속)', False),
 }
 
 

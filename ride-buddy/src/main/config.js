@@ -7,7 +7,7 @@ const DEFAULTS = {
   skin: '2d',           // 2d (원본 일러스트) | 3d (Blender 렌더)
   size: 'm',            // s | m | l  (캐릭터 크기)
   speed: 1,             // 0.5 | 1 | 1.8 (이동 속도 배율)
-  sound: true,          // 알림 효과음 (빵빵!)
+  sound: false,         // 효과음 (현재 보류 — 기본 꺼짐)
   dnd: false,           // 방해 금지 (알림은 쌓아두고 졸기 모션)
   paused: false,        // 이동 멈춤
   windowsWatcher: true, // Windows 알림 센터 연동
