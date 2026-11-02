@@ -1,0 +1,55 @@
+{
+  "name": "ride-buddy",
+  "productName": "Ride Buddy",
+  "version": "1.0.0",
+  "description": "바탕화면을 바이크로 천천히 돌아다니다가 알림이 오면 무슨 알림인지 말풍선으로 알려주는 데스크톱 캐릭터",
+  "main": "src/main/main.js",
+  "author": "alekf9099",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "demo": "node -e \"require('child_process').spawn(process.platform==='win32'?'explorer':'xdg-open',[require('path').resolve('src/renderer/index.html')],{detached:true})\"",
+    "notify": "node tools/send-notify.js",
+    "motions": "node tools/export-motions.js",
+    "icons": "node tools/make-icons.js",
+    "test": "node --test test/unit.test.js",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:linux": "electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "com.alekf9099.ridebuddy",
+    "productName": "Ride Buddy",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Ride Buddy"
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.10.3",
+    "electron-builder": "^26.0.12",
+    "playwright": "^1.50.0"
+  }
+}

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+  <title>Ride Buddy</title>
+  <link rel="stylesheet" href="character.css">
+  <link rel="stylesheet" href="buddy.css">
+</head>
+<body>
+  <div id="lane">
+    <div id="bubble" class="bubble" role="status" aria-live="polite" hidden>
+      <div class="bubble-head">
+        <span class="app-chip"><span class="app-icon"></span><span class="app-name"></span></span>
+        <span class="bubble-time">방금</span>
+        <span class="bubble-more" hidden></span>
+        <button class="bubble-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="bubble-title"></div>
+      <div class="bubble-body"></div>
+      <div class="bubble-progress"><i></i></div>
+      <span class="bubble-tail"></span>
+    </div>
+
+    <div id="buddy" title="클릭: 반응 · 더블클릭: 마지막 알림 다시 듣기 · 드래그: 위치 이동 · 우클릭: 메뉴">
+      <div class="rb rb--ride" id="rb"><div class="rb-flip" id="rb-flip"></div></div>
+      <span id="badge" hidden></span>
+    </div>
+  </div>
+
+  <script src="character.js"></script>
+  <script src="buddy.js"></script>
+</body>
+</html>

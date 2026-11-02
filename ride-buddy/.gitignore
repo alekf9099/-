@@ -1,0 +1,5 @@
+node_modules/
+dist/
+out/
+# 개별 프레임은 `npm run motions` 로 재생성 (GIF·스프라이트 시트·motions.json 만 커밋)
+motions/*/
