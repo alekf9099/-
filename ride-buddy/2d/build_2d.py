@@ -50,6 +50,18 @@ GROUND_Y = 1362
 # 머리 뒤에 가려진 목/어깨 영역 (셔츠로 채움)
 SHOULDERS = [(222, 545), (250, 478), (320, 440), (500, 425), (690, 438), (772, 478), (800, 545)]
 
+# 오른손 (손 흔들기): 그립 잡은 손을 지우고 핸들바/그립을 다시 그린 뒤, 소매에서 팔을 들어 올림
+HAND_R_BOX = (730, 600, 850, 712)
+BAR_R = [(740, 657), (772, 671)]     # 크롬 핸들바
+GRIP_R = [(770, 671), (852, 704)]    # 검정 그립
+ELBOW_R = (752, 628)                 # 팔 회전 축 (소매 끝)
+# 오른쪽 소매 (팔이 소매 안에서 나오도록 팔 위에 다시 그림)
+SLEEVE_R = [(680, 525), (735, 545), (766, 590), (770, 640), (748, 662), (690, 668)]
+SKIN_SHADE = (240, 200, 176)
+# 타이어 트레드 (굴러가는 줄무늬) — 타원 위 각도 구간
+TIRES = [dict(cx=630, cy=1143, rx=118, ry=196, a0=-65, span=150, w=8),
+         dict(cx=168, cy=1160, rx=66, ry=86, a0=50, span=120, w=5)]
+
 # 캔버스: 캐릭터 중심(가로) 기준 좌우 대칭 여백 → 좌우 반전 시 위치가 흔들리지 않음
 PAD_X, PAD_T, PAD_B = 190, 170, 24
 
@@ -157,7 +169,112 @@ class Rig:
         self.front = front
 
         self.base_on, self.base_off = self.hazard_variants()
+        self.bases = {}
+        for key, im in (('', self.base), ('on', self.base_on), ('off', self.base_off)):
+            self.bases[(key, False)] = im
+            self.bases[(key, True)] = self.erase_hand(im)
+        self.tire_mask = self.make_tire_mask()
+        sm = Image.new('L', self.size, 0)
+        ImageDraw.Draw(sm).polygon(SLEEVE_R, fill=255)
+        sm = ImageChops.multiply(sm.filter(ImageFilter.GaussianBlur(1)), self.base.getchannel('A'))
+        self.sleeve_r = self.base.copy()
+        self.sleeve_r.putalpha(sm)
         self.faces = self.face_variants()
+
+    # ---------- 손 흔들기 ----------
+    def erase_hand(self, img):
+        """그립 잡은 오른손을 지우고 핸들바·그립을 다시 그림"""
+        a = np.array(img)
+        x0, y0, x1, y1 = HAND_R_BOX
+        reg = a[y0:y1, x0:x1].astype(int)
+        skin = (reg[..., 0] > 185) & (reg[..., 1] > 150) & (reg[..., 2] > 120) & (reg[..., 0] - reg[..., 2] > 22) & (reg[..., 3] > 100)
+        m = np.zeros(a.shape[:2], np.uint8)
+        m[y0:y1, x0:x1] = skin * 255
+        m = cv2.dilate(m, np.ones((13, 13), np.uint8))
+        a[m > 0, 3] = 0
+        im = Image.fromarray(a)
+        ov = Image.new('RGBA', (self.size[0] * SS, self.size[1] * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        S = lambda pt: (pt[0] * SS, pt[1] * SS)
+
+        def stroke(p0, p1, w, color):
+            d.line([S(p0), S(p1)], fill=color, width=int(w * SS))
+            for q in (p0, p1):
+                r = w * SS / 2
+                d.ellipse((q[0] * SS - r, q[1] * SS - r, q[0] * SS + r, q[1] * SS + r), fill=color)
+        stroke(*BAR_R, 30, LINE)
+        stroke(*BAR_R, 17, (214, 217, 221, 255))
+        d.line([S((BAR_R[0][0], BAR_R[0][1] - 4)), S((BAR_R[1][0], BAR_R[1][1] - 4))], fill=(250, 250, 250, 255), width=4 * SS)
+        stroke(*GRIP_R, 42, LINE)
+        stroke(*GRIP_R, 29, (44, 37, 36, 255))
+        im.alpha_composite(ov.resize(self.size, Image.LANCZOS))
+        return im
+
+    def arm(self, angle):
+        """소매 끝(ELBOW_R)에서 angle(도) 방향으로 들어 올린 팔 + 손 (원본 선 스타일)"""
+        ov = Image.new('RGBA', (self.size[0] * SS, self.size[1] * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        ex, ey = ELBOW_R
+        dx, dy = math.cos(math.radians(angle)), -math.sin(math.radians(angle))
+        nx, ny = -dy, dx
+        S = lambda x, y: (x * SS, y * SS)
+        wx, wy = ex + dx * 118, ey + dy * 118
+        hx, hy = ex + dx * 158, ey + dy * 158
+
+        def capsule(r0, r1, color):
+            poly = [S(ex + nx * r0, ey + ny * r0), S(wx + nx * r1, wy + ny * r1), S(wx - nx * r1, wy - ny * r1), S(ex - nx * r0, ey - ny * r0)]
+            d.polygon(poly, fill=color)
+            for (cx, cy, r) in ((ex, ey, r0), (wx, wy, r1)):
+                d.ellipse(S(cx - r, cy - r) + S(cx + r, cy + r), fill=color)
+        capsule(41, 36, LINE)
+        capsule(34, 29, SKIN + (255,))
+        # 팔 아래쪽 음영
+        d.line([S(ex - nx * 22 + dx * 24, ey - ny * 22 + dy * 24), S(wx - nx * 19, wy - ny * 19)], fill=SKIN_SHADE + (255,), width=8 * SS)
+        # 손 (둥근 주먹 + 손가락 + 엄지)
+        tx, ty = hx + nx * 36 - dx * 6, hy + ny * 36 - dy * 6
+        d.ellipse(S(tx - 21, ty - 21) + S(tx + 21, ty + 21), fill=LINE)
+        d.ellipse(S(hx - 48, hy - 46) + S(hx + 48, hy + 46), fill=LINE)
+        d.ellipse(S(tx - 14, ty - 14) + S(tx + 14, ty + 14), fill=SKIN + (255,))
+        d.ellipse(S(hx - 41, hy - 39) + S(hx + 41, hy + 39), fill=SKIN + (255,))
+        for k in (-1, 0, 1):
+            fx_, fy_ = hx + dx * 40 + nx * 19 * k, hy + dy * 40 + ny * 19 * k
+            d.line([S(fx_, fy_), S(fx_ - dx * 17, fy_ - dy * 17)], fill=LINE, width=6 * SS)
+        # 흔드는 표시
+        for k, r in ((1, 64), (1, 80)):
+            box = S(hx - r, hy - r) + S(hx + r, hy + r)
+            a0 = -math.degrees(math.atan2(dy, dx))
+            d.arc(box, a0 - 70, a0 - 35, fill=LINE[:3] + (200,), width=5 * SS)
+        return ov.resize(self.size, Image.LANCZOS)
+
+    # ---------- 타이어 트레드 ----------
+    def make_tire_mask(self):
+        rgb = np.array(self.src).astype(int)
+        lum = (rgb[..., :3] * [0.3, 0.59, 0.11]).sum(axis=2)
+        sat = rgb[..., :3].max(axis=2) - rgb[..., :3].min(axis=2)
+        H, W = lum.shape
+        yy, xx = np.mgrid[0:H, 0:W]
+        inside = np.zeros((H, W), bool)
+        for t in TIRES:
+            inside |= ((xx - t['cx']) / (t['rx'] * 1.25)) ** 2 + ((yy - t['cy']) / (t['ry'] * 1.15)) ** 2 < 1
+        m = inside & (lum < 105) & (sat < 45) & (rgb[..., 3] > 200)
+        m = cv2.erode(m.astype(np.uint8) * 255, np.ones((5, 5), np.uint8))
+        return Image.fromarray(m).filter(ImageFilter.GaussianBlur(1.5))
+
+    def treads(self, phase):
+        ov = Image.new('RGBA', (self.size[0] * 2, self.size[1] * 2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        for t in TIRES:
+            for k in range(4):
+                s0 = t['a0'] + ((phase + k / 4) % 1.0) * t['span']
+                pts = []
+                for i in range(9):
+                    a = math.radians(s0 + 18 * i / 8)
+                    pts.append(((t['cx'] + t['rx'] * math.cos(a)) * 2, (t['cy'] + t['ry'] * math.sin(a)) * 2))
+                d.line(pts, fill=(30, 22, 21, 150), width=t['w'] * 4, joint='curve')
+                d.line([(x + 6, y - 4) for x, y in pts], fill=(140, 124, 118, 90), width=4)
+        ov = ov.resize(self.size, Image.LANCZOS)
+        ov.putalpha(ImageChops.multiply(ov.getchannel('A'), self.tire_mask))
+        return ov
 
     # ---------- 비상등 ----------
     def hazard_variants(self):
@@ -358,9 +475,16 @@ class Renderer:
         if back:
             out.alpha_composite(self.fx(back))
 
-        base = {'on': R.base_on, 'off': R.base_off}.get(p.get('hazard'), R.base)
+        wave = p.get('wave')
+        base = R.bases[(p.get('hazard') or '', wave is not None)]
         bdy = p.get('base_dy', 0)
-        out.alpha_composite(affine(base, cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=p.get('base_sy', 1.0), sx=p.get('base_sx', 1.0)))
+        bsy = p.get('base_sy', 1.0)
+        out.alpha_composite(affine(base, cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy, sx=p.get('base_sx', 1.0)))
+        if wave is not None:   # 미러 앞, 소매 안쪽에서 나오는 팔
+            out.alpha_composite(affine(R.arm(wave), cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy))
+            out.alpha_composite(affine(R.sleeve_r, cs, off, pivot=(470, GROUND_Y), dy=bdy, sy=bsy))
+        if p.get('roll') is not None:
+            out.alpha_composite(affine(R.treads(p['roll']), cs, off, pivot=(470, GROUND_Y), dy=bdy))
 
         if p.get('headlight', 0) > 0:
             gl = Image.new('RGBA', cs, (0, 0, 0, 0))
@@ -425,6 +549,7 @@ def pose(motion, t):
         p['head_dy'] = -10 * (0.5 + 0.5 * math.sin(t / 0.8 * TAU - 0.9))
         p['head_rot'] = 2.2 * math.sin(t / 1.6 * TAU)
         p['blink'] = blink_at(t, 2.4)
+        p['roll'] = (t / 0.4) % 1.0
         fx = []
         for i in range(4):
             ph = ((t / 0.8) + i / 4) % 1.0
@@ -466,6 +591,7 @@ def pose(motion, t):
         on = (int(t / 0.2) % 2) == 0
         p['hazard'] = 'on' if on else 'off'
         p['headlight'] = 0.5 + 0.5 * math.sin(t / 0.4 * TAU)
+        p['wave'] = 54 + 16 * math.sin(t / 0.4 * TAU) * min(1, t / 0.3)
         pop = back_out(t / 0.45)
         fx = [dict(kind='notice', x=860, y=70, s=max(0.05, pop))]
         sw = (t % 0.8) / 0.8
@@ -478,6 +604,7 @@ def pose(motion, t):
         p['head_dy'] = -3 * (0.5 + 0.5 * math.sin(t / 0.4 * TAU))
         p['blink'] = blink_at(t, 1.2)
         p['hazard'] = 'on' if (int(t / 0.4) % 2) == 0 else 'off'
+        p['wave'] = 54 + 14 * math.sin(t / 0.4 * TAU)
     elif motion == 'happy':
         bnc = abs(math.sin(t / 0.8 * TAU))
         p['eyes'] = 'happy'
