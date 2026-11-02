@@ -16,6 +16,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
   position: absolute; bottom: 0; left: 0;
   width: var(--char-w);
   cursor: grab;
+  transform-origin: 50% 100%;   /* 바퀴 접지점 기준으로 원근 축소·기울기 */
   will-change: transform;
 }
 #rb-canvas { display: block; position: relative; }

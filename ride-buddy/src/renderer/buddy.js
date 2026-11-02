@@ -44,7 +44,7 @@
   }
   loadSkin('2d');
   const player = {
-    name: null, reverse: false, loop: true, t0: 0, onEnd: null, done: false,
+    name: null, reverse: false, loop: true, t0: 0, onEnd: null, done: false, elapsed: 0, rate: 1,
     play(name, { reverse = false, loop, onEnd } = {}) {
       const m = META.motions[name];
       this.name = name;
@@ -53,10 +53,12 @@
       this.onEnd = onEnd || null;
       this.done = false;
       this.t0 = performance.now();
+      this.elapsed = 0;
     },
+    tick(dt) { this.elapsed += dt * this.rate; },
     frameIndex(now) {
       const m = META.motions[this.name];
-      let i = Math.floor((now - this.t0) / 1000 * META.fps);
+      let i = Math.floor(this.elapsed * META.fps);
       if (this.loop) i %= m.frames;
       else if (i >= m.frames) {
         i = m.frames - 1;
@@ -79,8 +81,8 @@
   // ---------- 상태 ----------
   let cfg = { skin: '2d', size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true };
   let charW = SIZE_PX.m, charH = charW * META.frameH / META.frameW;
-  let x = 0, dir = 1;
-  let mode = 'ride';           // ride | stop | anim(전환 중) | busy | sleep | drag
+  let x = 0, dir = 1;          // x = 캐릭터 중심(가로, px)
+  let mode = 'ride';           // ride | brake | stop | anim(전환 중) | busy | sleep
   let facing = 'r';            // r | l | front
   let nextDecision = 0;
   const queue = [];
@@ -95,13 +97,118 @@
   const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
   const clearTimers = () => { timers.forEach(clearTimeout); timers = []; };
   const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const laneW = () => window.innerWidth;
   const side = () => (dir > 0 ? 'r' : 'l');
   const guard = fn => { const e = epoch; return (...a) => { if (e === epoch) fn(...a); }; };
 
+  // ---------- 주행 물리 (실제 오토바이처럼) ----------
+  // 원근: z=0 가까움(크게·아래) ~ z=1 멀리(작게·위)  /  가감속 · 브레이크 · 차체 피치 · 기울기 · 서스펜션
+  const PHYS = {
+    ACCEL: 70,          // px/s² 가속
+    DECEL: 45,          // 자연 감속 (스로틀 오프)
+    BRAKE: 170,         // 일반 브레이크
+    BRAKE_NOTIFY: 120,  // 알림 왔을 때: 사용자 쪽으로 핸들 꺾으며 제동
+    BRAKE_HARD: 520,    // 강제 정지
+    FAR_SCALE: 0.6,     // 가장 멀 때 크기
+    FAR_LIFT: 0.32,     // 가장 멀 때 위로 올라가는 높이 (캐릭터 높이 비율)
+    SPRING: 210, DAMP: 15,
+  };
+  const bike = {
+    v: 0, vTarget: 0, brake: 0, onStop: null,
+    z: rand(0.15, 0.7), zv: 0, zTarget: 0.4, nextLane: 0,
+    acc: 0, pitch: 0, lean: 0,
+    susY: 0, susV: 0, nextBump: 0,
+  };
+  const cruise = () => BASE_SPEED * cfg.speed * (charW / 246);
+  const scaleAt = z => 1 - (1 - PHYS.FAR_SCALE) * z;
+  const halfW = () => charW * scaleAt(bike.z) * 0.36;   // 화면 끝 판정용 (효과 여백 제외)
+
+  function physics(dt, now) {
+    const b = bike;
+    const moving = mode === 'ride' || mode === 'brake';
+    // 속도
+    const prevV = b.v;
+    if (!moving) b.v = Math.max(0, b.v - PHYS.BRAKE_HARD * dt);
+    else if (b.brake) b.v = Math.max(0, b.v - b.brake * dt);
+    else if (b.v < b.vTarget) b.v = Math.min(b.vTarget, b.v + PHYS.ACCEL * cfg.speed * dt);
+    else b.v = Math.max(b.vTarget, b.v - PHYS.DECEL * dt);
+    const rawAcc = dt > 0 ? (b.v - prevV) / dt : 0;
+    b.acc += (rawAcc - b.acc) * Math.min(1, dt * 14);
+
+    // 앞뒤 이동 (원근에 따라 화면상 속도 감소)
+    const s = scaleAt(b.z);
+    x += dir * b.v * s * dt;
+
+    // 차선(깊이) 변경: 달리는 중에만, 속도에 비례
+    if (moving && b.brake === 0 && now > b.nextLane) {
+      b.zTarget = rand(0, 1);
+      b.nextLane = now + rand(3500, 9000);
+    }
+    if (busy || mode === 'anim') b.zTarget = Math.min(b.zTarget, b.z);   // 알림 중엔 멀어지지 않음
+    const spd = clamp(b.v / Math.max(1, cruise()), 0, 1.5);
+    const want = clamp((b.zTarget - b.z) * 0.9, -0.22, 0.22) * spd;
+    b.zv += (want - b.zv) * Math.min(1, dt * 2.5);
+    if (busy && b.v > 0.5) b.zv = Math.min(b.zv, -1.0);   // 알림 오면 사용자 쪽으로 핸들을 꺾으며 다가옴
+    b.z = clamp(b.z + b.zv * dt, 0, 1);
+
+    // 기울기(차선 변경 방향) + 피치(가속=앞들림, 브레이크=앞쏠림)
+    const leanTarget = (clamp(b.zv * 40 * dir, -9, 9) + Math.sin(now / 900) * 0.6) * Math.min(1, spd * 1.4);   // 멈추면 바로 섬
+    b.lean += (leanTarget - b.lean) * Math.min(1, dt * 5);
+    const pitchTarget = clamp(-b.acc * 0.04, -5, 6.5);   // 가속(+) → 음수(앞 들림), 브레이크 → 앞쏠림
+    b.pitch += (pitchTarget - b.pitch) * Math.min(1, dt * 9);
+
+    // 서스펜션: 노면 요철
+    if (b.v > 8 && now > b.nextBump) {
+      b.susV -= rand(28, 70) * clamp(spd, 0.4, 1.3);
+      b.nextBump = now + rand(450, 2200) / Math.max(0.5, spd);
+    }
+    const susA = -PHYS.SPRING * b.susY - PHYS.DAMP * b.susV;
+    b.susV += susA * dt;
+    b.susY += b.susV * dt;
+
+    // 스프라이트 재생 속도 = 실제 속도 (바퀴·배기)
+    if (player.name && player.name.startsWith('ride_')) player.rate = clamp(b.v / Math.max(1, cruise()), 0.15, 1.7);
+    else player.rate = 1;
+
+    // 정지 완료
+    if ((mode === 'brake' || mode === 'ride') && b.v <= 0.5 && b.vTarget === 0 && b.onStop) {
+      const cb = b.onStop;
+      b.onStop = null;
+      b.brake = 0;
+      cb();
+    }
+  }
+
+  function applyTransform() {
+    const b = bike;
+    const s = scaleAt(b.z);
+    const lift = PHYS.FAR_LIFT * charH * b.z;
+    const bump = clamp(b.susY, -14, 10);
+    const sq = 1 + clamp(b.susY, -14, 14) * 0.004 + clamp(b.acc, -400, 200) * -0.00004;
+    const rot = b.lean + b.pitch * dir;
+    buddyEl.style.transform =
+      `translate3d(${(x - charW / 2).toFixed(1)}px, ${(-lift + bump).toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg) scale(${(s * (2 - sq)).toFixed(4)}, ${(s * sq).toFixed(4)})`;
+    buddyEl.style.zIndex = String(10 + Math.round((1 - b.z) * 10));
+  }
+
   // ---------- 동작 단위 ----------
-  function ride() { mode = 'ride'; facing = side(); player.play(`ride_${side()}`); }
-  function stop() { mode = 'stop'; facing = side(); player.play(`idle_${side()}`); }
+  function ride() {
+    mode = 'ride'; facing = side();
+    bike.brake = 0; bike.onStop = null;
+    bike.vTarget = cruise() * rand(0.8, 1.25);
+    player.play(`ride_${side()}`);
+  }
+  function stop() { mode = 'stop'; facing = side(); bike.vTarget = 0; bike.brake = 0; player.play(`idle_${side()}`); }
+  /** 브레이크를 밟아 멈춘 뒤 cb */
+  function brakeThen(cb, decel = PHYS.BRAKE) {
+    if (bike.v <= 0.5) { bike.v = 0; bike.vTarget = 0; return cb(); }
+    if (mode !== 'ride' && mode !== 'brake') { bike.v = 0; return cb(); }
+    mode = 'brake';
+    bike.vTarget = 0;
+    bike.brake = decel;
+    bike.onStop = cb;
+  }
   function idle() {
     if (cfg.dnd) return toFront(guard(() => { mode = 'sleep'; player.play('sleep'); }));
     toSide(guard(() => {
@@ -110,16 +217,20 @@
     }));
   }
   function turn(cb) {
-    mode = 'anim';
-    const toRight = dir < 0;
-    player.play('turn', {
-      reverse: !toRight, onEnd: guard(() => { dir = toRight ? 1 : -1; facing = side(); cb ? cb() : ride(); }),
-    });
+    brakeThen(guard(() => {
+      mode = 'anim';
+      const toRight = dir < 0;
+      player.play('turn', {
+        reverse: !toRight, onEnd: guard(() => { dir = toRight ? 1 : -1; facing = side(); cb ? cb() : ride(); }),
+      });
+    }));
   }
   function toFront(cb) {
     if (facing === 'front') return cb();
-    mode = 'anim';
-    player.play(`face_${side()}`, { onEnd: guard(() => { facing = 'front'; cb(); }) });
+    brakeThen(guard(() => {
+      mode = 'anim';
+      player.play(`face_${side()}`, { onEnd: guard(() => { facing = 'front'; cb(); }) });
+    }), busy ? PHYS.BRAKE_NOTIFY : PHYS.BRAKE);
   }
   function toSide(cb) {
     if (facing !== 'front') return cb();
@@ -140,7 +251,8 @@
     canvas.style.width = charW + 'px';
     canvas.style.height = charH + 'px';
     document.documentElement.style.setProperty('--char-w', charW + 'px');
-    x = Math.min(Math.max(0, x), Math.max(0, laneW() - charW));
+    x = clamp(x, halfW(), Math.max(halfW(), laneW() - halfW()));
+    if (mode === 'ride') bike.vTarget = cruise() * rand(0.8, 1.25);
 
     if (!busy && !dragging) {
       if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) { epoch++; clearTimers(); }
@@ -150,22 +262,25 @@
     updateBadge();
   }
 
-  // ---------- 이동 루프 ----------
+  // ---------- 메인 루프 ----------
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (!busy && !dragging && !cfg.dnd && !cfg.paused && (mode === 'ride' || mode === 'stop')) {
       if (now > nextDecision) decide(now);
-      if (mode === 'ride') {
-        x += dir * BASE_SPEED * cfg.speed * dt;
-        const max = Math.max(0, laneW() - charW);
-        if (x <= 0 && dir < 0) { x = 0; turn(); }
-        else if (x >= max && dir > 0) { x = max; turn(); }
-        x = Math.min(Math.max(0, x), max);
-      }
     }
-    buddyEl.style.transform = `translate3d(${x.toFixed(1)}px,0,0)`;
+    if (!dragging) physics(dt, now);
+    // 화면 끝: 제동 거리를 계산해 미리 브레이크 → 유턴
+    if (mode === 'ride' && !busy) {
+      const hw = halfW();
+      const dist = dir > 0 ? laneW() - hw - x : x - hw;
+      const stopDist = (bike.v * scaleAt(bike.z)) ** 2 / (2 * PHYS.BRAKE * scaleAt(bike.z)) + 6;
+      if (dist <= stopDist) turn();
+    }
+    x = clamp(x, halfW(), Math.max(halfW(), laneW() - halfW()));
+    player.tick(dt);
+    applyTransform();
     player.draw(now);
     if (!bubble.hidden) placeBubble();
     requestAnimationFrame(frame);
@@ -174,9 +289,9 @@
   function decide(now) {
     if (mode === 'ride') {
       const r = Math.random();
-      if (r < 0.35) { stop(); nextDecision = now + rand(2500, 6000); }
-      else if (r < 0.5) { turn(); nextDecision = now + rand(5000, 12000); }
-      else nextDecision = now + rand(6000, 14000);
+      if (r < 0.3) { brakeThen(guard(stop)); nextDecision = now + rand(4000, 8000); }
+      else if (r < 0.42) { turn(); nextDecision = now + rand(6000, 12000); }
+      else { bike.vTarget = cruise() * rand(0.6, 1.45); nextDecision = now + rand(3000, 8000); }   // 속도 바꾸기
     } else {
       if (Math.random() < 0.3) turn(); else ride();
       nextDecision = now + rand(6000, 14000);
@@ -211,7 +326,7 @@
       return;
     }
     busy = true;
-    mode = 'busy';
+    if (mode !== 'ride' && mode !== 'brake') mode = 'busy';   // 달리는 중이면 브레이크부터
     pending = 0;
     current = queue.shift();
     updateBadge();
@@ -282,10 +397,12 @@
   function placeBubble() {
     const W = laneW();
     const bw = bubble.offsetWidth;
-    const headX = x + charW * HEAD_X;
+    const s = scaleAt(bike.z);
+    const headX = x + charW * s * (HEAD_X - 0.5);
     const left = Math.max(8, Math.min(W - bw - 8, headX - bw / 2));
     bubble.style.left = left + 'px';
-    bubble.style.bottom = Math.round(charH * (1 - (META.headTop ?? HEAD_TOP)) + 14) + 'px';
+    const lift = PHYS.FAR_LIFT * charH * bike.z;
+    bubble.style.bottom = Math.round(lift + s * charH * (1 - (META.headTop ?? HEAD_TOP)) + 14) + 'px';
     bubble.style.setProperty('--tail-x', Math.max(22, Math.min(bw - 22, headX - left)) + 'px');
   }
 
@@ -345,7 +462,7 @@
       buddyEl.classList.add('dragging');
       if (!busy && facing !== 'front') { epoch++; clearTimers(); stop(); }
     }
-    if (dragging.moved) x = Math.max(0, Math.min(laneW() - charW, dragging.ox + dx));
+    if (dragging.moved) { x = clamp(dragging.ox + dx, halfW(), laneW() - halfW()); bike.v = 0; }
   });
   buddyEl.addEventListener('pointerup', () => {
     if (!dragging) return;
@@ -363,7 +480,8 @@
     lastClick = now;
     if (busy) { dismiss(); return; }
     epoch++; clearTimers();
-    busy = true; mode = 'busy';
+    busy = true;
+    if (mode !== 'ride' && mode !== 'brake') mode = 'busy';
     if (cfg.sound) horn();
     toFront(guard(() => {
       player.play('happy');
@@ -388,7 +506,7 @@
   bridge.onCommand(c => { if (c === 'replay') replay(); });
   bridge.getConfig().then(c => {
     applyConfig(c || {});
-    x = rand(0, Math.max(0, laneW() - charW));
+    x = rand(halfW(), Math.max(halfW(), laneW() - halfW()));
     dir = Math.random() < 0.5 ? 1 : -1;
     facing = side();
     if (cfg.dnd) idle(); else if (cfg.paused) stop(); else ride();
@@ -420,7 +538,7 @@
     window.__demo = {
       send: n => handlers.notify.forEach(h => h({ time: Date.now(), ...n })),
       config: c => { demoCfg = { ...demoCfg, ...c }; fire(); },
-      state: () => ({ mode, facing, dir, motion: player.name, busy, x }),
+      state: () => ({ mode, facing, dir, motion: player.name, busy, x: Math.round(x), v: Math.round(bike.v), z: +bike.z.toFixed(2), lean: +bike.lean.toFixed(1), pitch: +bike.pitch.toFixed(1), rate: +player.rate.toFixed(2) }),
     };
     return {
       onNotify: cb => handlers.notify.push(cb),
