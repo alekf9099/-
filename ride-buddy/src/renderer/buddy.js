@@ -79,7 +79,7 @@
   };
 
   // ---------- 상태 ----------
-  let cfg = { skin: '2d', size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true };
+  let cfg = { skin: '2d', size: 'm', speed: 1, sound: true, dnd: false, paused: false, showBody: true, catchphrase: true };
   let charW = SIZE_PX.m, charH = charW * META.frameH / META.frameW;
   let x = 0, dir = 1;          // x = 캐릭터 중심(가로, px)
   let mode = 'ride';           // ride | brake | stop | anim(전환 중) | busy | sleep
@@ -180,15 +180,20 @@
     }
   }
 
+  let revUntil = 0;
   function applyTransform() {
     const b = bike;
     const s = scaleAt(b.z);
     const lift = PHYS.FAR_LIFT * charH * b.z;
     const bump = clamp(b.susY, -14, 10);
     const sq = 1 + clamp(b.susY, -14, 14) * 0.004 + clamp(b.acc, -400, 200) * -0.00004;
-    const rot = b.lean + b.pitch * dir;
+    let rot = b.lean + b.pitch * dir;
+    let jx = 0, jy = 0;
+    if (performance.now() < revUntil) {          // "달달달달" 엔진 공회전 떨림
+      jx = rand(-2.2, 2.2); jy = rand(-2.5, 1); rot += rand(-0.9, 0.9);
+    }
     buddyEl.style.transform =
-      `translate3d(${(x - charW / 2).toFixed(1)}px, ${(-lift + bump).toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg) scale(${(s * (2 - sq)).toFixed(4)}, ${(s * sq).toFixed(4)})`;
+      `translate3d(${(x - charW / 2 + jx).toFixed(1)}px, ${(-lift + bump + jy).toFixed(1)}px, 0) rotate(${rot.toFixed(2)}deg) scale(${(s * (2 - sq)).toFixed(4)}, ${(s * sq).toFixed(4)})`;
     buddyEl.style.zIndex = String(10 + Math.round((1 - b.z) * 10));
   }
 
@@ -283,6 +288,7 @@
     applyTransform();
     player.draw(now);
     if (!bubble.hidden) placeBubble();
+    if (!shoutEl.hidden) placeShout();
     requestAnimationFrame(frame);
   }
 
@@ -333,12 +339,50 @@
     const n = current;
     toFront(guard(() => {
       player.play('notify');
-      if (cfg.sound) horn();
-      later(guard(() => showBubble(n)), 900);
+      if (cfg.catchphrase) {
+        catchphrase();                                   // 달달달달~ 감사하고~
+        later(guard(() => showBubble(n)), 1550);
+      } else {
+        if (cfg.sound) horn();
+        later(guard(() => showBubble(n)), 900);
+      }
     }));
   }
 
+  // ---------- 유행어 리액션: "달달달달~ 감사하고~" ----------
+  const shoutEl = $('#shout'), shoutText = $('#shout .shout-text');
+  function setShout(kind, html) {
+    shoutEl.className = kind;
+    shoutText.innerHTML = html;
+    shoutEl.hidden = false;
+    placeShout();
+  }
+  let shoutToken = 0;
+  function hideShout() { shoutEl.hidden = true; shoutEl.className = ''; }
+  function catchphrase(onlyThanks = false) {
+    const STEP = 130;
+    if (!onlyThanks) {
+      setShout('rev', ['달', '달', '달', '달'].map((c, i) => `<span class="syl" style="animation-delay:${i * STEP}ms">${c}</span>`).join('') + '<span class="syl" style="animation-delay:520ms">~</span>');
+      revUntil = performance.now() + 650;
+      if (cfg.sound) engineRev(4, STEP / 1000);
+    }
+    const t1 = onlyThanks ? 0 : 680;
+    const tok = ++shoutToken;                      // 흐름이 끊겨도 자막이 남지 않도록 별도 타이머
+    setTimeout(() => { if (tok === shoutToken) { setShout('thanks', '감사하고~♥'); if (cfg.sound) chime(); } }, t1);
+    setTimeout(() => { if (tok === shoutToken) hideShout(); }, t1 + 820);
+  }
+  function placeShout() {
+    if (shoutEl.hidden) return;
+    const s = scaleAt(bike.z);
+    const lift = PHYS.FAR_LIFT * charH * bike.z;
+    const W = laneW();
+    const w = shoutEl.offsetWidth;
+    shoutEl.style.left = clamp(x, w / 2 + 8, W - w / 2 - 8) + 'px';
+    shoutEl.style.bottom = Math.round(lift + s * charH * (1 - (META.headTop ?? HEAD_TOP)) + 8) + 'px';
+  }
+
   function showBubble(n) {
+    hideShout();
     bubble.style.setProperty('--chip-bg', n.color || '#FF7A45');
     bubble.style.setProperty('--chip-ink', n.ink || '#fff');
     $('.app-icon').textContent = n.icon || '🔔';
@@ -419,6 +463,45 @@
 
   // ---------- 효과음: 바이크 경적 "빵빵!" ----------
   let actx = null;
+  /** "달달달달" 엔진 공회전: 낮은 톱니파 펄스 n번, 점점 높아짐 */
+  function engineRev(n = 4, step = 0.13) {
+    try {
+      actx = actx || new AudioContext();
+      const t0 = actx.currentTime + 0.02;
+      for (let i = 0; i < n; i++) {
+        const t = t0 + i * step;
+        const o = actx.createOscillator(), o2 = actx.createOscillator();
+        const g = actx.createGain(), f = actx.createBiquadFilter();
+        o.type = 'sawtooth'; o2.type = 'square';
+        o.frequency.setValueAtTime(62 + i * 9, t);
+        o.frequency.exponentialRampToValueAtTime(48 + i * 9, t + step * 0.9);
+        o2.frequency.setValueAtTime(31 + i * 4.5, t);
+        f.type = 'lowpass'; f.frequency.value = 520 + i * 60; f.Q.value = 4;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.16, t + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + step * 0.92);
+        o.connect(f); o2.connect(f); f.connect(g); g.connect(actx.destination);
+        o.start(t); o2.start(t); o.stop(t + step); o2.stop(t + step);
+      }
+    } catch { /* 오디오 장치 없음 */ }
+  }
+  /** "감사하고~" 띵동 */
+  function chime() {
+    try {
+      actx = actx || new AudioContext();
+      const t0 = actx.currentTime + 0.01;
+      [[784, 0], [1175, 0.12]].forEach(([fr, off]) => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.value = fr;
+        g.gain.setValueAtTime(0.0001, t0 + off);
+        g.gain.exponentialRampToValueAtTime(0.09, t0 + off + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.5);
+        o.connect(g); g.connect(actx.destination);
+        o.start(t0 + off); o.stop(t0 + off + 0.55);
+      });
+    } catch { /* 오디오 장치 없음 */ }
+  }
+
   function horn() {
     try {
       actx = actx || new AudioContext();
@@ -485,6 +568,7 @@
     if (cfg.sound) horn();
     toFront(guard(() => {
       player.play('happy');
+      if (cfg.catchphrase) catchphrase(true);
       later(guard(() => { busy = false; idle(); }), 1500);
     }));
   }
@@ -526,7 +610,7 @@
       { app: 'Slack', icon: '#', color: '#4A154B', ink: '#fff', title: '#dev-배포', body: 'v1.4.0 프로덕션 배포 완료 🎉' },
       { app: '캘린더', icon: '📅', color: '#E8710A', ink: '#fff', title: '10분 후 일정', body: '팀 스탠드업 미팅 (회의실 B)' },
     ];
-    let k = 0, demoCfg = { skin: '2d', size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true };
+    let k = 0, demoCfg = { skin: '2d', size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true, catchphrase: true };
     const fire = () => handlers.config.forEach(h => h(demoCfg));
     const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; bar.appendChild(b); };
     btn('🔔 알림 보내기', () => handlers.notify.forEach(h => h({ ...samples[k++ % samples.length], time: Date.now() })));

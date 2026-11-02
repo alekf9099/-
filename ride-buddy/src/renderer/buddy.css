@@ -113,3 +113,27 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
   background: #fff; cursor: pointer;
 }
 body.demo { background: linear-gradient(#cfe6ff, #eef6ff 60%, #d9d4cc 60%); }
+
+/* ---------- 유행어 리액션: "달달달달~ 감사하고~" ---------- */
+#shout {
+  position: absolute; left: 0; bottom: 0; z-index: 40;
+  transform: translateX(-50%);
+  pointer-events: none; white-space: nowrap;
+}
+#shout[hidden] { display: none; }
+.shout-text {
+  display: inline-block;
+  font-weight: 900; font-style: italic; letter-spacing: -1px;
+  font-size: clamp(22px, calc(var(--char-w) * 0.15), 44px);
+  color: #FFE14D;
+  -webkit-text-stroke: 6px #3B2B25; paint-order: stroke fill;
+  text-shadow: 0 4px 0 #3B2B25, 0 10px 16px rgba(30, 20, 15, .28);
+  transform: rotate(-7deg);
+}
+.shout-text .syl { display: inline-block; animation: syl-pop .22s cubic-bezier(.3, 1.9, .5, 1) both; }
+#shout.rev .shout-text { animation: rev .07s steps(2) infinite; }
+#shout.thanks .shout-text { color: #FF9BB0; animation: thanks-in .38s cubic-bezier(.3, 1.8, .5, 1), thanks-bob .45s .38s ease-in-out infinite alternate; }
+@keyframes syl-pop { from { transform: translateY(14px) scale(.2); opacity: 0; } }
+@keyframes rev { 0% { transform: rotate(-7deg) translate(-2px, 1px); } 100% { transform: rotate(-6deg) translate(2px, -1px); } }
+@keyframes thanks-in { from { transform: rotate(-7deg) scale(.2); opacity: 0; } }
+@keyframes thanks-bob { from { transform: rotate(-5deg) scale(1); } to { transform: rotate(4deg) scale(1.08) translateY(-4px); } }

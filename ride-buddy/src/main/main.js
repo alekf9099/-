@@ -150,6 +150,7 @@ function buildMenu() {
     { label: '이동 멈춤', type: 'checkbox', checked: cfg.paused, click: i => set({ paused: i.checked }) },
     { label: '방해 금지 (졸기 모드)', type: 'checkbox', checked: cfg.dnd, click: i => set({ dnd: i.checked }) },
     { label: '알림음 (빵빵!)', type: 'checkbox', checked: cfg.sound, click: i => set({ sound: i.checked }) },
+    { label: '유행어 리액션 (달달달달~ 감사하고~)', type: 'checkbox', checked: cfg.catchphrase !== false, click: i => set({ catchphrase: i.checked }) },
     { label: '메시지 내용 표시', type: 'checkbox', checked: cfg.showBody, click: i => set({ showBody: i.checked }) },
     {
       label: '캐릭터 스타일', submenu: [
