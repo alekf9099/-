@@ -29,6 +29,12 @@ MOTION_INFO = {
     'bow': ('꾸벅 인사 "감사하고~"', False), 'look_r': ('두리번', False), 'yawn_r': ('하품', False),
     'groove': ('신나서 리듬 타기', True), 'wink': ('윙크', False), 'wave_out': ('손 내리기', False),
     'brake_r': ('브레이크 → 정지 → 발 내리기', False), 'go_r': ('출발 (발 올리기 + 가속)', False),
+    'parked': ('세워둔 오토바이 (킥스탠드)', True), 'dismount': ('오토바이에서 내리기 (역재생 = 타기)', False),
+    # 3등신 도보 모션
+    'stand': ('서 있기', True), 'walk_r': ('걷기', True), 'wave_s': ('손 흔들기', True), 'jump_s': ('점프', False),
+    'stretch_s': ('기지개', False), 'sit_down': ('앉기 (역재생 = 일어나기)', False), 'sit': ('앉아 쉬기', True),
+    'nap': ('앉아서 졸기', True), 'look_s': ('두리번', False), 'talk_s': ('알림 읽어주기', True), 'dance_s': ('춤', True),
+    'bow_s': ('꾸벅 인사', False), 'surprise_s': ('깜짝 (알림 도착)', False),
 }
 
 
@@ -56,6 +62,8 @@ def main():
     ap.add_argument('--display-scale', type=float, default=1.0, help='앱에서 표시 배율 (효과 여백이 큰 스킨 보정)')
     ap.add_argument('--icons', action='store_true', help='front 프레임으로 앱/트레이 아이콘 생성')
     ap.add_argument('--icon-scale', type=float, default=0.64, help='아이콘 크롭 크기 (캐릭터 높이 대비)')
+    ap.add_argument('--scale', type=float, help='원본 px → 스프라이트 px 배율 고정 (다른 스킨과 크기 맞춤)')
+    ap.add_argument('--point', action='append', default=[], help='이름=x,y (렌더 캔버스 좌표) → 메타데이터에 스프라이트 좌표로 기록')
     a = ap.parse_args()
     a.app = a.app or os.path.join(here, '..', 'src', 'renderer', 'sprites', a.skin)
     a.out = a.out or os.path.join(here, '..', 'motions', a.skin)
@@ -79,7 +87,7 @@ def main():
     pad = 6
     gbox = (max(0, gbox[0] - pad), max(0, gbox[1] - pad), min(W0, gbox[2] + pad), min(H0, gbox[3] + pad))
     cw, ch = gbox[2] - gbox[0], gbox[3] - gbox[1]
-    scale = min(1.0, a.width / cw)
+    scale = a.scale if a.scale else min(1.0, a.width / cw)
     fw, fh = round(cw * scale), round(ch * scale)
     print(f'crop {gbox} → frame {fw}x{fh} @ {FPS}fps')
 
@@ -94,12 +102,18 @@ def main():
             return im.resize((fw, fh), Image.LANCZOS) if scale < 1 else im
 
     head_top = 0.15
-    if 'front' in files:
-        f0 = load(files['front'][0])
+    hk = 'front' if 'front' in files else ('stand' if 'stand' in files else None)
+    if hk:
+        f0 = load(files[hk][0])
         b0 = alpha_box(f0, 20)
         head_top = round(b0[1] / fh, 4)
+    points = {}
+    for spec in a.point:
+        name, xy = spec.split('=')
+        x, y = (float(v) for v in xy.split(','))
+        points[name] = [round((x - gbox[0]) * scale, 2), round((y - gbox[1]) * scale, 2)]
     app_meta = {'skin': a.skin, 'fps': FPS, 'frameW': fw, 'frameH': fh, 'displayScale': a.display_scale,
-                'headTop': head_top, 'motions': {}}
+                'headTop': head_top, 'scale': round(scale, 6), 'points': points, 'motions': {}}
     out_meta = {'fps': FPS, 'frameSize': {'w': fw, 'h': fh}, 'generatedBy': f'{a.skin} pipeline + tools/pack_sprites.py', 'motions': []}
 
     total_px = 0

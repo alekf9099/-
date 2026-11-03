@@ -21,7 +21,6 @@
   const $ = s => document.querySelector(s);
   const buddyEl = $('#buddy'), badgeEl = $('#badge'), canvas = $('#rb-canvas');
   const bubble = $('#bubble');
-  const ctx = canvas.getContext('2d');
 
   // ---------- 브리지 (Electron / 브라우저 데모) ----------
   const bridge = window.rideBuddyAPI || makeDemoBridge();
@@ -65,73 +64,103 @@
   }
   loadSkin('2d');
 
-  const fadeCanvas = document.createElement('canvas');
-  const fadeCtx = fadeCanvas.getContext('2d');
+  // 도보(3등신) 스프라이트 — 2D 전용. 오토바이와 같은 원본 픽셀 배율로 렌더됨
+  const WMETA = SKINS['2dfoot'] || null;
+  const wsheets = {};
+  function wsheetFor(name) {
+    if (!wsheets[name]) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = `sprites/2dfoot/${WMETA.motions[name].file}`;
+      wsheets[name] = img;
+    }
+    return wsheets[name];
+  }
+  function wresolve(name) {
+    if (WMETA.motions[name]) return { name, flip: false };
+    if (name.endsWith('_l') && WMETA.motions[name.slice(0, -2) + '_r']) return { name: name.slice(0, -2) + '_r', flip: true };
+    return { name: 'stand', flip: false };
+  }
+
   const FADE_MS = 140;
-  const player = {
-    name: null, sheet: null, flip: false, reverse: false, loop: true, onEnd: null, done: false, elapsed: 0, rate: 1,
-    fadeUntil: 0, drewOnce: false,
-    play(name, { reverse = false, loop, onEnd } = {}) {
-      const r = resolve(name);
-      const m = META.motions[r.name];
-      // 크로스페이드: 직전 화면 보관 (자세가 이어지게 설계된 전환 모션은 제외 — 겹쳐 보이는 잔상 방지)
-      const seamless = /^(turn|face_|go_|brake_|wave_out|wheelie_)/.test(name) || /^wheelie_/.test(this.name || '');
-      if (this.drewOnce && this.name !== name && !seamless) {
-        fadeCanvas.width = canvas.width; fadeCanvas.height = canvas.height;
-        fadeCtx.clearRect(0, 0, fadeCanvas.width, fadeCanvas.height);
-        fadeCtx.drawImage(canvas, 0, 0);
-        this.fadeUntil = performance.now() + FADE_MS;
-      }
-      this.name = name;                 // 요청한 이름 (흐름 판단용)
-      this.sheet = r.name;              // 실제 그릴 시트
-      this.flip = r.flip;
-      this.reverse = reverse;
-      this.loop = loop ?? m.loop;
-      this.onEnd = onEnd || null;
-      this.done = false;
-      this.elapsed = 0;
-      sheetFor(r.name);
-    },
-    tick(dt) { this.elapsed += dt * this.rate; },
-    /** 스킨이 바뀌면 지금 모션을 새 스킨 기준으로 다시 찾기 */
-    rebind() {
-      if (!this.name) return;
-      const r = resolve(this.name);
-      this.sheet = r.name; this.flip = r.flip;
-      if (!this.loop && this.elapsed * META.fps >= META.motions[r.name].frames) this.elapsed = 0;
-    },
-    frameIndex() {
-      const m = META.motions[this.sheet];
-      let i = Math.floor(this.elapsed * META.fps);
-      if (this.loop) i %= m.frames;
-      else if (i >= m.frames) {
-        i = m.frames - 1;
-        if (!this.done) { this.done = true; const cb = this.onEnd; this.onEnd = null; cb && setTimeout(cb, 0); }
-      }
-      return this.reverse ? m.frames - 1 - i : i;
-    },
-    draw(now) {
-      if (!this.sheet) return;
-      const m = META.motions[this.sheet];
-      const img = sheetFor(this.sheet);
-      const i = this.frameIndex();
-      if (!img.complete || !img.naturalWidth) return;     // 로딩 중엔 직전 그림 유지
-      const cw = m.w || META.frameW, ch = m.h || META.frameH;
-      const k = canvas.width / META.frameW;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save();
-      if (this.flip) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
-      ctx.drawImage(img, (i % m.cols) * cw, Math.floor(i / m.cols) * ch, cw, ch,
-        (m.ox || 0) * k, (m.oy || 0) * k, cw * k, ch * k);
-      ctx.restore();
-      if (now < this.fadeUntil) {
-        ctx.globalAlpha = (this.fadeUntil - now) / FADE_MS;
-        ctx.drawImage(fadeCanvas, 0, 0);
-        ctx.globalAlpha = 1;
-      }
-      this.drewOnce = true;
-    },
-  };
+  /** 스프라이트 플레이어: canvas 에 모션 시트를 재생 (크로스페이드·좌우 반전·역재생) */
+  function makePlayer(cv, metaFn, resolveFn, sheetFn, seamlessRe) {
+    const c2d = cv.getContext('2d');
+    const fadeCanvas = document.createElement('canvas');
+    const fadeCtx = fadeCanvas.getContext('2d');
+    return {
+      name: null, sheet: null, flip: false, reverse: false, loop: true, onEnd: null, done: false, elapsed: 0, rate: 1,
+      fadeUntil: 0, drewOnce: false,
+      play(name, { reverse = false, loop, onEnd, flip = false } = {}) {
+        const M = metaFn();
+        const r = resolveFn(name);
+        const m = M.motions[r.name];
+        // 크로스페이드: 직전 화면 보관 (자세가 이어지게 설계된 전환 모션은 제외 — 겹쳐 보이는 잔상 방지)
+        const seamless = seamlessRe.test(name) || seamlessRe.test(this.name || '');
+        if (this.drewOnce && this.name !== name && !seamless) {
+          fadeCanvas.width = cv.width; fadeCanvas.height = cv.height;
+          fadeCtx.clearRect(0, 0, fadeCanvas.width, fadeCanvas.height);
+          fadeCtx.drawImage(cv, 0, 0);
+          this.fadeUntil = performance.now() + FADE_MS;
+        }
+        this.name = name;                 // 요청한 이름 (흐름 판단용)
+        this.sheet = r.name;              // 실제 그릴 시트
+        this.flip = r.flip !== flip;      // 강제 반전 (왼쪽을 볼 때)
+        this.reverse = reverse;
+        this.loop = loop ?? m.loop;
+        this.onEnd = onEnd || null;
+        this.done = false;
+        this.elapsed = 0;
+        sheetFn(r.name);
+      },
+      tick(dt) { this.elapsed += dt * this.rate; },
+      /** 스킨이 바뀌면 지금 모션을 새 스킨 기준으로 다시 찾기 */
+      rebind() {
+        if (!this.name) return;
+        const M = metaFn();
+        const r = resolveFn(this.name);
+        this.sheet = r.name; this.flip = r.flip;
+        if (!this.loop && this.elapsed * M.fps >= M.motions[r.name].frames) this.elapsed = 0;
+      },
+      frameIndex() {
+        const M = metaFn();
+        const m = M.motions[this.sheet];
+        let i = Math.floor(this.elapsed * M.fps);
+        if (this.loop) i %= m.frames;
+        else if (i >= m.frames) {
+          i = m.frames - 1;
+          if (!this.done) { this.done = true; const cb = this.onEnd; this.onEnd = null; cb && setTimeout(cb, 0); }
+        }
+        return this.reverse ? m.frames - 1 - i : i;
+      },
+      draw(now) {
+        if (!this.sheet) return;
+        const M = metaFn();
+        const m = M.motions[this.sheet];
+        const img = sheetFn(this.sheet);
+        const i = this.frameIndex();
+        if (!img.complete || !img.naturalWidth) return;     // 로딩 중엔 직전 그림 유지
+        const cw = m.w || M.frameW, ch = m.h || M.frameH;
+        const k = cv.width / M.frameW;
+        c2d.clearRect(0, 0, cv.width, cv.height);
+        c2d.save();
+        if (this.flip) { c2d.translate(cv.width, 0); c2d.scale(-1, 1); }
+        c2d.drawImage(img, (i % m.cols) * cw, Math.floor(i / m.cols) * ch, cw, ch,
+          (m.ox || 0) * k, (m.oy || 0) * k, cw * k, ch * k);
+        c2d.restore();
+        if (now < this.fadeUntil) {
+          c2d.globalAlpha = (this.fadeUntil - now) / FADE_MS;
+          c2d.drawImage(fadeCanvas, 0, 0);
+          c2d.globalAlpha = 1;
+        }
+        this.drewOnce = true;
+      },
+    };
+  }
+  const player = makePlayer(canvas, () => META, resolve, sheetFor, /^(turn|face_|go_|brake_|wave_out|wheelie_|dismount|parked)/);
+  const wcanvas = $('#wk-canvas');
+  const walkerEl = $('#walker');
+  const wplayer = WMETA ? makePlayer(wcanvas, () => WMETA, wresolve, wsheetFor, /^(sit_down|walk_)/) : null;
 
   // ---------- 상태 ----------
   let cfg = { skin: '2d', size: 'm', speed: 1, sound: false, dnd: false, paused: false, showBody: true, catchphrase: true };
@@ -316,7 +345,11 @@
   function applyConfig(c) {
     const was = { ...cfg };
     cfg = { ...cfg, ...c };
-    if (cfg.skin !== META.skin) { loadSkin(cfg.skin); player.rebind(); }
+    if (cfg.skin !== META.skin) {
+      if (onFoot) { onFoot = false; walkerEl.hidden = true; mode = 'stop'; }   // 3D 에는 도보 모드 없음 → 바로 탑승
+      loadSkin(cfg.skin); player.rebind();
+      if (mode === 'stop' && !busy) player.play(`idle_${side()}`);
+    }
     charW = Math.round((SIZE_PX[cfg.size] || SIZE_PX.m) * (META.displayScale || 1));
     charH = Math.round(charW * META.frameH / META.frameW);
     const dpr = window.devicePixelRatio || 1;
@@ -325,13 +358,14 @@
     canvas.style.width = charW + 'px';
     canvas.style.height = charH + 'px';
     document.documentElement.style.setProperty('--char-w', charW + 'px');
+    sizeWalker();
     x = clamp(x, halfW(), Math.max(halfW(), laneW() - halfW()));
     if (mode === 'ride') bike.vTarget = cruise() * rand(0.8, 1.25);
 
     if (!busy && !dragging) {
       if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) { epoch++; clearTimers(); }
       if (!cfg.dnd && was.dnd && queue.length) { updateBadge(); return next(); }
-      if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) idle();
+      if (cfg.dnd !== was.dnd || cfg.paused !== was.paused) act().resume();
     }
     updateBadge();
   }
@@ -359,6 +393,7 @@
     player.tick(dt);
     applyTransform();
     player.draw(now);
+    walkerTick(dt, now);
     if (!bubble.hidden) placeBubble();
     if (!shoutEl.hidden) placeShout();
     requestAnimationFrame(frame);
@@ -373,6 +408,7 @@
       else if (r < 0.52 && bike.v > cruise() * 0.6) { wheelie(); nextDecision = now + rand(5000, 10000); }
       else { bike.vTarget = cruise() * rand(0.6, 1.45); nextDecision = now + rand(3000, 8000); }   // 속도 바꾸기
     } else if (mode === 'stop') {
+      if (Math.random() < 0.22 && dismount()) { return; }                 // 오토바이에서 내려 걸어 다니기
       if (idleVariant()) { nextDecision = now + rand(3500, 6000); return; }
       if (Math.random() < 0.3) turn(); else ride();
       nextDecision = now + rand(6000, 14000);
@@ -396,6 +432,188 @@
     return true;
   }
 
+  // ---------- 도보 모드: 오토바이에서 내려 3등신으로 돌아다니기 ----------
+  // 오토바이는 세워두고(킥스탠드), 캐릭터만 화면을 걸어 다니다가 일정 시간 뒤(또는 오토바이 클릭 시) 돌아와 다시 탐
+  let onFoot = false;
+  const walker = { x: 0, dir: 1, mode: 'stand', target: 0, next: 0, until: 0, then: null, ground: 0 };
+  const canWalk = () => !!(WMETA && META.skin === '2d' && META.motions.dismount && cfg.walk !== false);
+  const kpx = () => charW / META.frameW;                  // CSS px / 스프라이트 px (두 스프라이트 같은 배율)
+  const bikeFlip = () => dir < 0;
+  /** 하차 지점 (화면 좌표: x, 바닥에서의 높이) */
+  function standSpot() {
+    const pt = META.points && META.points.stand ? META.points.stand : [META.frameW * 0.2, META.frameH * 0.95];
+    const s = scaleAt(bike.z), k = kpx();
+    const px = bikeFlip() ? META.frameW - pt[0] : pt[0];
+    return { x: x + (px - META.frameW / 2) * k * s, y: PHYS.FAR_LIFT * charH * bike.z + (META.frameH - pt[1]) * k * s };
+  }
+  function sizeWalker() {
+    if (!WMETA) return;
+    const k = kpx(), dpr = window.devicePixelRatio || 1;
+    const w = WMETA.frameW * k, h = WMETA.frameH * k;
+    wcanvas.width = Math.round(w * dpr); wcanvas.height = Math.round(h * dpr);
+    wcanvas.style.width = w + 'px'; wcanvas.style.height = h + 'px';
+    walkerEl.style.width = w + 'px';
+  }
+  function placeWalker() {
+    if (!onFoot) return;
+    const k = kpx(), s = scaleAt(bike.z);
+    const [ax, ay] = WMETA.points.feet;
+    const h = WMETA.frameH * k;
+    const tx = walker.x - ax * k * s;
+    const up = walker.ground - (WMETA.frameH - ay) * k * s;
+    walkerEl.style.transform = `translate3d(${tx.toFixed(1)}px, ${(-up).toFixed(1)}px, 0) scale(${s.toFixed(4)})`;
+    walkerEl.style.zIndex = String(12 + Math.round((1 - bike.z) * 10));
+  }
+  const wplay = (name, opts = {}) => wplayer.play(name, { flip: walker.dir < 0, ...opts });
+  const wHalf = () => WMETA.frameW * kpx() * scaleAt(bike.z) * 0.22;
+
+  function dismount() {
+    if (!canWalk() || onFoot) return false;
+    epoch++; clearTimers();
+    mode = 'anim';
+    player.play('dismount', {
+      flip: bikeFlip(), onEnd: guard(() => {
+        const sp = standSpot();
+        onFoot = true;
+        mode = 'parked';
+        player.play('parked', { flip: bikeFlip() });
+        walker.x = sp.x; walker.ground = sp.y; walker.dir = dir; walker.mode = 'stand';
+        walker.next = performance.now() + rand(1200, 2500);
+        walker.until = performance.now() + rand(25000, 55000);
+        sizeWalker();
+        walkerEl.hidden = false;
+        wplay('stand');
+        placeWalker();
+      }),
+    });
+    return true;
+  }
+  /** 오토바이로 돌아가서 타기 */
+  function goMount() {
+    if (!onFoot || busy) return;
+    const sp = standSpot();
+    walkTo(sp.x, guard(() => {
+      epoch++; clearTimers();
+      walker.mode = 'anim';
+      walkerEl.hidden = true;
+      onFoot = false;
+      mode = 'anim';
+      player.play('dismount', {
+        flip: bikeFlip(), reverse: true, onEnd: guard(() => {
+          stop();
+          nextDecision = performance.now() + rand(1200, 2500);
+        }),
+      });
+    }), true);
+  }
+  function walkTo(tx, cb, toBike = false) {
+    walker.target = tx;
+    walker.then = cb || null;
+    const d = tx > walker.x ? 1 : -1;
+    walker.dir = d;
+    walker.mode = 'walk';
+    wplay('walk_r');
+    walker.toBike = toBike;
+  }
+  function walkerStand() {
+    walker.mode = 'stand';
+    wplay('stand');
+  }
+  /** 도보 중 심심할 때: 걷기 / 두리번 / 기지개 / 손 흔들기 / 춤 / 앉아 쉬기 / 다시 타러 가기 */
+  function walkerDecide(now) {
+    if (now > walker.until) { goMount(); return; }
+    const r = Math.random();
+    const W = laneW(), hw = wHalf();
+    if (r < 0.42) {
+      walkTo(clamp(walker.x + rand(-0.45, 0.45) * W, hw, W - hw));
+    } else if (r < 0.82) {
+      const pick = ['look_s', 'look_s', 'stretch_s', 'wave_s', 'dance_s'][Math.floor(Math.random() * 5)];
+      walker.mode = 'anim';
+      const dur = { wave_s: 2400, dance_s: 3200 }[pick];
+      wplay(pick, { loop: false, onEnd: dur ? null : guard(walkerStand) });
+      if (dur) later(guard(walkerStand), dur);
+    } else {
+      walker.mode = 'sit';
+      wplay('sit_down', { onEnd: guard(() => wplay('sit')) });
+      later(guard(() => wplay('sit_down', { reverse: true, onEnd: guard(walkerStand) })), rand(5000, 9000));
+    }
+    walker.next = now + rand(3500, 7000);
+  }
+  function walkerTick(dt, now) {
+    if (!onFoot) return;
+    if (walker.mode === 'walk') {
+      const speed = 0.2 * charW * scaleAt(bike.z) * cfg.speed;
+      const dx = walker.target - walker.x;
+      if (Math.abs(dx) <= speed * dt + 0.5) {
+        walker.x = walker.target;
+        const cb = walker.then; walker.then = null;
+        if (cb) cb(); else walkerStand();
+        walker.next = now + rand(2500, 5000);
+      } else {
+        walker.x += Math.sign(dx) * speed * dt;
+      }
+    } else if (walker.mode === 'stand' && !busy && !cfg.dnd && !dragging && now > walker.next) {
+      walkerDecide(now);
+    }
+    wplayer.tick(dt);
+    placeWalker();
+    wplayer.draw(now);
+  }
+
+  // ---------- 행위자: 지금 알림을 받을 캐릭터 (오토바이 탄 상태 / 도보 상태) ----------
+  const BikeActor = {
+    prepare: cb => toFront(cb),
+    rev: () => player.play('rev'),
+    thanks: () => player.play('bow'),
+    notify: () => player.play('notify'),
+    talk: () => player.play('talk'),
+    afterTalk: () => player.play('wave_out', { onEnd: guard(() => player.play('front')) }),
+    celebrate() { const pick = ['happy', 'groove', 'wink'][Math.floor(Math.random() * 3)]; player.play(pick); return pick === 'wink' ? 1250 : 1600; },
+    click() {
+      const choices = ['happy', 'wink', 'groove'].concat(cfg.catchphrase ? ['bow', 'bow'] : []);
+      const pick = choices[Math.floor(Math.random() * choices.length)];
+      player.play(pick);
+      if (pick === 'bow') catchphrase(true);
+      return { wink: 1250, bow: 1150 }[pick] || 1600;
+    },
+    resume: () => idle(),
+    lock() { if (mode !== 'ride' && mode !== 'brake') mode = 'busy'; },
+    head() {
+      const s = scaleAt(bike.z);
+      return { x: x + charW * s * (HEAD_X - 0.5), bottom: PHYS.FAR_LIFT * charH * bike.z + s * charH * (1 - (META.headTop ?? HEAD_TOP)) };
+    },
+  };
+  const WalkerActor = {
+    prepare(cb) { walker.then = null; walker.mode = 'busy'; cb(); },
+    rev: () => wplay('surprise_s'),
+    thanks: () => wplay('bow_s'),
+    notify: () => wplay('surprise_s'),
+    talk: () => wplay('talk_s'),
+    afterTalk: () => wplay('stand'),
+    celebrate() { const pick = ['jump_s', 'dance_s', 'wave_s'][Math.floor(Math.random() * 3)]; wplay(pick, { loop: false }); return pick === 'jump_s' ? 1100 : 1700; },
+    click() {
+      const choices = ['jump_s', 'wave_s', 'dance_s'].concat(cfg.catchphrase ? ['bow_s'] : []);
+      const pick = choices[Math.floor(Math.random() * choices.length)];
+      wplay(pick, { loop: false });
+      if (pick === 'bow_s') catchphrase(true);
+      return { jump_s: 1100, bow_s: 1100 }[pick] || 1700;
+    },
+    resume() {
+      if (cfg.dnd) { walker.mode = 'sleep'; wplay('sit_down', { onEnd: guard(() => wplay('nap')) }); return; }
+      const wasDown = walker.mode === 'sleep' || /^(sit|nap)/.test(wplayer.name || '');
+      walker.next = performance.now() + rand(1500, 3000);
+      if (wasDown) { walker.mode = 'anim'; wplay('sit_down', { reverse: true, onEnd: guard(walkerStand) }); return; }
+      walkerStand();
+    },
+    lock() { walker.mode = 'busy'; },
+    head() {
+      const k = kpx(), s = scaleAt(bike.z);
+      const ay = WMETA.points.feet[1];
+      return { x: walker.x, bottom: walker.ground + (ay - (WMETA.headTop ?? 0.05) * WMETA.frameH) * k * s };
+    },
+  };
+  const act = () => (onFoot ? WalkerActor : BikeActor);
+
   // ---------- 알림 ----------
   function receive(n) {
     history.unshift(n);
@@ -410,34 +628,34 @@
   function next() {
     clearTimers();
     epoch++;
+    const A = act();
     if (!queue.length || cfg.dnd) {
       busy = false;
       current = null;
       hideBubble();
-      if (cfg.dnd) { updateBadge(); return idle(); }
-      mode = 'busy';
+      if (cfg.dnd) { updateBadge(); return A.resume(); }
       busy = true;
-      toFront(guard(() => {
-        const pick = ['happy', 'groove', 'wink'][Math.floor(Math.random() * 3)];
-        player.play(pick);
-        later(guard(() => { busy = false; idle(); }), pick === 'wink' ? 1250 : 1600);
+      A.lock();
+      A.prepare(guard(() => {
+        const dur = A.celebrate();
+        later(guard(() => { busy = false; A.resume(); }), dur);
       }));
       return;
     }
     busy = true;
-    if (mode !== 'ride' && mode !== 'brake') mode = 'busy';   // 달리는 중이면 브레이크부터
+    A.lock();                                            // 달리는 중이면 브레이크부터
     pending = 0;
     current = queue.shift();
     updateBadge();
     const n = current;
-    toFront(guard(() => {
+    A.prepare(guard(() => {
       if (cfg.catchphrase) {
-        player.play('rev');                              // 달달달달~ (제자리 공회전)
+        A.rev();                                         // 달달달달~ (공회전 / 깜짝)
         catchphrase();
-        later(guard(() => player.play('bow')), 680);     // 감사하고~ (꾸벅)
+        later(guard(() => A.thanks()), 680);             // 감사하고~ (꾸벅)
         later(guard(() => showBubble(n)), 1550);
       } else {
-        player.play('notify');
+        A.notify();
         if (cfg.sound) horn();
         later(guard(() => showBubble(n)), 900);
       }
@@ -468,12 +686,11 @@
   }
   function placeShout() {
     if (shoutEl.hidden) return;
-    const s = scaleAt(bike.z);
-    const lift = PHYS.FAR_LIFT * charH * bike.z;
+    const hd = act().head();
     const W = laneW();
     const w = shoutEl.offsetWidth;
-    shoutEl.style.left = clamp(x, w / 2 + 8, W - w / 2 - 8) + 'px';
-    shoutEl.style.bottom = Math.round(lift + s * charH * (1 - (META.headTop ?? HEAD_TOP)) + 8) + 'px';
+    shoutEl.style.left = clamp(hd.x, w / 2 + 8, W - w / 2 - 8) + 'px';
+    shoutEl.style.bottom = Math.round(hd.bottom + 8) + 'px';
   }
 
   function showBubble(n) {
@@ -499,7 +716,7 @@
     placeBubble();
     tEl.textContent = ''; bEl.textContent = '';
 
-    player.play('talk');
+    act().talk();
     const full = [...title], fullB = [...body];
     const total = full.length + fullB.length;
     const step = Math.max(14, Math.min(45, 2200 / Math.max(1, total)));
@@ -512,7 +729,7 @@
       bEl.classList.toggle('typing', i > full.length);
       if (i < total) return later(tick, step);
       tEl.classList.remove('typing'); bEl.classList.remove('typing');
-      player.play('wave_out', { onEnd: guard(() => player.play('front')) });   // 흔들던 손을 핸들로
+      act().afterTalk();                                                       // 흔들던 손 내리기
       const hold = Math.min(9000, 3500 + total * 55);
       const bar = $('.bubble-progress i');
       bar.style.transition = 'none'; bar.style.transform = 'scaleX(1)';
@@ -536,12 +753,11 @@
   function placeBubble() {
     const W = laneW();
     const bw = bubble.offsetWidth;
-    const s = scaleAt(bike.z);
-    const headX = x + charW * s * (HEAD_X - 0.5);
+    const hd = act().head();
+    const headX = hd.x;
     const left = Math.max(8, Math.min(W - bw - 8, headX - bw / 2));
     bubble.style.left = left + 'px';
-    const lift = PHYS.FAR_LIFT * charH * bike.z;
-    bubble.style.bottom = Math.round(lift + s * charH * (1 - (META.headTop ?? HEAD_TOP)) + 14) + 'px';
+    bubble.style.bottom = Math.round(hd.bottom + 14) + 'px';
     bubble.style.setProperty('--tail-x', Math.max(22, Math.min(bw - 22, headX - left)) + 'px');
   }
 
@@ -622,7 +838,7 @@
   document.addEventListener('mousemove', e => {
     if (dragging) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const on = !!(el && el.closest('#buddy, #bubble'));
+    const on = !!(el && el.closest('#buddy, #walker, #bubble'));
     if (on !== interactive) { interactive = on; bridge.setInteractive(on); }
   });
   document.addEventListener('mouseleave', () => { if (!dragging && interactive) { interactive = false; bridge.setInteractive(false); } });
@@ -647,26 +863,49 @@
     const d = dragging;
     dragging = null;
     buddyEl.classList.remove('dragging');
-    if (d.moved) { if (!busy) { nextDecision = performance.now() + rand(2000, 5000); if (mode !== 'sleep') idle(); } return; }
+    if (d.moved) { if (!busy) { nextDecision = performance.now() + rand(2000, 5000); if (mode !== 'sleep' && !onFoot) idle(); } return; }
+    clickTarget = 'bike';
     onClick();
   });
+  // 걷는 캐릭터: 클릭 = 반응, 드래그 = 옮기기
+  let wdrag = null;
+  walkerEl.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    walkerEl.setPointerCapture(e.pointerId);
+    wdrag = { sx: e.clientX, ox: walker.x, moved: false };
+  });
+  walkerEl.addEventListener('pointermove', e => {
+    if (!wdrag) return;
+    const dx = e.clientX - wdrag.sx;
+    if (!wdrag.moved && Math.abs(dx) > 4) { wdrag.moved = true; dragging = true; if (!busy) { walker.mode = 'drag'; wplay('jump_s', { loop: false }); } }
+    if (wdrag.moved) walker.x = clamp(wdrag.ox + dx, wHalf(), laneW() - wHalf());
+  });
+  walkerEl.addEventListener('pointerup', () => {
+    if (!wdrag) return;
+    const d = wdrag;
+    wdrag = null; dragging = null;
+    if (d.moved) { if (!busy) WalkerActor.resume(); return; }
+    clickTarget = 'walker';
+    onClick();
+  });
+  walkerEl.addEventListener('contextmenu', e => { e.preventDefault(); bridge.openMenu(); });
 
   let lastClick = 0;
+  let clickTarget = 'bike';
   function onClick() {
     const now = performance.now();
     if (now - lastClick < 350) { lastClick = 0; replay(); return; }
     lastClick = now;
     if (busy) { dismiss(); return; }
+    if (onFoot && clickTarget === 'bike') { goMount(); return; }   // 세워둔 오토바이 클릭 → 돌아와서 타기
     epoch++; clearTimers();
     busy = true;
-    if (mode !== 'ride' && mode !== 'brake') mode = 'busy';
-    const choices = ['happy', 'wink', 'groove'].concat(cfg.catchphrase ? ['bow', 'bow'] : []);
-    const pick = choices[Math.floor(Math.random() * choices.length)];
-    if (cfg.sound && pick !== 'bow') horn();
-    toFront(guard(() => {
-      player.play(pick);
-      if (pick === 'bow') catchphrase(true);
-      later(guard(() => { busy = false; idle(); }), { wink: 1250, bow: 1150 }[pick] || 1600);
+    const A = act();
+    A.lock();
+    if (cfg.sound) horn();
+    A.prepare(guard(() => {
+      const dur = A.click();
+      later(guard(() => { busy = false; A.resume(); }), dur);
     }));
   }
 
@@ -684,7 +923,13 @@
   // ---------- 연결 ----------
   bridge.onNotify(receive);
   bridge.onConfig(applyConfig);
-  bridge.onCommand(c => { if (c === 'replay') replay(); });
+  bridge.onCommand(c => {
+    if (c === 'replay') replay();
+    if (c === 'toggle-walk' && !busy) {
+      if (onFoot) goMount();
+      else if (canWalk()) brakeThen(guard(() => { stop(); toSide(guard(() => dismount())); }));
+    }
+  });
   bridge.getConfig().then(c => {
     applyConfig(c || {});
     x = rand(halfW(), Math.max(halfW(), laneW() - halfW()));
@@ -721,9 +966,13 @@
       config: c => { demoCfg = { ...demoCfg, ...c }; fire(); },
       play: (name, opts) => player.play(name, opts || {}),   // 모션 미리보기 (디버그)
       wheelie: () => { if (mode === 'ride') wheelie(); },
+      dismount: () => { if (mode === 'stop') dismount(); else brakeThen(guard(() => { stop(); dismount(); })); },
+      mount: () => goMount(),
+      walkTo: fx => walkTo(fx * laneW()),
+      wplay: (n, o) => wplay(n, o || {}),
       stopNow: () => brakeThen(guard(stop)),
       idleVariant: () => idleVariant(),
-      state: () => ({ mode, facing, dir, motion: player.name, busy, x: Math.round(x), v: Math.round(bike.v), z: +bike.z.toFixed(2), lean: +bike.lean.toFixed(1), pitch: +bike.pitch.toFixed(1), rate: +player.rate.toFixed(2) }),
+      state: () => ({ onFoot, walker: onFoot ? { x: Math.round(walker.x), mode: walker.mode, motion: wplayer.name } : null, mode, facing, dir, motion: player.name, busy, x: Math.round(x), v: Math.round(bike.v), z: +bike.z.toFixed(2), lean: +bike.lean.toFixed(1), pitch: +bike.pitch.toFixed(1), rate: +player.rate.toFixed(2) }),
     };
     return {
       onNotify: cb => handlers.notify.push(cb),

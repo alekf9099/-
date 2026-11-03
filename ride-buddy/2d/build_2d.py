@@ -194,6 +194,7 @@ class Rig:
         # 머리 레이어: 미러에 가려졌던 부분은 인페인트로 복원
         ha = np.array(src)
         ha[mir_np & head_np, :3] = SKIN                 # 미러 뒤 = 피부색
+        self.mirror_hole = mir_np & head_np
         head = Image.fromarray(ha)
         head.putalpha(head_m)
         self.head = head
@@ -453,6 +454,7 @@ class Rig:
     def compose_head(self, eyes='normal', mouth='w', mouth_h=24, blink=1.0, look=0.0):
         """eyes: normal|closed|happy|wow|look|wink   mouth: w|open|o|yawn|grin|smile
         blink: 1=뜸 0=감음   look: 눈동자 좌우 이동(px)"""
+        mouth = 'w'                          # 입은 항상 원본 ㅅ(ω) 모양 유지 (캐릭터 정체성)
         if eyes in ('normal', 'look') and blink < 0.999:
             eyes = 'closed' if blink < 0.25 else 'half'
         if eyes == 'normal' and abs(look) > 0.5:

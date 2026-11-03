@@ -5,6 +5,8 @@
  "frameH": 315,
  "displayScale": 1.45,
  "headTop": 0.0476,
+ "scale": 0.220264,
+ "points": {},
  "motions": {
   "ride_r": {
    "file": "ride_r.webp",

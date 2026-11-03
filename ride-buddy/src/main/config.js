@@ -13,6 +13,7 @@ const DEFAULTS = {
   windowsWatcher: true, // Windows 알림 센터 연동
   httpPort: 47321,      // 로컬 알림 API 포트
   mutedApps: [],        // 무시할 앱 이름(부분 일치)
+  walk: false,          // (보류) 오토바이에서 내려 걷기 — 현재 비활성
   catchphrase: true,    // 유행어 리액션: 알림 오면 "달달달달~ 감사하고~"
   showBody: true,       // 메시지 본문 표시 (끄면 "OO에서 알림이 왔어요"만)
 };
