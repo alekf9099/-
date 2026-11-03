@@ -1080,7 +1080,7 @@ def pose(motion, t):
              rider_dx=sim['rider_dx'], rider_dy=sim['rider_dy'], rider_rot=sim['rider_rot'])
     head_lag = sim['head_lag']
     p['head_dy'] = clamp(head_lag * 0.8, -10, 10)
-    p['foot'] = 1.0 if motion in STANDING else 0.0
+    p['foot'] = 0.0                     # 다리는 원본처럼 짧게 바이크 위에 (땅에 딛는 긴 다리 없음)
     p['steer'] = 0.0
 
     if motion in ('ride_r', 'ride_l'):
@@ -1096,8 +1096,6 @@ def pose(motion, t):
         # 브레이크 → 정지 → 발 내리기
         v = max(0.0, 1 - t / 0.5)
         p['roll'] = ((t - t * t / 1.0) / 0.4) % 1.0 if t < 0.5 else (0.25 / 0.4) % 1.0
-        p['foot'] = ease(seg(t, 0.32, 0.72))
-        p['foot_dy'] = -10 * math.sin(math.pi * seg(t, 0.32, 0.72))   # 발을 살짝 들었다가 디딤
         p['eyes'] = 'normal'
         p['head_rot'] = 2.5 * math.sin(math.pi * seg(t, 0, 0.6))
         p['steer'] = -2.0 * ease(seg(t, 0.4, 0.8))
@@ -1105,12 +1103,9 @@ def pose(motion, t):
         fx = exhaust(t, period=0.8, n=3, big=0.8)
         if 0.66 < t < 1.0:
             q = seg(t, 0.66, 1.0)
-            fx += [dict(kind='dust', x=FOOT_GROUND[0] - 70 - 50 * q, y=FOOT_GROUND[1] + 38, r=16 + 22 * q, a=(1 - q) * 0.8),
-                   dict(kind='dust', x=FOOT_GROUND[0] + 110 + 50 * q, y=FOOT_GROUND[1] + 36, r=14 + 20 * q, a=(1 - q) * 0.8)]
+            pass
         p['fx'] = fx
     elif motion == 'go_r':
-        p['foot'] = 1 - ease(seg(t, 0.0, 0.24))
-        p['foot_dy'] = -14 * math.sin(math.pi * seg(t, 0.0, 0.24))
         p['roll'] = ((t * t / 0.6) / 0.4) % 1.0
         p['head_rot'] = -2.5 * math.sin(math.pi * min(t / 0.5, 1))
         p['eyes'], p['mouth'], p['mouth_h'] = 'normal', 'smile', 18
