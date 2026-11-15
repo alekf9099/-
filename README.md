@@ -1,3 +1,5 @@
+> 📦 이 저장소에는 별도 프로젝트 **[EasyAPI](easyapi/README.md)** (입문자용 API 테스트 도구)도 포함되어 있습니다.
+
 # AI 샷메이커 (AiShotMaker)
 
 쇼핑몰 사장님을 위한 AI 모델 착용샷 & 누끼 자동화 앱
