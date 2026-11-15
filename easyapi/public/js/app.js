@@ -38,10 +38,19 @@
   }
   function icon(name, cls) { return '<svg class="ic ' + (cls || '') + '"><use href="#i-' + name + '"/></svg>'; }
 
-  function toast(msg, type, ms) {
+  function toast(msg, type, ms, action) {
     const el = document.createElement('div');
     el.className = 'toast ' + (type || '');
-    el.textContent = msg;
+    const txt = document.createElement('span');
+    txt.textContent = msg;
+    el.appendChild(txt);
+    if (action) {
+      const b = document.createElement('button');
+      b.className = 'toast-act';
+      b.textContent = action.label;
+      b.addEventListener('click', () => { el.remove(); action.run(); });
+      el.appendChild(b);
+    }
     const box = $('#toasts');
     while (box.children.length >= 3) box.firstChild.remove();
     box.appendChild(el);
@@ -152,6 +161,7 @@
   }
 
   function persistNow() {
+    if (typeof renderStatusbar === 'function') renderStatusbar();
     const data = {
       tabs: S.tabs.map((t) => ({ id: t.id, req: stripFiles(t.req), current: t.current, savedSnapshot: t.savedSnapshot })), activeTab: S.activeTab,
       collections: S.collections, history: S.history, envs: S.envs, activeEnv: S.activeEnv, globals: S.globals, cookies: S.cookies,
@@ -832,6 +842,7 @@
       else if (['compare', 'console', 'cookies'].indexOf(S.ui.respTab) >= 0) S.ui.respTab = 'body';
       if (tabObj.id === S.activeTab) { renderResponse(); renderAssertTab(); renderResolvedUrl(); renderOAuthStatus(); }
       if (counted.length) toast('테스트 ' + (counted.length - failed) + '/' + counted.length + ' 통과', failed ? 'err' : 'ok', 2200);
+      haptic(failed || !tabObj.response.ok ? 'err' : 'ok');
       persist();
       Room.publish('response', { response: trimForSync(tabObj.response), mirror: trimForSync(tabObj.mirrorResponse), meta: tabObj.responseReq, run: { tests: rec.tests, logs: rec.logs, extracted: rec.extracted } });
       if (isMobile()) setView('response');
@@ -852,6 +863,9 @@
   function setLoading(on) {
     $('#btnSend').classList.toggle('loading', on);
     $('#btnSend').disabled = on;
+    $('#fabSend').classList.toggle('loading', on);
+    $('#fabSend').disabled = on;
+    startSkeletonTimer(on);
     $('#respLoading').hidden = !on;
     if (on) { $('#respEmpty').hidden = true; $('#resp').hidden = true; }
     else if (!S.response) $('#respEmpty').hidden = false;
@@ -913,6 +927,8 @@
     if (!r.ok) {
       chip.className = 'status-chip err';
       chip.innerHTML = '<i class="dot"></i>ERROR';
+      chip.classList.remove('pop'); void chip.offsetWidth; chip.classList.add('pop');
+      $('#timingPop').hidden = true;
       explain.className = 'status-explain err';
       explain.innerHTML = '<b>' + esc(r.error ? r.error.code : '') + '</b> · ' + esc(r.error ? r.error.message : '알 수 없는 오류');
       $('#respTime').textContent = formatMs(r.timeMs);
@@ -925,6 +941,8 @@
       const info = statusInfo(r.status);
       chip.className = 'status-chip s' + Math.floor(r.status / 100);
       chip.innerHTML = '<i class="dot"></i>' + r.status + ' ' + esc(r.statusText || info[0]);
+      chip.classList.remove('pop'); void chip.offsetWidth; chip.classList.add('pop');
+      renderTiming();
       explain.className = 'status-explain beginner';
       let extra = '';
       if (r.redirects && r.redirects.length) extra = ' · 리다이렉트 ' + r.redirects.length + '회 따라감';
@@ -1186,10 +1204,9 @@
       });
       html += '<div style="text-align:center;padding:10px"><button class="btn btn-ghost btn-sm" id="btnClearHist">기록 모두 지우기</button></div>';
       box.innerHTML = html;
-      $('#btnClearHist').addEventListener('click', async () => {
-        if (await confirmModal('기록 지우기', '최근 기록 ' + S.history.length + '개를 모두 지울까요?', '모두 지우기')) {
-          S.history = []; persist(); renderLibrary();
-        }
+      $('#btnClearHist').addEventListener('click', () => {
+        const saved = S.history.slice();
+        undoableRemove('기록 ' + saved.length + '개를', () => { S.history = []; }, () => { S.history = saved; });
       });
     }
   }
@@ -1300,12 +1317,16 @@
         f.col.requests.splice(f.col.requests.indexOf(f.req) + 1, 0, cp); persist(); renderLibrary();
       } },
       { label: 'cURL로 복사', icon: 'code', run: () => { try { copyText(CurlParser.toCurl(resolveRequest(normalizeRequest(f.req), true), 'bash')); } catch (e) { toast(e.message, 'err'); } } },
-      { label: '삭제', icon: 'trash', danger: true, run: async () => {
-        if (await confirmModal('요청 삭제', '"' + f.req.name + '"을(를) 삭제할까요?', '삭제')) {
-          f.col.requests = f.col.requests.filter((x) => x.id !== reqId);
-          if (S.current && S.current.reqId === reqId) S.current = null;
-          persist(); renderLibrary(); updateDirty();
-        }
+      { label: '삭제', icon: 'trash', danger: true, run: () => {
+        const idx = f.col.requests.indexOf(f.req);
+        const wasCurrent = S.current && S.current.reqId === reqId;
+        undoableRemove('"' + f.req.name + '"', () => {
+          f.col.requests.splice(idx, 1);
+          if (wasCurrent) { S.current = null; updateDirty(); }
+        }, () => {
+          f.col.requests.splice(idx, 0, f.req);
+          if (wasCurrent) { S.current = { colId: colId, reqId: reqId }; updateDirty(); }
+        });
       } }
     ]);
   }
@@ -1316,7 +1337,7 @@
     actionSheet(h.req.method + ' ' + shortUrl(h.req.url), [
       { label: '열기', icon: 'edit', run: () => loadRequest(h.req, null) },
       { label: '보관함에 저장', icon: 'save', run: () => { loadRequest(h.req, null); openSave(); } },
-      { label: '기록에서 삭제', icon: 'trash', danger: true, run: () => { S.history = S.history.filter((x) => x.id !== id); persist(); renderLibrary(); } }
+      { label: '기록에서 삭제', icon: 'trash', danger: true, run: () => { const i = S.history.indexOf(h); undoableRemove('기록을', () => { S.history.splice(i, 1); }, () => { S.history.splice(i, 0, h); }); } }
     ]);
   }
 
@@ -1663,6 +1684,8 @@
 
         '<section class="set-section"><h3>' + icon('edit') + '화면</h3>' +
         '<label class="field"><span>테마</span><div class="seg" id="sTheme"><button data-t="auto">자동</button><button data-t="light">라이트</button><button data-t="dark">다크</button></div></label>' +
+        '<div class="field"><span>포인트 색상</span><div class="swatches" id="sAccent">' + Object.keys(ACCENTS).map((k) => '<button class="swatch' + ((st.accent || 'lime') === k ? ' on' : '') + '" data-a="' + k + '" style="--sw:' + ACCENTS[k] + '" aria-label="' + ACCENT_KO[k] + '" title="' + ACCENT_KO[k] + '"></button>').join('') + '</div></div>' +
+        '<div class="switch-row"><div><b>진동 피드백 (Android)</b><p class="muted">요청 성공·실패 시 짧게 진동해요</p></div><label class="switch"><input type="checkbox" id="sHaptics"' + (st.haptics !== false ? ' checked' : '') + '><i></i></label></div>' +
         '<div class="switch-row"><div><b>입문자 도움말 표시</b><p class="muted">각 탭의 설명과 상태 코드 해설을 보여줘요.</p></div><label class="switch"><input type="checkbox" id="sBeginner"' + (st.beginner ? ' checked' : '') + '><i></i></label></div></section>' +
 
         '<section class="set-section"><h3>쿠키</h3><div class="switch-row"><div><b>쿠키 자동 관리</b><p class="muted">로그인 세션 쿠키를 저장해 다음 요청에 자동 첨부해요. (저장된 쿠키 ' + S.cookies.length + '개)</p></div><label class="switch"><input type="checkbox" id="sCookieAuto"' + (st.cookieAuto ? ' checked' : '') + '><i></i></label></div>' +
@@ -1672,7 +1695,7 @@
 
         '<section class="set-section"><h3>' + icon('folder') + '데이터</h3>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" id="sExport">전체 백업 내보내기</button><button class="btn btn-outline btn-sm" id="sImport">백업/Postman 가져오기</button><button class="btn btn-ghost btn-sm" id="sReset" style="color:var(--danger)">모두 초기화</button></div>' +
-        '<p class="muted" style="font-size:12px;margin:10px 0 0">모든 데이터는 이 기기 브라우저에만 저장돼요. EasyAPI v1.2</p></section>',
+        '<p class="muted" style="font-size:12px;margin:10px 0 0">모든 데이터는 이 기기 브라우저에만 저장돼요. EasyAPI v1.3</p></section>',
       buttons: [{ label: '닫기', cls: 'btn-primary' }],
       onOpen: (b) => {
         const bindSwitch = (id, fn) => $(id, b).addEventListener('change', (e) => { fn(e.target.checked); persist(); });
@@ -1694,6 +1717,8 @@
         const themeBtns = $$('#sTheme button', b);
         const markTheme = () => themeBtns.forEach((x) => x.classList.toggle('on', x.dataset.t === st.theme));
         themeBtns.forEach((x) => x.addEventListener('click', () => { st.theme = x.dataset.t; applyTheme(); markTheme(); persist(); }));
+        $$('#sAccent .swatch', b).forEach((x) => x.addEventListener('click', () => { st.accent = x.dataset.a; applyAccent(); $$('#sAccent .swatch', b).forEach((y) => y.classList.toggle('on', y === x)); persist(); }));
+        bindSwitch('#sHaptics', (v) => { st.haptics = v; });
         markTheme();
         $('#sProxyTest', b).addEventListener('click', async () => {
           const out = $('#sProxyResult', b);
@@ -1946,6 +1971,7 @@
       $('#roomDot').hidden = !on;
       $('#roomDot').style.background = this.peers > 1 ? 'var(--success)' : 'var(--warn)';
       $('#btnMirrorRoom2').textContent = on ? '연결됨 · ' + this.code : '연결하기';
+      renderStatusbar();
       const st = $('#roomStatus');
       if (st) st.innerHTML = on ? (state || (this.peers > 1 ? '<span style="color:var(--success)">● ' + this.peers + '대 기기 연결됨</span>' : '<span style="color:var(--warn)">● 다른 기기를 기다리는 중…</span>')) : '';
     }
@@ -3036,6 +3062,8 @@
     act('기기 미러링 (PC ↔ 휴대폰)', '', openRoom, 'devices');
     act('설정', '', () => openSettings(), 'gear');
     act('사용 가이드 다시 보기', '', openOnboarding, 'help');
+    act('포인트 색상 바꾸기', ACCENT_KO[S.settings.accent || 'lime'], cycleAccent, 'palette');
+    act('사이드바 접기/펼치기', 'Ctrl+\\', toggleSidebar, 'sidebar');
     act('테마 전환 (라이트/다크)', '', () => { const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (S.settings.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches); S.settings.theme = dark ? 'light' : 'dark'; applyTheme(); persist(); }, 'edit');
     S.envs.forEach((e) => act('환경 전환: ' + e.name, e.id === S.activeEnv ? '사용 중' : '', () => { S.activeEnv = e.id; renderEnvSelect(); renderResolvedUrl(); persist(); toast('환경: ' + e.name, '', 1500); }, 'braces'));
     S.collections.forEach((c) => c.requests.forEach((r) => out.push({ kind: 'request', label: r.name, hint: c.name, method: r.method, sub: r.url, run: () => loadRequest(r, { colId: c.id, reqId: r.id }) })));
@@ -3087,6 +3115,151 @@
         setTimeout(() => q.focus(), 30);
       }
     });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-O. v1.3 UI: 포인트 색상 · 레이아웃 · 상태 바 · 햅틱 · 타이밍
+   * ------------------------------------------------------------------ */
+  const ACCENTS = { lime: '#c6f432', sky: '#7dd3fc', violet: '#c4b5fd', orange: '#fdba74', pink: '#f9a8d4' };
+  const ACCENT_KO = { lime: '라임', sky: '하늘', violet: '보라', orange: '주황', pink: '핑크' };
+  function applyAccent() {
+    const a = ACCENTS[S.settings.accent] ? S.settings.accent : 'lime';
+    if (a === 'lime') document.documentElement.removeAttribute('data-accent');
+    else document.documentElement.setAttribute('data-accent', a);
+  }
+
+  /** Android 진동 피드백 (지원 기기에서만) */
+  function haptic(kind) {
+    if (!isMobile() || !navigator.vibrate || S.settings.haptics === false) return;
+    try { navigator.vibrate(kind === 'err' ? [24, 60, 24] : (kind === 'tap' ? 6 : 14)); } catch (e) { /* noop */ }
+  }
+
+  /* ---- 패널 크기 조절 · 사이드바 접기 ---- */
+  function applyLayout() {
+    const L = S.ui.layout || {};
+    const app = $('.app');
+    app.style.setProperty('--side-w', (L.side || 264) + 'px');
+    if (L.req) app.style.setProperty('--req-w', L.req + 'px'); else app.style.removeProperty('--req-w');
+    if (L.reqH) app.style.setProperty('--req-h', L.reqH + 'px'); else app.style.removeProperty('--req-h');
+    document.body.classList.toggle('side-collapsed', !!S.ui.sideCollapsed);
+  }
+  function toggleSidebar() {
+    S.ui.sideCollapsed = !S.ui.sideCollapsed;
+    applyLayout();
+    persist();
+  }
+  function bindSplitters() {
+    $$('.splitter').forEach((sp) => {
+      const kind = sp.dataset.split;
+      const start = (e) => {
+        if (isMobile()) return;
+        e.preventDefault();
+        const wide = window.innerWidth >= 1280;
+        const pane = kind === 'side' ? $('#libraryPane') : $('#requestPane');
+        const rect = pane.getBoundingClientRect();
+        document.body.classList.add('resizing', kind === 'main' && !wide ? 'resizing-y' : 'resizing-x');
+        sp.setPointerCapture && e.pointerId !== undefined && sp.setPointerCapture(e.pointerId);
+        const move = (ev) => {
+          S.ui.layout = S.ui.layout || {};
+          if (kind === 'side') S.ui.layout.side = Math.round(Math.max(200, Math.min(460, ev.clientX - rect.left)));
+          else if (wide) S.ui.layout.req = Math.round(Math.max(360, Math.min(window.innerWidth - S.ui.layout.side - 380 || 900, ev.clientX - rect.left)));
+          else S.ui.layout.reqH = Math.round(Math.max(220, Math.min(window.innerHeight - 260, ev.clientY - rect.top)));
+          applyLayout();
+        };
+        const end = () => {
+          document.body.classList.remove('resizing', 'resizing-x', 'resizing-y');
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', end);
+          persist();
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+      };
+      sp.addEventListener('pointerdown', start);
+      sp.addEventListener('dblclick', () => {
+        S.ui.layout = S.ui.layout || {};
+        if (kind === 'side') delete S.ui.layout.side; else { delete S.ui.layout.req; delete S.ui.layout.reqH; }
+        applyLayout(); persist();
+        toast('기본 크기로 되돌렸어요', '', 1200);
+      });
+      sp.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 40 : 12;
+        const L = (S.ui.layout = S.ui.layout || {});
+        if (kind === 'side' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { L.side = Math.max(200, Math.min(460, (L.side || 264) + (e.key === 'ArrowRight' ? step : -step))); }
+        else if (kind === 'main' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { L.req = Math.max(360, ($('#requestPane').getBoundingClientRect().width) + (e.key === 'ArrowRight' ? step : -step)); }
+        else if (kind === 'main' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { L.reqH = Math.max(220, ($('#requestPane').getBoundingClientRect().height) + (e.key === 'ArrowDown' ? step : -step)); }
+        else return;
+        e.preventDefault(); applyLayout(); persist();
+      });
+    });
+  }
+
+  /* ---- 하단 상태 바 ---- */
+  function renderStatusbar() {
+    const bar = $('#statusbar');
+    if (!bar) return;
+    const env = S.envs.find((e) => e.id === S.activeEnv);
+    const server = S.serverOk === null ? ['wait', '서버 확인 중'] : (S.serverOk ? (S.settings.transport === 'server' ? ['ok', '서버 연결됨'] : ['warn', '브라우저 직접 전송']) : ['warn', '서버 없음 · 직접 전송']);
+    const px = S.settings.proxy;
+    const item = (id, cls, html, title) => '<button class="sb-item ' + (cls || '') + '" data-sb="' + id + '" title="' + esc(title || '') + '">' + html + '</button>';
+    bar.innerHTML =
+      item('server', 'sb-' + server[0], '<i class="sb-dot"></i>' + esc(server[1]), '전송 방식 설정') +
+      item('env', env ? 'sb-on' : '', icon('braces') + esc(env ? env.name : '환경 없음'), '환경 변수') +
+      item('proxy', px.enabled ? 'sb-on' : '', '프록시 ' + (px.enabled ? 'ON' : 'OFF'), px.enabled ? px.url : '프록시 설정') +
+      item('cookies', '', '쿠키 ' + S.cookies.length, '쿠키 관리') +
+      item('room', Room.code ? 'sb-on' : '', icon('devices') + (Room.code ? '동기화 ' + Room.code + ' · ' + Room.peers + '대' : '동기화 꺼짐'), '기기 미러링') +
+      (S.settings.insecure ? item('ssl', 'sb-warn', 'SSL 검증 꺼짐', '설정') : '') +
+      '<span class="spacer"></span>' +
+      item('palette', '', '<kbd class="kbd">' + (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K') + '</kbd> 명령 팔레트', '') +
+      item('accent', '', '<i class="sb-swatch"></i>' + esc(ACCENT_KO[S.settings.accent] || '라임'), '포인트 색상 바꾸기') +
+      '<span class="sb-ver">EasyAPI v1.3</span>';
+  }
+  function cycleAccent() {
+    const keys = Object.keys(ACCENTS);
+    S.settings.accent = keys[(keys.indexOf(S.settings.accent || 'lime') + 1) % keys.length];
+    applyAccent(); persist(); renderStatusbar();
+    toast('포인트 색상: ' + ACCENT_KO[S.settings.accent], 'ok', 1200);
+  }
+
+  /* ---- 응답 시간 분석 ---- */
+  function renderTiming() {
+    const r = S.response;
+    const pop = $('#timingPop');
+    if (!r || !r.ok) { pop.hidden = true; return; }
+    const total = r.timeMs || 0;
+    const ttfb = typeof r.ttfbMs === 'number' ? Math.min(r.ttfbMs, total) : null;
+    const dl = ttfb !== null ? Math.max(0, total - ttfb) : null;
+    const pct = (v) => (total ? Math.max(2, (v / total) * 100) : 0).toFixed(1) + '%';
+    pop.innerHTML = '<div class="tp-head"><b>' + formatMs(total) + '</b><span class="muted">전체 응답 시간</span></div>' +
+      (ttfb !== null
+        ? '<div class="tp-bar"><i class="tp-wait" style="width:' + pct(ttfb) + '"></i><i class="tp-dl" style="width:' + pct(dl) + '"></i></div>' +
+          '<div class="tp-row"><span><i class="tp-key tp-wait"></i>대기 (TTFB)</span><b>' + formatMs(ttfb) + '</b></div>' +
+          '<p class="tp-note">연결·서버 처리 후 첫 바이트가 오기까지. 길면 서버 처리나 네트워크가 느린 거예요.</p>' +
+          '<div class="tp-row"><span><i class="tp-key tp-dl"></i>다운로드</span><b>' + formatMs(dl) + '</b></div>'
+        : '<p class="tp-note">브라우저 직접 전송 모드에서는 세부 시간을 알 수 없어요.</p>') +
+      '<div class="tp-sep"></div>' +
+      '<div class="tp-row"><span>전송 크기</span><b>' + formatBytes(r.wireSize !== undefined ? r.wireSize : r.size) + '</b></div>' +
+      '<div class="tp-row"><span>압축 해제 후</span><b>' + formatBytes(r.size) + '</b></div>' +
+      (r.redirects && r.redirects.length ? '<div class="tp-row"><span>리다이렉트</span><b>' + r.redirects.length + '회</b></div>' : '') +
+      '<div class="tp-row"><span>경로</span><b>' + (r.viaProxy ? '프록시 경유' : (r.direct ? '브라우저 직접' : 'EasyAPI 서버')) + '</b></div>';
+  }
+
+  /* ---- 로딩 경과 시간 ---- */
+  let skTimer = null;
+  function startSkeletonTimer(on) {
+    clearInterval(skTimer);
+    if (!on) return;
+    const t0 = performance.now();
+    const el = $('#skTimer');
+    el.textContent = '0.0s';
+    skTimer = setInterval(() => { el.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
+  }
+
+  /* ---- 실행 취소 가능한 삭제 ---- */
+  function undoableRemove(label, removeFn, restoreFn) {
+    removeFn();
+    persist(); renderLibrary();
+    toast(label + ' 삭제했어요', '', 5000, { label: '실행 취소', run: () => { restoreFn(); persist(); renderLibrary(); toast('되돌렸어요', 'ok', 1200); } });
   }
 
   /* ------------------------------------------------------------------ *
@@ -3147,6 +3320,39 @@
     $('#btnImport').addEventListener('click', () => openImport());
     $('#btnSettings').addEventListener('click', () => openSettings());
     $('#btnPalette').addEventListener('click', openPalette);
+    $('#btnSide').addEventListener('click', toggleSidebar);
+    $('#fabSend').addEventListener('click', () => { haptic('tap'); send(); });
+    const panels = $('#requestPane .tab-panels');
+    let lastY = 0;
+    panels.addEventListener('scroll', () => {
+      const y = panels.scrollTop;
+      $('#fabSend').classList.toggle('shrink', y > lastY && y > 40);
+      lastY = y;
+    }, { passive: true });
+    $('#btnTiming').addEventListener('click', (e) => { e.stopPropagation(); const p = $('#timingPop'); if (S.response && S.response.ok) { renderTiming(); p.hidden = !p.hidden; } });
+    document.addEventListener('click', (e) => { if (!e.target.closest('#timingPop')) $('#timingPop').hidden = true; });
+    $('#bento').addEventListener('click', (e) => {
+      const t = e.target.closest('[data-quick]');
+      if (!t) return;
+      const q = t.dataset.quick;
+      if (q === 'runner') { const qa = S.collections.find((c) => /QA 연습 \(내장/.test(c.name)); openRunner(qa ? qa.id : undefined); }
+      else if (q === 'curl') openImport(SAMPLE_CURL);
+      else if (q === 'openapi') openOpenAPI();
+      else openPalette();
+    });
+    $('#statusbar').addEventListener('click', (e) => {
+      const t = e.target.closest('[data-sb]');
+      if (!t) return;
+      const k = t.dataset.sb;
+      if (k === 'server' || k === 'ssl') openSettings();
+      else if (k === 'env') openEnv();
+      else if (k === 'proxy') openSettings('proxy');
+      else if (k === 'cookies') openCookies();
+      else if (k === 'room') openRoom();
+      else if (k === 'palette') openPalette();
+      else if (k === 'accent') cycleAccent();
+    });
+    bindSplitters();
     $('#btnEnv').addEventListener('click', () => openEnv());
     $('#btnHelp').addEventListener('click', openOnboarding);
     $('#btnMirrorRoom').addEventListener('click', openRoom);
@@ -3177,6 +3383,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === '\\') { e.preventDefault(); toggleSidebar(); return; }
       if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); if ($('#modal').hidden) openPalette(); else closeModal(); return; }
       if (mod && e.key === 'Enter') { e.preventDefault(); send(); }
       if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveRequest(); }
@@ -3193,8 +3400,10 @@
       if (!res.ok) throw new Error('no server');
       S.serverInfo = await res.json();
       S.serverOk = true;
+      renderStatusbar();
     } catch (e) {
       S.serverOk = false;
+      renderStatusbar();
       if (S.settings.transport === 'server') {
         setTimeout(() => toast('EasyAPI 서버 없이 실행 중 → 브라우저 직접 전송 모드 (CORS 허용 API만 가능)', '', 4500), 800);
       }
@@ -3203,11 +3412,13 @@
 
   async function init() {
     load();
-    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $$('#kbdSend, #kbdSend2').forEach((k) => { k.textContent = 'Ctrl ↵'; }); if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $('#kbdPalette').textContent = 'Ctrl K';
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $$('#kbdSend, #kbdSend2').forEach((k) => { k.textContent = 'Ctrl ↵'; }); if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) { $('#kbdPalette').textContent = 'Ctrl K'; $('#kbdPalette2').textContent = 'Ctrl K'; }
     // URL 해시로 전달된 접속 키 (QR 공유용)
     const hashKey = /[#&]key=([^&]+)/.exec(location.hash);
     if (hashKey) { S.settings.accessKey = decodeURIComponent(hashKey[1]); history.replaceState(null, '', location.pathname + location.search); }
     applyTheme();
+    applyAccent();
+    applyLayout();
     applyBeginner();
     bindRequestEditor();
     bindResponse();

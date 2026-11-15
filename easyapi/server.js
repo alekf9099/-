@@ -16,7 +16,7 @@ const os = require('os');
 const crypto = require('crypto');
 const EasyEngine = require('./public/js/engine.js');
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ACCESS_KEY = process.env.ACCESS_KEY || '';

@@ -1,6 +1,6 @@
 {
   "name": "easyapi",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "입문자도 쉽게 쓰는 API 테스트·QA 도구 (Postman 호환 스크립트·러너·CLI, cURL 가져오기, 프록시, 모바일, 미러링)",
   "main": "server.js",
   "bin": {
