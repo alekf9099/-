@@ -1,6 +1,6 @@
 /* EasyAPI 서비스 워커: 앱 화면을 캐시해 빠르게 열고, 오프라인에서도 UI를 띄움 */
-const CACHE = 'easyapi-v2';
-const ASSETS = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/curl.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
+const CACHE = 'easyapi-v3';
+const ASSETS = ['./', 'index.html', 'css/style.css', 'js/app.js', 'js/curl.js', 'js/engine.js', 'js/sandbox-worker.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

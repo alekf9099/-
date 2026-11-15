@@ -1,13 +1,19 @@
 {
   "name": "easyapi",
-  "version": "1.0.0",
-  "description": "입문자도 쉽게 쓰는 API 테스트 도구 (cURL 가져오기 · 프록시 · 모바일 · 미러링)",
+  "version": "1.1.0",
+  "description": "입문자도 쉽게 쓰는 API 테스트·QA 도구 (Postman 호환 스크립트·러너·CLI, cURL 가져오기, 프록시, 모바일, 미러링)",
   "main": "server.js",
-  "bin": { "easyapi": "server.js" },
+  "bin": {
+    "easyapi": "server.js",
+    "easyapi-cli": "cli.js"
+  },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "cli": "node cli.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT"
 }

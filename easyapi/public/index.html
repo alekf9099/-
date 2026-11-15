@@ -22,7 +22,7 @@
   <header class="topbar">
     <a class="brand" href="./" aria-label="EasyAPI 홈">
       <img src="icons/icon.svg" alt="" width="22" height="22">
-      <span>EasyAPI</span><span class="ver">v1.0</span>
+      <span>EasyAPI</span><span class="ver">v1.1</span>
     </a>
     <div class="topbar-actions">
       <label class="env-select" id="envWrap" title="환경 변수 세트 선택">
@@ -31,6 +31,9 @@
       </label>
       <button class="btn btn-outline btn-sm" id="btnImport" title="개발자도구에서 복사한 cURL을 붙여넣으면 자동으로 채워져요">
         <svg class="ic"><use href="#i-import"/></svg><span class="hide-sm">cURL 가져오기</span>
+      </button>
+      <button class="btn btn-outline btn-sm" id="btnRunner" title="컬렉션의 요청을 순서대로 자동 실행하고 리포트를 만들어요">
+        <svg class="ic"><use href="#i-play"/></svg><span class="hide-sm">실행기</span>
       </button>
       <span class="sep"></span>
       <button class="icon-btn" id="btnMirrorRoom" aria-label="기기 미러링">
@@ -62,6 +65,7 @@
 
   <!-- ============ 요청 편집 ============ -->
   <section class="pane request-pane" id="requestPane">
+    <div class="opentabs" id="openTabs" role="tablist" aria-label="열린 요청"></div>
     <div class="req-head">
       <input class="req-name" id="reqName" value="새 요청" aria-label="요청 이름" maxlength="80">
       <i class="dirty" id="dirtyDot" title="저장 안 된 변경사항" hidden></i>
@@ -89,6 +93,7 @@
         <span class="spinner" aria-hidden="true"></span>
       </button>
     </div>
+    <p class="resolved-url" id="resolvedUrl" hidden></p>
     <p class="method-hint beginner" id="methodHint"></p>
 
     <nav class="tabs" role="tablist" id="reqTabs">
@@ -96,6 +101,8 @@
       <button role="tab" data-tab="headers">헤더 <em id="cntHeaders"></em></button>
       <button role="tab" data-tab="body">바디 <em id="cntBody"></em></button>
       <button role="tab" data-tab="auth">인증 <em id="cntAuth"></em></button>
+      <button role="tab" data-tab="assert">검증 <em id="cntAssert"></em></button>
+      <button role="tab" data-tab="scripts">스크립트 <em id="cntScripts"></em></button>
       <button role="tab" data-tab="mirror">미러링 <em id="cntMirror"></em></button>
     </nav>
 
@@ -103,6 +110,10 @@
       <div class="tab-panel on" data-panel="params">
         <p class="tip beginner"><b>쿼리 파라미터</b>는 주소 뒤 <code>?key=value</code> 부분이에요. 여기서 고치면 주소도 같이 바뀝니다.</p>
         <div class="kv" id="kvParams"></div>
+        <div id="pathVarsWrap" hidden>
+          <div class="sub-head"><b>경로 변수</b><span class="muted">주소의 <code>/:이름</code> 부분에 들어갈 값</span></div>
+          <div class="kv" id="kvPathVars"></div>
+        </div>
       </div>
       <div class="tab-panel" data-panel="headers">
         <p class="tip beginner"><b>헤더</b>는 요청에 붙는 부가 정보예요. 예: <code>Content-Type</code>(보내는 형식), <code>Accept</code>(받고 싶은 형식).</p>
@@ -122,6 +133,8 @@
           <button data-mode="form">폼</button>
           <button data-mode="multipart">파일 첨부</button>
           <button data-mode="raw">텍스트</button>
+          <button data-mode="graphql">GraphQL</button>
+          <button data-mode="binary">파일(바이너리)</button>
         </div>
         <p class="tip beginner" id="bodyTip"></p>
         <div class="body-editor" data-body="json raw">
@@ -139,12 +152,20 @@
         </div>
         <div class="kv" id="kvForm" data-body="form"></div>
         <div class="kv" id="kvMultipart" data-body="multipart"></div>
+        <div class="gql" data-body="graphql">
+          <label class="field"><span>Query</span><textarea id="gqlQuery" class="code-area" spellcheck="false" placeholder="query {&#10;  user(id: 1) { id name }&#10;}"></textarea></label>
+          <label class="field"><span>Variables (JSON)</span><textarea id="gqlVars" class="code-area small" spellcheck="false" placeholder='{ "id": 1 }'></textarea></label>
+        </div>
+        <div data-body="binary">
+          <label class="file-drop" id="binaryPick"><svg class="ic"><use href="#i-file"/></svg><span id="binaryName">파일을 선택하면 본문 그대로 전송해요</span><input type="file" id="binaryInput"></label>
+        </div>
         <div class="empty-mini" data-body="none">이 요청은 바디 없이 보냅니다. GET·DELETE 요청은 보통 바디가 없어요.</div>
       </div>
       <div class="tab-panel" data-panel="auth">
         <label class="field">
           <span>인증 방식</span>
           <select id="authType">
+            <option value="inherit">상위 폴더 인증 사용</option>
             <option value="none">없음</option>
             <option value="bearer">Bearer 토큰 (JWT 등)</option>
             <option value="basic">아이디 / 비밀번호 (Basic)</option>
@@ -166,7 +187,35 @@
             <select id="authKeyIn"><option value="header">헤더</option><option value="query">주소(쿼리)</option></select>
           </label>
         </div>
+        <div class="empty-mini" data-auth="inherit" id="inheritInfo">폴더 설정의 인증을 그대로 사용해요.</div>
         <div class="empty-mini" data-auth="none">인증이 필요 없는 공개 API라면 그대로 두세요.</div>
+      </div>
+      <div class="tab-panel" data-panel="assert">
+        <p class="tip beginner"><b>코드 없이 자동 검증</b> — 보낼 때마다 조건을 확인해 통과/실패를 표시해요. 실행기·CLI에서도 그대로 동작합니다.</p>
+        <div class="sub-head"><b>검증 조건</b><button class="btn btn-ghost btn-sm" id="btnAddAssert"><svg class="ic"><use href="#i-plus"/></svg>조건 추가</button></div>
+        <div class="rows" id="assertList"></div>
+        <div class="preset-row">
+          <span class="muted">빠른 추가:</span>
+          <button class="chip" data-assert="status|eq|200">상태 200</button>
+          <button class="chip" data-assert="status|lt|400">성공 응답(4xx 아님)</button>
+          <button class="chip" data-assert="time|lt|1000">1초 이내</button>
+          <button class="chip" data-assert="header|contains|json|Content-Type">JSON 응답</button>
+          <button class="chip" data-assert="json|exists||$.id">$.id 존재</button>
+        </div>
+        <div class="sub-head" style="margin-top:22px"><b>응답값 → 변수 저장</b><button class="btn btn-ghost btn-sm" id="btnAddExtract"><svg class="ic"><use href="#i-plus"/></svg>추가</button></div>
+        <p class="tip beginner">예) 로그인 응답의 <code>token</code>을 <code>{{token}}</code>으로 저장 → 다음 요청의 인증에 자동 사용</p>
+        <div class="rows" id="extractList"></div>
+      </div>
+      <div class="tab-panel" data-panel="scripts">
+        <div class="script-top">
+          <div class="seg" id="scriptKind"><button data-k="pre">Pre-request</button><button data-k="test" class="on">Tests</button></div>
+          <span class="muted script-hint">Postman과 같은 <code>pm.*</code> 문법</span>
+        </div>
+        <p class="tip beginner" id="scriptTip"></p>
+        <div class="script-wrap">
+          <textarea id="scriptCode" class="code-area" spellcheck="false" autocapitalize="off"></textarea>
+          <aside class="snippets"><p class="samples-title">스니펫 (클릭해서 넣기)</p><div id="snippets"></div></aside>
+        </div>
       </div>
       <div class="tab-panel" data-panel="mirror">
         <div class="mirror-card">
@@ -217,11 +266,16 @@
         <span class="stat"><svg class="ic"><use href="#i-clock"/></svg><b id="respTime"></b></span>
         <span class="stat"><svg class="ic"><use href="#i-weight"/></svg><b id="respSize"></b></span>
         <span class="stat proxy-badge" id="proxyBadge" hidden>프록시</span>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm" id="btnBugReport" title="요청·응답·실패한 검증을 Jira/슬랙에 붙여넣기 좋은 형식으로 복사"><svg class="ic"><use href="#i-bug"/></svg><span class="hide-xs">이슈 리포트 복사</span></button>
       </div>
       <p class="status-explain" id="statusExplain"></p>
       <nav class="tabs" id="respTabs">
         <button data-rtab="body" class="on">본문</button>
+        <button data-rtab="tests">테스트 <em id="cntTests"></em></button>
         <button data-rtab="headers">헤더 <em id="cntRespHeaders"></em></button>
+        <button data-rtab="cookies">쿠키 <em id="cntCookies"></em></button>
+        <button data-rtab="console">콘솔 <em id="cntConsole"></em></button>
         <button data-rtab="compare" id="tabCompare" hidden>미러 비교 <em id="cntDiff"></em></button>
       </nav>
       <div class="rtab-panel on" data-rpanel="body">
@@ -238,6 +292,9 @@
         </div>
         <div class="resp-body" id="respBody"></div>
       </div>
+      <div class="rtab-panel" data-rpanel="tests"><div id="testsView"></div></div>
+      <div class="rtab-panel" data-rpanel="cookies"><div id="cookiesView"></div></div>
+      <div class="rtab-panel" data-rpanel="console"><div id="consoleView"></div></div>
       <div class="rtab-panel" data-rpanel="headers">
         <table class="htable" id="respHeaders"></table>
       </div>
@@ -310,11 +367,15 @@
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="6" width="8" height="14" rx="4"/><path d="M9 6a3 3 0 0 1 6 0M3 13h5M16 13h5M4 7l4 3M20 7l-4 3M4 20l4-3M20 20l-4-3"/></g></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
   </defs>
 </svg>
 
 <script src="js/curl.js"></script>
+<script src="js/engine.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

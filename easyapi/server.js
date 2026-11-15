@@ -15,7 +15,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ACCESS_KEY = process.env.ACCESS_KEY || '';
@@ -426,12 +426,93 @@ function serveStatic(req, res, pathname) {
 }
 
 /* ====================================================================== *
+ * 내장 QA 연습 API (/qa/*) — 외부 서버 없이 바로 테스트·자동화 연습
+ * ====================================================================== */
+const QA_USERS = { qa: { password: '1234', name: 'QA 테스터', role: 'tester' }, admin: { password: 'admin', name: '관리자', role: 'admin' } };
+const qaToken = (u) => 'qa.' + Buffer.from(u).toString('base64url') + '.' + crypto.createHash('sha256').update('easyapi-qa:' + u).digest('hex').slice(0, 16);
+const qaItems = new Map([[1, { id: 1, name: '아메리카노', price: 4500, stock: 30 }], [2, { id: 2, name: '카페라떼', price: 5000, stock: 12 }]]);
+let qaNextId = 3;
+
+async function handleQa(req, res, url) {
+  const p = url.pathname;
+  const send = (status, obj, headers) => {
+    const body = JSON.stringify(obj);
+    res.writeHead(status, Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), 'Access-Control-Allow-Origin': '*' }, headers || {}));
+    res.end(body);
+  };
+  let raw = '';
+  try { raw = (await readBody(req, 2 * 1024 * 1024)).toString('utf8'); } catch (e) { return send(413, { error: 'too large' }); }
+  let json = null;
+  try { json = raw ? JSON.parse(raw) : null; } catch (e) { json = null; }
+  const authUser = () => {
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+    if (!m) return null;
+    return Object.keys(QA_USERS).find((u) => qaToken(u) === m[1].trim()) || null;
+  };
+
+  if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' }); return res.end(); }
+  if (p === '/qa' || p === '/qa/') {
+    return send(200, { name: 'EasyAPI QA 연습 API', endpoints: ['ANY /qa/echo', 'GET /qa/status/:code', 'GET /qa/delay/:ms', 'POST /qa/login', 'GET /qa/me', 'GET/POST /qa/items', 'GET/PUT/DELETE /qa/items/:id', 'GET /qa/cookies/set?k=v', 'GET /qa/cookies'] });
+  }
+  if (p === '/qa/echo' || p.startsWith('/qa/echo/')) {
+    return send(200, { method: req.method, path: p, query: Object.fromEntries(url.searchParams), headers: req.headers, body: raw, json: json });
+  }
+  let m = /^\/qa\/status\/(\d{3})$/.exec(p);
+  if (m) return send(Number(m[1]), { status: Number(m[1]) });
+  m = /^\/qa\/delay\/(\d+)$/.exec(p);
+  if (m) { const ms = Math.min(Number(m[1]), 10000); return setTimeout(() => send(200, { delayed: ms }), ms); }
+  if (p === '/qa/login' && req.method === 'POST') {
+    const u = json && QA_USERS[json.username];
+    if (!json || !json.username || !json.password) return send(400, { error: 'username 과 password 가 필요해요' });
+    if (!u || u.password !== json.password) return send(401, { error: '아이디 또는 비밀번호가 틀렸어요' });
+    return send(200, { token: qaToken(json.username), user: { username: json.username, name: u.name, role: u.role }, expiresIn: 3600 });
+  }
+  if (p === '/qa/me') {
+    const u = authUser();
+    if (!u) return send(401, { error: '로그인이 필요해요 (Authorization: Bearer 토큰)' });
+    return send(200, { username: u, name: QA_USERS[u].name, role: QA_USERS[u].role });
+  }
+  if (p === '/qa/cookies/set') {
+    const cookies = Array.from(url.searchParams).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v) + '; Path=/qa');
+    res.setHeader('Set-Cookie', cookies);
+    return send(200, { set: Object.fromEntries(url.searchParams) });
+  }
+  if (p === '/qa/cookies') {
+    const c = {};
+    String(req.headers.cookie || '').split(';').forEach((s) => { const i = s.indexOf('='); if (i > 0) c[s.slice(0, i).trim()] = decodeURIComponent(s.slice(i + 1).trim()); });
+    return send(200, { cookies: c });
+  }
+  if (p === '/qa/items') {
+    if (req.method === 'GET') return send(200, { items: Array.from(qaItems.values()), total: qaItems.size });
+    if (req.method === 'POST') {
+      if (!authUser()) return send(401, { error: '로그인이 필요해요' });
+      if (!json || !json.name || typeof json.price !== 'number') return send(422, { error: 'name(문자열), price(숫자)가 필요해요' });
+      const item = { id: qaNextId++, name: String(json.name), price: json.price, stock: Number(json.stock) || 0 };
+      qaItems.set(item.id, item);
+      return send(201, item, { Location: '/qa/items/' + item.id });
+    }
+  }
+  m = /^\/qa\/items\/(\d+)$/.exec(p);
+  if (m) {
+    const id = Number(m[1]);
+    const item = qaItems.get(id);
+    if (req.method !== 'GET' && !authUser()) return send(401, { error: '로그인이 필요해요' });
+    if (!item) return send(404, { error: id + '번 상품이 없어요' });
+    if (req.method === 'GET') return send(200, item);
+    if (req.method === 'PUT' || req.method === 'PATCH') { Object.assign(item, json || {}, { id }); return send(200, item); }
+    if (req.method === 'DELETE') { qaItems.delete(id); res.writeHead(204, { 'Access-Control-Allow-Origin': '*' }); return res.end(); }
+  }
+  return send(404, { error: '없는 연습 API예요. GET /qa 로 목록을 확인하세요.' });
+}
+
+/* ====================================================================== *
  * 라우터
  * ====================================================================== */
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
 
+  if (p.startsWith('/qa/')) return handleQa(req, res, url);
   if (!p.startsWith('/api/')) return serveStatic(req, res, p);
 
   if (p === '/api/info') {
