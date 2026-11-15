@@ -222,6 +222,10 @@
     if (a.type === 'inherit') a = opts.parentAuth && opts.parentAuth.type !== 'inherit' ? opts.parentAuth : { type: 'none' };
     if (a.type === 'bearer' && a.bearer && !has('authorization')) headers.push(['Authorization', 'Bearer ' + sub(a.bearer).trim()]);
     if (a.type === 'basic' && (a.username || a.password) && !has('authorization')) headers.push(['Authorization', 'Basic ' + b64encode(sub(a.username) + ':' + sub(a.password))]);
+    if (a.type === 'oauth2' && !has('authorization')) {
+      const tk = opts.oauthCache ? opts.oauthCache[oauthKey(a, vars)] : null;
+      if (tk && tk.accessToken) headers.push(['Authorization', (/^bearer$/i.test(tk.tokenType || 'Bearer') ? 'Bearer' : tk.tokenType) + ' ' + tk.accessToken]);
+    }
     if (a.type === 'apikey' && a.apiKeyName && a.apiKeyValue) {
       if (a.apiKeyIn === 'query') url += (url.indexOf('?') >= 0 ? '&' : '?') + encodeURIComponent(sub(a.apiKeyName)) + '=' + encodeURIComponent(sub(a.apiKeyValue));
       else if (!has(a.apiKeyName)) headers.push([sub(a.apiKeyName), sub(a.apiKeyValue)]);
@@ -444,6 +448,12 @@
     return this._ok(r.found, path + ' 이(가) 있어야 해요', path + ' 이(가) 없어야 해요');
   });
   addMethod(['responseTime'], function () { return this; });
+  addMethod(['jsonSchema'], function (schema) {
+    let v = this._s;
+    if (this._res) { try { v = JSON.parse(this._s.text()); } catch (e) { return this._ok(false, '본문이 JSON 이 아니에요', ''); } }
+    const errs = validateSchema(v, schema);
+    return this._ok(!errs.length, '스키마 불일치: ' + errs.slice(0, 3).map((e) => e.path + ' ' + e.message).join(' · '), '스키마와 일치하면 안 돼요');
+  });
 
   function expect(v, msg) { return new Assertion(v, msg); }
   expect.fail = function (msg) { throw new AssertionError(msg || '실패 처리됨'); };
@@ -610,6 +620,11 @@
       require: (m) => { throw new Error('모듈 "' + m + '" 은(는) 지원하지 않아요. (EasyAPI는 기본 pm API만 제공)'); }
     };
     // Postman 구버전 문법
+    const tv4 = {
+      error: null,
+      validate: function (d, sc) { const e = validateSchema(d, sc); tv4.error = e.length ? { message: e[0].path + ' ' + e[0].message, dataPath: e[0].path } : null; return !e.length; },
+      validateResult: function (d, sc) { const e = validateSchema(d, sc); return { valid: !e.length, error: e[0] || null, errors: e }; }
+    };
     const legacyTests = {};
     const postman = {
       setEnvironmentVariable: pm.environment.set, getEnvironmentVariable: pm.environment.get, clearEnvironmentVariable: pm.environment.unset,
@@ -624,9 +639,9 @@
     let error = null;
     try {
       const fn = new Function('pm', 'console', 'tests', 'postman', 'responseBody', 'responseCode', 'responseTime', 'responseHeaders',
-        'environment', 'globals', 'data', 'iteration', 'require', 'expect', '"use strict";\n' + code);
+        'environment', 'globals', 'data', 'iteration', 'require', 'expect', 'tv4', '"use strict";\n' + code);
       const r = fn(pm, consoleApi, legacyTests, postman, responseBody, responseCode, responseTime, responseHeaders,
-        pm.environment.toObject(), pm.globals.toObject(), pm.iterationData.toObject(), pm.info.iteration, pm.require, expect);
+        pm.environment.toObject(), pm.globals.toObject(), pm.iterationData.toObject(), pm.info.iteration, pm.require, expect, tv4);
       if (r && typeof r.then === 'function') await r;
     } catch (e) {
       error = (e && e.name === 'SyntaxError' ? '문법 오류: ' : '') + (e && e.message ? e.message : String(e));
@@ -639,19 +654,36 @@
   /* ================================================================== *
    * 노코드 검증 · 변수 추출
    * ================================================================== */
-  const TARGETS = { status: '상태 코드', time: '응답 시간(ms)', size: '응답 크기(B)', header: '헤더', json: 'JSON 값', body: '본문' };
-  const OPS = { eq: '=', neq: '≠', gt: '>', gte: '≥', lt: '<', lte: '≤', contains: '포함', notContains: '미포함', exists: '존재함', notExists: '없음', type: '타입은', regex: '정규식', in: '다음 중 하나' };
+  const TARGETS = { status: '상태 코드', time: '응답 시간(ms)', size: '응답 크기(B)', header: '헤더', json: 'JSON 값', body: '본문', schema: 'JSON 스키마', baseline: '기준 응답' };
+  const OPS = { eq: '=', neq: '≠', gt: '>', gte: '≥', lt: '<', lte: '≤', contains: '포함', notContains: '미포함', exists: '존재함', notExists: '없음', type: '타입은', regex: '정규식', in: '다음 중 하나', schema: '일치' };
   const NO_VALUE_OPS = ['exists', 'notExists'];
 
   function assertionName(a) {
+    if (a.target === 'schema') return 'JSON 스키마 일치' + (a.path && a.path !== '$' ? ' (' + a.path + ')' : '');
+    if (a.target === 'baseline') return '기준 응답과 동일' + (a.value ? ' (제외: ' + a.value + ')' : '');
     const t = TARGETS[a.target] || a.target;
     const p = (a.target === 'header' || a.target === 'json') && a.path ? ' ' + a.path : '';
     return t + p + ' ' + (OPS[a.op] || a.op) + (NO_VALUE_OPS.indexOf(a.op) >= 0 ? '' : ' ' + (a.value === undefined ? '' : a.value));
   }
 
-  function evalAssertion(a, res, vars) {
+  function evalAssertion(a, res, vars, extra) {
     const name = assertionName(a);
     if (!res || !res.ok) return { name, passed: false, error: '응답을 받지 못했어요', source: 'assert' };
+    if (a.target === 'schema') {
+      let schema, j;
+      try { schema = JSON.parse(a.value || '{}'); } catch (e) { return { name, passed: false, error: '스키마 JSON 형식 오류: ' + e.message, source: 'assert' }; }
+      try { j = JSON.parse(res.body); } catch (e) { return { name, passed: false, error: '응답이 JSON 이 아니에요', source: 'assert' }; }
+      const sub = a.path ? jsonPath(j, a.path) : { found: true, value: j };
+      if (!sub.found) return { name, passed: false, error: a.path + ' 경로에 값이 없어요', source: 'assert' };
+      const errs = validateSchema(sub.value, schema);
+      return { name, passed: !errs.length, error: errs.length ? errs.slice(0, 3).map((e) => e.path + ' ' + e.message).join(' · ') + (errs.length > 3 ? ' 외 ' + (errs.length - 3) + '건' : '') : null, source: 'assert', details: errs };
+    }
+    if (a.target === 'baseline') {
+      const base = extra && extra.baseline;
+      if (!base) return { name, passed: false, error: '저장된 기준 응답이 없어요 (응답 → "기준 응답으로 저장")', source: 'assert' };
+      const diffs = compareResponses(base, res, a.value);
+      return { name, passed: !diffs.length, error: diffs.length ? diffs.length + '군데 다름: ' + diffs.slice(0, 3).map((d) => d.path + ' ' + fmt(d.a) + ' → ' + fmt(d.b)).join(' · ') : null, source: 'assert', details: diffs };
+    }
     let actual;
     let found = true;
     if (a.target === 'status') actual = res.status;
@@ -747,7 +779,7 @@
 
     // 1) Pre-request 스크립트 (상위 폴더 → 요청)
     const pre = [[parent.preScript, '폴더 Pre-request'], [req.preScript, 'Pre-request']].filter((x) => x[0] && x[0].trim());
-    for (const [code, label] of pre) {
+    for (const [code, label] of (deps.sandbox ? pre : [])) {
       const out = await deps.sandbox(code, scriptCtx('prerequest'));
       applyVars(out);
       rec.logs.push.apply(rec.logs, out.logs || []);
@@ -762,9 +794,25 @@
     }
 
     // 2) 요청 해석 & 전송
+    // OAuth 2.0 토큰 자동 발급/갱신
+    const effAuth = req.auth && req.auth.type === 'inherit' ? (parent.auth || { type: 'none' }) : (req.auth || { type: 'none' });
+    if (effAuth.type === 'oauth2') {
+      ctx.oauthCache = ctx.oauthCache || {};
+      const key = oauthKey(effAuth, ctx.vars);
+      if (!tokenValid(ctx.oauthCache[key])) {
+        try {
+          ctx.oauthCache[key] = await fetchOAuthToken(effAuth, ctx.vars, deps.transport);
+          rec.oauthRefreshed = true;
+          rec.logs.push({ level: 'info', text: 'OAuth 2.0 토큰을 발급받았어요 (' + (effAuth.oauthGrant || 'client_credentials') + ')', event: 'auth' });
+        } catch (e) {
+          rec.error = { code: 'OAUTH', message: e.message };
+          return rec;
+        }
+      }
+    }
     let resolved;
     try {
-      resolved = resolveRequest(req, ctx.vars, { parentAuth: parent.auth, cookieJar: ctx.cookieAuto ? ctx.cookieJar : null });
+      resolved = resolveRequest(req, ctx.vars, { parentAuth: parent.auth, cookieJar: ctx.cookieAuto ? ctx.cookieJar : null, oauthCache: ctx.oauthCache });
     } catch (e) {
       rec.error = { code: 'RESOLVE', message: e.message };
       return rec;
@@ -784,7 +832,7 @@
     // 3) Tests 스크립트 (상위 폴더 → 요청)
     if (res && res.ok) {
       const post = [[parent.testScript, '폴더 Tests'], [req.testScript, 'Tests']].filter((x) => x[0] && x[0].trim());
-      for (const [code, label] of post) {
+      for (const [code, label] of (deps.sandbox ? post : [])) {
         const out = await deps.sandbox(code, scriptCtx('test'));
         applyVars(out);
         rec.logs.push.apply(rec.logs, out.logs || []);
@@ -795,7 +843,7 @@
     }
 
     // 4) 노코드 검증
-    (req.assertions || []).filter((a) => a.enabled !== false && a.target && a.op).forEach((a) => rec.tests.push(evalAssertion(a, res, ctx.vars)));
+    (req.assertions || []).filter((a) => a.enabled !== false && a.target && a.op).forEach((a) => rec.tests.push(evalAssertion(a, res, ctx.vars, { baseline: req.baseline })));
 
     // 5) 변수 추출
     (req.extracts || []).filter((x) => x.enabled !== false && x.varName).forEach((x) => {
@@ -817,7 +865,7 @@
     hooks = hooks || {};
     const data = opts.data && opts.data.length ? opts.data : [];
     const iterations = Math.max(1, Number(opts.iterations) || (data.length || 1));
-    const ctx = { vars: opts.vars, cookieJar: opts.cookieJar || [], cookieAuto: opts.cookieAuto !== false };
+    const ctx = { vars: opts.vars, cookieJar: opts.cookieJar || [], cookieAuto: opts.cookieAuto !== false, oauthCache: opts.oauthCache || {} };
     SCOPES.forEach((s) => { ctx.vars[s] = ctx.vars[s] || {}; });
     const summary = {
       startedAt: Date.now(), finishedAt: null, iterations: iterations, results: [], stopped: false,
@@ -983,8 +1031,8 @@
       id: id || uuid(), name: '새 요청', method: 'GET', url: '', description: '',
       params: [], pathVars: [], headers: [],
       body: { mode: 'none', raw: '', rawType: 'text/plain', form: [], multipart: [], graphql: { query: '', variables: '' }, binary: null },
-      auth: { type: 'inherit', bearer: '', username: '', password: '', apiKeyName: 'X-API-Key', apiKeyValue: '', apiKeyIn: 'header' },
-      preScript: '', testScript: '', assertions: [], extracts: []
+      auth: { type: 'inherit', bearer: '', username: '', password: '', apiKeyName: 'X-API-Key', apiKeyValue: '', apiKeyIn: 'header', oauthGrant: 'client_credentials', tokenUrl: '', clientId: '', clientSecret: '', scope: '', oauthUser: '', oauthPass: '', clientAuth: 'body' },
+      preScript: '', testScript: '', assertions: [], extracts: [], baseline: null
     };
   }
   function normalizeRequest(r) {
@@ -1003,7 +1051,7 @@
   function normalizeCollection(c) {
     c = c || {};
     return Object.assign({ id: uuid(), name: '컬렉션', open: true, requests: [], description: '', preScript: '', testScript: '', variables: [] }, c, {
-      auth: Object.assign({ type: 'none', bearer: '', username: '', password: '', apiKeyName: 'X-API-Key', apiKeyValue: '', apiKeyIn: 'header' }, c.auth || {}),
+      auth: Object.assign({ type: 'none', bearer: '', username: '', password: '', apiKeyName: 'X-API-Key', apiKeyValue: '', apiKeyIn: 'header', oauthGrant: 'client_credentials', tokenUrl: '', clientId: '', clientSecret: '', scope: '', oauthUser: '', oauthPass: '', clientAuth: 'body' }, c.auth || {}),
       requests: (c.requests || []).map(normalizeRequest),
       variables: Array.isArray(c.variables) ? c.variables : []
     });
@@ -1022,6 +1070,7 @@
     if (a.type === 'bearer') return { type: 'bearer', bearer: val(a.bearer, 'token') };
     if (a.type === 'basic') return { type: 'basic', username: val(a.basic, 'username'), password: val(a.basic, 'password') };
     if (a.type === 'apikey') return { type: 'apikey', apiKeyName: val(a.apikey, 'key'), apiKeyValue: val(a.apikey, 'value'), apiKeyIn: val(a.apikey, 'in') === 'query' ? 'query' : 'header' };
+    if (a.type === 'oauth2') return { type: 'oauth2', oauthGrant: /password/.test(val(a.oauth2, 'grant_type')) ? 'password' : 'client_credentials', tokenUrl: val(a.oauth2, 'accessTokenUrl'), clientId: val(a.oauth2, 'clientId'), clientSecret: val(a.oauth2, 'clientSecret'), scope: val(a.oauth2, 'scope'), oauthUser: val(a.oauth2, 'username'), oauthPass: val(a.oauth2, 'password'), clientAuth: val(a.oauth2, 'client_authentication') === 'header' ? 'header' : 'body' };
     return out;
   };
 
@@ -1098,6 +1147,7 @@
       if (a.type === 'bearer') return { type: 'bearer', bearer: [{ key: 'token', value: a.bearer, type: 'string' }] };
       if (a.type === 'basic') return { type: 'basic', basic: [{ key: 'username', value: a.username, type: 'string' }, { key: 'password', value: a.password, type: 'string' }] };
       if (a.type === 'apikey') return { type: 'apikey', apikey: [{ key: 'key', value: a.apiKeyName }, { key: 'value', value: a.apiKeyValue }, { key: 'in', value: a.apiKeyIn }] };
+      if (a.type === 'oauth2') return { type: 'oauth2', oauth2: [{ key: 'grant_type', value: a.oauthGrant === 'password' ? 'password_credentials' : 'client_credentials' }, { key: 'accessTokenUrl', value: a.tokenUrl }, { key: 'clientId', value: a.clientId }, { key: 'clientSecret', value: a.clientSecret }, { key: 'scope', value: a.scope }, { key: 'username', value: a.oauthUser }, { key: 'password', value: a.oauthPass }, { key: 'client_authentication', value: a.clientAuth }] };
       return undefined;
     };
     const ev = (pre, test) => {
@@ -1122,6 +1172,8 @@
           exists: 'pm.expect(v).to.exist;', notExists: 'pm.expect(v).to.not.exist;', type: 'pm.expect(v).to.be.a(' + exp + ');',
           regex: 'pm.expect(String(v)).to.match(new RegExp(' + exp + '));', in: 'pm.expect(' + exp + '.split(",").map(function(s){return s.trim();})).to.include(String(v));'
         }[a.op];
+        if (a.target === 'schema') { lines.push('pm.test(' + JSON.stringify(assertionName(a)) + ', function () { pm.response.to.have.jsonSchema(' + (a.value || '{}') + '); });'); return; }
+        if (a.target === 'baseline') { lines.push('// (EasyAPI 전용) 기준 응답 비교는 Postman 에서 지원되지 않아 제외됨'); return; }
         if (body) lines.push('pm.test(' + JSON.stringify(assertionName(a)) + ', function () { var v = ' + actual + '; ' + body + ' });');
       });
       (r.extracts || []).filter((x) => x.enabled !== false && x.varName).forEach((x) => {
@@ -1175,6 +1227,462 @@
   }
 
   /* ================================================================== *
+   * JSON 스키마 검증 (Draft-07 주요 키워드 + OpenAPI nullable)
+   * ================================================================== */
+  const FORMATS = {
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    'date-time': /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/i,
+    date: /^\d{4}-\d{2}-\d{2}$/,
+    time: /^\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/i,
+    uri: /^[a-z][a-z0-9+.-]*:\S+$/i,
+    ipv4: /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
+  };
+  function resolveRef(ref, root) {
+    if (typeof ref !== 'string' || ref.charAt(0) !== '#') return undefined;
+    return ref.slice(1).split('/').filter(Boolean).reduce((o, k) => (o === null || o === undefined ? undefined : o[decodeURIComponent(k).replace(/~1/g, '/').replace(/~0/g, '~')]), root);
+  }
+  const keyPath = (path, k) => path + (/^[A-Za-z_$][\w$]*$/.test(k) ? '.' + k : '[' + JSON.stringify(k) + ']');
+
+  function validateSchema(data, schema, opts) {
+    opts = opts || {};
+    const root = opts.root || schema;
+    const errors = [];
+    const max = opts.maxErrors || 30;
+    const typeMatch = (v, t) => {
+      if (t === 'integer') return typeof v === 'number' && Number.isInteger(v);
+      if (t === 'number') return typeof v === 'number' && isFinite(v);
+      return typeOf(v) === t;
+    };
+    const push = (path, message) => { if (errors.length < max) errors.push({ path, message }); };
+    const passes = (v, s) => validateSchema(v, s, { root: root, maxErrors: 1 }).length === 0;
+    function walk(v, s, path, depth) {
+      if (errors.length >= max || s === undefined || s === null || s === true) return;
+      if (s === false) { push(path, '허용되지 않는 값이에요'); return; }
+      if (depth > 80) return;
+      if (s.$ref) {
+        const r = resolveRef(s.$ref, root);
+        if (r === undefined) { push(path, '$ref 를 찾을 수 없어요: ' + s.$ref); return; }
+        walk(v, r, path, depth + 1);
+        return;
+      }
+      if (v === null && s.nullable === true) return;
+      if (s.type !== undefined) {
+        const types = [].concat(s.type);
+        if (!types.some((t) => typeMatch(v, t))) { push(path, '타입이 ' + types.join(' | ') + ' 이어야 하는데 ' + typeOf(v) + ' 이에요'); return; }
+      }
+      if (Array.isArray(s.enum) && !s.enum.some((e) => deepEqual(e, v))) push(path, fmt(v) + ' 은(는) 허용 값 ' + fmt(s.enum) + ' 에 없어요');
+      if (hasOwn(s, 'const') && !deepEqual(s.const, v)) push(path, fmt(s.const) + ' 이어야 해요');
+      if (typeof v === 'number') {
+        if (typeof s.minimum === 'number' && (s.exclusiveMinimum === true ? v <= s.minimum : v < s.minimum)) push(path, v + ' 은(는) ' + s.minimum + (s.exclusiveMinimum === true ? ' 보다 커야' : ' 이상이어야') + ' 해요');
+        if (typeof s.maximum === 'number' && (s.exclusiveMaximum === true ? v >= s.maximum : v > s.maximum)) push(path, v + ' 은(는) ' + s.maximum + (s.exclusiveMaximum === true ? ' 보다 작아야' : ' 이하여야') + ' 해요');
+        if (typeof s.exclusiveMinimum === 'number' && v <= s.exclusiveMinimum) push(path, v + ' 은(는) ' + s.exclusiveMinimum + ' 보다 커야 해요');
+        if (typeof s.exclusiveMaximum === 'number' && v >= s.exclusiveMaximum) push(path, v + ' 은(는) ' + s.exclusiveMaximum + ' 보다 작아야 해요');
+        if (typeof s.multipleOf === 'number' && s.multipleOf > 0 && Math.abs(v / s.multipleOf - Math.round(v / s.multipleOf)) > 1e-9) push(path, v + ' 은(는) ' + s.multipleOf + ' 의 배수여야 해요');
+      }
+      if (typeof v === 'string') {
+        const len = Array.from(v).length;
+        if (typeof s.minLength === 'number' && len < s.minLength) push(path, '길이가 ' + s.minLength + ' 이상이어야 해요 (현재 ' + len + ')');
+        if (typeof s.maxLength === 'number' && len > s.maxLength) push(path, '길이가 ' + s.maxLength + ' 이하여야 해요 (현재 ' + len + ')');
+        if (s.pattern) { try { if (!new RegExp(s.pattern, 'u').test(v)) push(path, fmt(v) + ' 이(가) 패턴 ' + s.pattern + ' 과 맞지 않아요'); } catch (e) { /* 잘못된 패턴 무시 */ } }
+        if (s.format && FORMATS[s.format] && !FORMATS[s.format].test(v)) push(path, fmt(v) + ' 은(는) ' + s.format + ' 형식이 아니에요');
+      }
+      if (Array.isArray(v)) {
+        if (typeof s.minItems === 'number' && v.length < s.minItems) push(path, '항목이 ' + s.minItems + '개 이상이어야 해요 (현재 ' + v.length + ')');
+        if (typeof s.maxItems === 'number' && v.length > s.maxItems) push(path, '항목이 ' + s.maxItems + '개 이하여야 해요 (현재 ' + v.length + ')');
+        if (s.uniqueItems && v.some((x, i) => v.findIndex((y) => deepEqual(x, y)) !== i)) push(path, '중복 항목이 있어요');
+        if (Array.isArray(s.items)) s.items.forEach((is, i) => { if (i < v.length) walk(v[i], is, path + '[' + i + ']', depth + 1); });
+        else if (s.items) v.forEach((x, i) => walk(x, s.items, path + '[' + i + ']', depth + 1));
+        if (s.contains && !v.some((x) => passes(x, s.contains))) push(path, 'contains 조건을 만족하는 항목이 없어요');
+      }
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        (s.required || []).forEach((k) => { if (!hasOwn(v, k)) push(keyPath(path, k), '필수 속성이 없어요'); });
+        const props = s.properties || {};
+        Object.keys(v).forEach((k) => {
+          const p = keyPath(path, k);
+          if (hasOwn(props, k)) walk(v[k], props[k], p, depth + 1);
+          else if (s.additionalProperties === false) push(p, '스키마에 정의되지 않은 속성이에요');
+          else if (s.additionalProperties && typeof s.additionalProperties === 'object') walk(v[k], s.additionalProperties, p, depth + 1);
+        });
+        if (typeof s.minProperties === 'number' && Object.keys(v).length < s.minProperties) push(path, '속성이 ' + s.minProperties + '개 이상이어야 해요');
+      }
+      if (Array.isArray(s.allOf)) s.allOf.forEach((x) => walk(v, x, path, depth + 1));
+      if (Array.isArray(s.anyOf) && !s.anyOf.some((x) => passes(v, x))) push(path, 'anyOf 의 어느 스키마에도 맞지 않아요');
+      if (Array.isArray(s.oneOf)) {
+        const c = s.oneOf.filter((x) => passes(v, x)).length;
+        if (c !== 1) push(path, 'oneOf 중 정확히 1개와 맞아야 하는데 ' + c + '개와 맞아요');
+      }
+      if (s.not && passes(v, s.not)) push(path, 'not 조건에 해당해요');
+    }
+    walk(data, schema, '$', 0);
+    return errors;
+  }
+
+  /** $ref 를 펼쳐 독립 스키마로 (순환 참조는 빈 스키마로 끊음) */
+  function derefSchema(s, root, refDepth, nest) {
+    refDepth = refDepth || 0;
+    nest = nest || 0;
+    if (!s || typeof s !== 'object') return s;
+    if (nest > 60) return {};
+    if (s.$ref) {
+      if (refDepth > 8) return {};
+      const r = resolveRef(s.$ref, root);
+      return r === undefined ? {} : derefSchema(r, root, refDepth + 1, nest + 1);
+    }
+    if (Array.isArray(s)) return s.map((x) => derefSchema(x, root, refDepth, nest + 1));
+    const out = {};
+    Object.keys(s).forEach((k) => {
+      if (k === 'example' || k === 'examples' || k === 'xml' || k === 'externalDocs') return;
+      out[k] = s[k] && typeof s[k] === 'object' ? derefSchema(s[k], root, refDepth, nest + 1) : s[k];
+    });
+    return out;
+  }
+
+  /* ================================================================== *
+   * JSON 비교 (기준 응답 회귀 · 미러 비교 공용)
+   * ================================================================== */
+  function ignoreMatcher(list) {
+    const pats = (Array.isArray(list) ? list : String(list || '').split(','))
+      .map((s) => s.trim()).filter(Boolean)
+      .map((p) => {
+        const norm = p.indexOf('$') === 0 ? p : '$.' + p.replace(/^\./, '');
+        const re = norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\[\\\*\\\]/g, '\\[\\d+\\]').replace(/\\\.\\\*/g, '\\.[^.\\[]+');
+        return new RegExp('^' + re + '(?=$|[.\\[])');
+      });
+    return (path) => pats.some((r) => r.test(path));
+  }
+  function diffJson(a, b, opts) {
+    opts = opts || {};
+    const out = [];
+    const limit = opts.limit || 300;
+    const ignored = opts.ignore ? ignoreMatcher(opts.ignore) : () => false;
+    (function walk(x, y, path) {
+      if (out.length >= limit || ignored(path)) return;
+      const tx = typeOf(x);
+      const ty = typeOf(y);
+      if (tx !== ty) { out.push({ path, a: x, b: y }); return; }
+      if (tx === 'array') {
+        const n = Math.max(x.length, y.length);
+        for (let i = 0; i < n; i++) {
+          const p = path + '[' + i + ']';
+          if (i >= x.length) { if (!ignored(p)) out.push({ path: p, a: undefined, b: y[i] }); }
+          else if (i >= y.length) { if (!ignored(p)) out.push({ path: p, a: x[i], b: undefined }); }
+          else walk(x[i], y[i], p);
+        }
+        return;
+      }
+      if (tx === 'object') {
+        new Set(Object.keys(x).concat(Object.keys(y))).forEach((k) => {
+          const p = keyPath(path, k);
+          if (!hasOwn(x, k)) { if (!ignored(p)) out.push({ path: p, a: undefined, b: y[k] }); }
+          else if (!hasOwn(y, k)) { if (!ignored(p)) out.push({ path: p, a: x[k], b: undefined }); }
+          else walk(x[k], y[k], p);
+        });
+        return;
+      }
+      if (x !== y) out.push({ path, a: x, b: y });
+    })(a, b, '$');
+    return out;
+  }
+  /** 응답 두 개 비교: 상태 + 본문(JSON 이면 구조 비교, 아니면 텍스트 비교) */
+  function compareResponses(base, cur, ignore) {
+    const diffs = [];
+    if (base.status !== cur.status) diffs.push({ path: '상태 코드', a: base.status, b: cur.status });
+    let ja, jb, ok = false;
+    try { ja = JSON.parse(base.body); jb = JSON.parse(cur.body); ok = true; } catch (e) { ok = false; }
+    if (ok) diffJson(ja, jb, { ignore: ignore }).forEach((d) => diffs.push(d));
+    else if ((base.body || '') !== (cur.body || '')) {
+      const la = String(base.body || '').split('\n');
+      const lb = String(cur.body || '').split('\n');
+      let i = 0;
+      while (i < la.length && i < lb.length && la[i] === lb[i]) i++;
+      diffs.push({ path: '본문 ' + (i + 1) + '번째 줄부터 다름', a: (la[i] || '').slice(0, 200), b: (lb[i] || '').slice(0, 200) });
+    }
+    return diffs;
+  }
+
+  /* ================================================================== *
+   * OAuth 2.0 (Client Credentials · Password)
+   * ================================================================== */
+  function oauthKey(a, vars) {
+    const sub = (s) => substitute(s || '', vars);
+    return [a.oauthGrant || 'client_credentials', sub(a.tokenUrl), sub(a.clientId), sub(a.scope), a.oauthGrant === 'password' ? sub(a.oauthUser) : ''].join('|');
+  }
+  async function fetchOAuthToken(a, vars, transport) {
+    const sub = (s) => substitute(s || '', vars);
+    if (!a.tokenUrl) throw new Error('토큰 발급 주소(Token URL)를 입력하세요');
+    const form = [['grant_type', a.oauthGrant === 'password' ? 'password' : 'client_credentials']];
+    if (a.oauthGrant === 'password') form.push(['username', sub(a.oauthUser)], ['password', sub(a.oauthPass)]);
+    if (a.scope) form.push(['scope', sub(a.scope)]);
+    const headers = [['Content-Type', 'application/x-www-form-urlencoded'], ['Accept', 'application/json']];
+    if (a.clientAuth === 'header') headers.push(['Authorization', 'Basic ' + b64encode(sub(a.clientId) + ':' + sub(a.clientSecret))]);
+    else { form.push(['client_id', sub(a.clientId)]); if (a.clientSecret) form.push(['client_secret', sub(a.clientSecret)]); }
+    const res = await transport({
+      method: 'POST', url: sub(a.tokenUrl), headers: headers, multipart: null, binary: null,
+      bodyText: form.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&')
+    });
+    if (!res || !res.ok) throw new Error('토큰 서버에 연결하지 못했어요: ' + (res && res.error ? res.error.message : ''));
+    let j;
+    try { j = JSON.parse(res.body); } catch (e) { throw new Error('토큰 응답이 JSON 이 아니에요 (' + res.status + ')'); }
+    if (res.status >= 400 || !j.access_token) throw new Error('토큰 발급 실패 (' + res.status + '): ' + (j.error_description || j.error || JSON.stringify(j).slice(0, 120)));
+    return { accessToken: j.access_token, tokenType: j.token_type || 'Bearer', scope: j.scope || '', expiresAt: j.expires_in ? Date.now() + Number(j.expires_in) * 1000 - 10000 : null, obtainedAt: Date.now() };
+  }
+  const tokenValid = (t) => !!(t && t.accessToken && (!t.expiresAt || t.expiresAt > Date.now()));
+
+  /* ================================================================== *
+   * OpenAPI 3.x / Swagger 2.0 → 컬렉션
+   * ================================================================== */
+  function sampleFromSchema(s, root, depth) {
+    depth = depth || 0;
+    if (!s || typeof s !== 'object' || depth > 8) return null;
+    if (s.$ref) return sampleFromSchema(resolveRef(s.$ref, root), root, depth + 1);
+    if (s.example !== undefined) return s.example;
+    if (Array.isArray(s.examples) && s.examples.length) return s.examples[0];
+    if (s.default !== undefined) return s.default;
+    if (Array.isArray(s.enum) && s.enum.length) return s.enum[0];
+    if (s.const !== undefined) return s.const;
+    if (Array.isArray(s.allOf)) return Object.assign.apply(null, [{}].concat(s.allOf.map((x) => sampleFromSchema(x, root, depth + 1)).filter((x) => x && typeof x === 'object')));
+    if (s.oneOf || s.anyOf) return sampleFromSchema((s.oneOf || s.anyOf)[0], root, depth + 1);
+    const t = Array.isArray(s.type) ? s.type.find((x) => x !== 'null') : (s.type || (s.properties ? 'object' : (s.items ? 'array' : undefined)));
+    if (t === 'object') {
+      const o = {};
+      Object.keys(s.properties || {}).forEach((k) => { const p = s.properties[k]; if (p && p.readOnly) return; o[k] = sampleFromSchema(p, root, depth + 1); });
+      return o;
+    }
+    if (t === 'array') { const it = sampleFromSchema(s.items, root, depth + 1); return it === null || it === undefined ? [] : [it]; }
+    if (t === 'integer' || t === 'number') return typeof s.minimum === 'number' ? s.minimum : 0;
+    if (t === 'boolean') return true;
+    if (t === 'string') return ({ email: 'user@example.com', 'date-time': '2024-01-01T00:00:00Z', date: '2024-01-01', uuid: '3fa85f64-5717-4562-b3fc-2c963f66afa6', uri: 'https://example.com', password: 'password', binary: '' })[s.format] || 'string';
+    return null;
+  }
+
+  function fromOpenAPI(spec, opts) {
+    opts = opts || {};
+    if (typeof spec === 'string') spec = JSON.parse(spec);
+    const isV2 = !!spec.swagger;
+    if (!isV2 && !spec.openapi) throw new Error('OpenAPI(3.x) 또는 Swagger(2.0) 문서가 아니에요');
+    const title = (spec.info && spec.info.title) || 'OpenAPI';
+    const R = (x) => (x && x.$ref ? resolveRef(x.$ref, spec) || {} : x || {});
+    let baseUrl = '';
+    if (isV2) baseUrl = ((spec.schemes && spec.schemes[0]) || 'https') + '://' + (spec.host || 'localhost') + (spec.basePath || '');
+    else if (spec.servers && spec.servers[0]) {
+      const sv = spec.servers[0];
+      baseUrl = String(sv.url || '').replace(/\{([^}]+)\}/g, (m, k) => (sv.variables && sv.variables[k] ? String(sv.variables[k].default) : m));
+    }
+    baseUrl = baseUrl.replace(/\/$/, '');
+    if (opts.specUrl && (!baseUrl || baseUrl.charAt(0) === '/')) { try { baseUrl = new URL(baseUrl || '/', opts.specUrl).href.replace(/\/$/, ''); } catch (e) { /* noop */ } }
+    const schemes = isV2 ? (spec.securityDefinitions || {}) : ((spec.components && spec.components.securitySchemes) || {});
+    const vars = [{ key: 'baseUrl', value: baseUrl, enabled: true }];
+    const addVar = (k, v) => { if (!vars.some((x) => x.key === k)) vars.push({ key: k, value: v || '', enabled: true }); };
+    const authFor = (secReqs) => {
+      const first = (secReqs || [])[0];
+      if (!first) return null;
+      const name = Object.keys(first)[0];
+      const sc = R(schemes[name]);
+      if (!name || !sc.type) return null;
+      if ((sc.type === 'http' && /bearer/i.test(sc.scheme)) || sc.type === 'openIdConnect') { addVar('token'); return { type: 'bearer', bearer: '{{token}}' }; }
+      if ((sc.type === 'http' && /basic/i.test(sc.scheme)) || sc.type === 'basic') { addVar('username'); addVar('password'); return { type: 'basic', username: '{{username}}', password: '{{password}}' }; }
+      if (sc.type === 'apiKey') { addVar('apiKey'); return { type: 'apikey', apiKeyName: sc.name || 'X-API-Key', apiKeyValue: '{{apiKey}}', apiKeyIn: sc.in === 'query' ? 'query' : 'header' }; }
+      if (sc.type === 'oauth2') {
+        let grant = 'client_credentials';
+        let tokenUrl = '';
+        let scopes = {};
+        if (isV2) { grant = sc.flow === 'password' ? 'password' : 'client_credentials'; tokenUrl = sc.tokenUrl || ''; scopes = sc.scopes || {}; }
+        else {
+          const f = sc.flows || {};
+          const flow = f.clientCredentials || f.password || f.authorizationCode || {};
+          grant = f.clientCredentials ? 'client_credentials' : (f.password ? 'password' : 'client_credentials');
+          tokenUrl = flow.tokenUrl || '';
+          scopes = flow.scopes || {};
+        }
+        addVar('clientId'); addVar('clientSecret');
+        if (grant === 'password') { addVar('username'); addVar('password'); }
+        return { type: 'oauth2', oauthGrant: grant, tokenUrl: tokenUrl, clientId: '{{clientId}}', clientSecret: '{{clientSecret}}', scope: Object.keys(scopes).join(' '), oauthUser: '{{username}}', oauthPass: '{{password}}', clientAuth: 'body' };
+      }
+      return null;
+    };
+    const globalAuth = authFor(spec.security) || { type: 'none' };
+    const exampleOf = (p) => {
+      const s = R(p.schema);
+      const v = p.example !== undefined ? p.example : (p['x-example'] !== undefined ? p['x-example'] : (s.example !== undefined ? s.example : (s.default !== undefined ? s.default : (p.default !== undefined ? p.default : (Array.isArray(s.enum) ? s.enum[0] : (Array.isArray(p.enum) ? p.enum[0] : ''))))));
+      return v === undefined || v === null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+    };
+    const groups = {};
+    const order = [];
+    let count = 0;
+    Object.keys(spec.paths || {}).forEach((path) => {
+      const item = R(spec.paths[path]);
+      ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'].forEach((m) => {
+        const op = item[m];
+        if (!op) return;
+        count++;
+        const tag = (op.tags && op.tags[0]) || '기본';
+        if (!groups[tag]) { groups[tag] = []; order.push(tag); }
+        const r = newRequest();
+        r.method = m.toUpperCase();
+        r.name = op.summary || op.operationId || (r.method + ' ' + path);
+        r.description = [op.description, op.operationId ? 'operationId: ' + op.operationId : ''].filter(Boolean).join('\n');
+        const params = {};
+        (item.parameters || []).concat(op.parameters || []).map(R).forEach((p) => { if (p.name) params[p.in + ':' + p.name] = p; });
+        const plist = Object.keys(params).map((k) => params[k]);
+        r.url = '{{baseUrl}}' + path.replace(/\{([^}]+)\}/g, ':$1');
+        r.pathVars = plist.filter((p) => p.in === 'path').map((p) => ({ key: p.name, value: exampleOf(p), enabled: true }));
+        r.params = plist.filter((p) => p.in === 'query').map((p) => { const v = exampleOf(p); return { key: p.name, value: v, enabled: !!p.required || v !== '' }; });
+        const qs = r.params.filter((p) => p.enabled).map((p) => encodeURIComponent(p.key) + '=' + encodeURIComponent(p.value).replace(/%7B%7B/g, '{{').replace(/%7D%7D/g, '}}')).join('&');
+        if (qs) r.url += '?' + qs;
+        r.headers = plist.filter((p) => p.in === 'header' && !/^(authorization|content-type|accept)$/i.test(p.name)).map((p) => ({ key: p.name, value: exampleOf(p), enabled: !!p.required }));
+        // 요청 바디
+        if (isV2) {
+          const bp = plist.find((p) => p.in === 'body');
+          const fp = plist.filter((p) => p.in === 'formData');
+          if (bp) { r.body.mode = 'json'; r.body.raw = JSON.stringify(sampleFromSchema(R(bp.schema), spec), null, 2); }
+          else if (fp.length) {
+            const hasFile = fp.some((p) => p.type === 'file');
+            if (hasFile) { r.body.mode = 'multipart'; r.body.multipart = fp.map((p) => ({ key: p.name, value: p.type === 'file' ? '' : exampleOf(p), type: p.type === 'file' ? 'file' : 'text', enabled: true })); }
+            else { r.body.mode = 'form'; r.body.form = fp.map((p) => ({ key: p.name, value: exampleOf(p), enabled: true })); }
+          }
+        } else if (op.requestBody) {
+          const rb = R(op.requestBody);
+          const content = rb.content || {};
+          const types = Object.keys(content);
+          const jt = types.find((t) => /json/i.test(t));
+          const media = content[jt || types[0]] || {};
+          const schema = R(media.schema);
+          const ex = media.example !== undefined ? media.example : (media.examples ? R(media.examples[Object.keys(media.examples)[0]]).value : undefined);
+          if (jt) { r.body.mode = 'json'; r.body.raw = JSON.stringify(ex !== undefined ? ex : sampleFromSchema(schema, spec), null, 2); }
+          else if (types[0] === 'application/x-www-form-urlencoded') { r.body.mode = 'form'; const smp = sampleFromSchema(schema, spec) || {}; r.body.form = Object.keys(smp).map((k) => ({ key: k, value: typeof smp[k] === 'object' ? JSON.stringify(smp[k]) : String(smp[k]), enabled: true })); }
+          else if (types[0] === 'multipart/form-data') {
+            const props = schema.properties || {};
+            r.body.mode = 'multipart';
+            r.body.multipart = Object.keys(props).map((k) => { const ps = R(props[k]); const file = ps.format === 'binary' || ps.format === 'base64'; return { key: k, value: file ? '' : String(sampleFromSchema(ps, spec) === null ? '' : sampleFromSchema(ps, spec)), type: file ? 'file' : 'text', enabled: true }; });
+          } else if (types[0]) { r.body.mode = 'raw'; r.body.rawType = types[0]; r.body.raw = ex !== undefined ? String(ex) : ''; }
+        }
+        // 인증
+        if (op.security !== undefined) r.auth = Object.assign(r.auth, op.security.length ? (authFor(op.security) || { type: 'none' }) : { type: 'none' });
+        else r.auth.type = 'inherit';
+        // 응답 → 검증
+        const codes = Object.keys(op.responses || {}).filter((c) => /^2\d\d$/.test(c));
+        if (codes.length) {
+          r.assertions.push(codes.length > 1 ? { target: 'status', op: 'in', value: codes.join(', '), path: '', enabled: true } : { target: 'status', op: 'eq', value: codes[0], path: '', enabled: true });
+          if (opts.schemaAssertions !== false) {
+            const resp = R(op.responses[codes[0]]);
+            let rs = null;
+            if (isV2) rs = resp.schema;
+            else if (resp.content) { const k = Object.keys(resp.content).find((t) => /json/i.test(t)); if (k) rs = resp.content[k].schema; }
+            if (rs) {
+              const inlined = derefSchema(rs, spec);
+              const txt = JSON.stringify(inlined);
+              if (txt.length < 60000) r.assertions.push({ target: 'schema', op: 'schema', value: txt, path: '', enabled: true });
+            }
+          }
+        }
+        groups[tag].push(r);
+      });
+    });
+    const cols = order.map((tag) => normalizeCollection({
+      name: title + (order.length > 1 ? ' / ' + tag : ''), open: true,
+      description: (spec.info && spec.info.description) || '', auth: clone(globalAuth), variables: clone(vars), requests: groups[tag]
+    }));
+    cols.meta = { title: title, version: spec.info && spec.info.version, endpoints: count, tags: order, baseUrl: baseUrl, isV2: isV2 };
+    return cols;
+  }
+
+  /* ================================================================== *
+   * 성능(부하) 테스트
+   *   opts = { vus, duration(초), rampUp(초), iterations(VU당 최대), vars, oauthCache }
+   *   deps.sandbox 가 없으면 스크립트는 건너뛰고 노코드 검증만 실행
+   * ================================================================== */
+  function percentile(sorted, p) {
+    if (!sorted.length) return 0;
+    const i = Math.ceil((p / 100) * sorted.length) - 1;
+    return sorted[Math.min(sorted.length - 1, Math.max(0, i))];
+  }
+  function statsOf(list) {
+    const ms = list.map((s) => s.ms).sort((a, b) => a - b);
+    const n = ms.length;
+    const errors = list.filter((s) => s.error).length;
+    const failedChecks = list.filter((s) => !s.error && s.failedChecks > 0).length;
+    return {
+      count: n, errors: errors, failedChecks: failedChecks, errorRate: n ? errors / n : 0, checkFailRate: n ? failedChecks / n : 0,
+      avg: n ? Math.round(ms.reduce((a, b) => a + b, 0) / n) : 0, min: n ? ms[0] : 0, max: n ? ms[n - 1] : 0,
+      p50: percentile(ms, 50), p90: percentile(ms, 90), p95: percentile(ms, 95), p99: percentile(ms, 99)
+    };
+  }
+  function summarizeLoad(samples, startedAt, extra) {
+    const elapsed = Math.max(0.001, (Date.now() - startedAt) / 1000);
+    const by = {};
+    const statuses = {};
+    const timeline = [];
+    samples.forEach((s) => {
+      (by[s.id] = by[s.id] || { id: s.id, name: s.name, method: s.method, list: [] }).list.push(s);
+      const key = s.error ? 'ERR' : String(s.status);
+      statuses[key] = (statuses[key] || 0) + 1;
+      const sec = Math.floor(s.t / 1000);
+      while (timeline.length <= sec) timeline.push({ sec: timeline.length, count: 0, errors: 0, totalMs: 0 });
+      const b = timeline[sec];
+      b.count++; b.totalMs += s.ms; if (s.error || s.failedChecks) b.errors++;
+    });
+    timeline.forEach((b) => { b.avg = b.count ? Math.round(b.totalMs / b.count) : 0; delete b.totalMs; });
+    const total = statsOf(samples);
+    return Object.assign({
+      startedAt: startedAt, elapsed: elapsed, total: total, rps: Math.round((total.count / elapsed) * 10) / 10, statuses: statuses, timeline: timeline,
+      byRequest: Object.keys(by).map((k) => Object.assign({ id: k, name: by[k].name, method: by[k].method }, statsOf(by[k].list)))
+    }, extra || {});
+  }
+  async function runLoad(items, opts, deps, hooks) {
+    hooks = hooks || {};
+    const vus = Math.max(1, Math.min(Number(opts.vus) || 1, 200));
+    const durMs = Math.max(1, Math.min(Number(opts.duration) || 10, 3600)) * 1000;
+    const ramp = Math.max(0, Number(opts.rampUp) || 0) * 1000;
+    const startedAt = Date.now();
+    const samples = [];
+    let active = 0;
+    const stop = () => (hooks.shouldStop && hooks.shouldStop()) || Date.now() - startedAt >= durMs;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function vu(n) {
+      if (ramp) await sleep((ramp * n) / vus);
+      if (stop()) return;
+      active++;
+      const ctx = { vars: clone(opts.vars || {}), cookieJar: [], cookieAuto: true, oauthCache: opts.oauthCache || {} };
+      SCOPES.forEach((s) => { ctx.vars[s] = ctx.vars[s] || {}; });
+      let iter = 0;
+      while (!stop() && (!opts.iterations || iter < opts.iterations)) {
+        for (const item of items) {
+          if (stop()) break;
+          ctx.vars.local = {};
+          ctx.info = { iteration: iter, vu: n, iterationCount: 0 };
+          const t0 = Date.now();
+          const rec = await runItem(item, ctx, deps);
+          const s = {
+            t: t0 - startedAt, ms: rec.response && typeof rec.response.timeMs === 'number' ? rec.response.timeMs : Date.now() - t0,
+            error: !!rec.error, status: rec.response && rec.response.ok ? rec.response.status : 0, id: rec.id || rec.name, name: rec.name, method: rec.method,
+            failedChecks: rec.tests.filter((t) => !t.passed && !t.skipped).length, vu: n
+          };
+          samples.push(s);
+          if (hooks.onSample) hooks.onSample(s, rec);
+        }
+        iter++;
+      }
+      active--;
+    }
+    const timer = hooks.onTick ? setInterval(() => hooks.onTick(summarizeLoad(samples, startedAt, { activeVus: active, vus: vus, duration: durMs / 1000, done: false })), 1000) : null;
+    await Promise.all(Array.from({ length: vus }, (_, i) => vu(i)));
+    if (timer) clearInterval(timer);
+    return summarizeLoad(samples, startedAt, { activeVus: 0, vus: vus, duration: durMs / 1000, done: true, stopped: !!(hooks.shouldStop && hooks.shouldStop()) });
+  }
+  function loadToMarkdown(sum, title) {
+    const t = sum.total;
+    const pct = (x) => (x * 100).toFixed(2) + '%';
+    let md = '## ' + (title || 'EasyAPI 성능 테스트') + '\n\n';
+    md += '- 가상 사용자 ' + sum.vus + '명 · ' + sum.elapsed.toFixed(1) + '초 · 요청 ' + t.count + '건 · **' + sum.rps + ' req/s**\n';
+    md += '- 응답 시간 평균 ' + t.avg + 'ms · p50 ' + t.p50 + 'ms · p95 **' + t.p95 + 'ms** · p99 ' + t.p99 + 'ms · 최대 ' + t.max + 'ms\n';
+    md += '- 요청 오류율 ' + pct(t.errorRate) + ' · 검증 실패율 ' + pct(t.checkFailRate) + ' · 상태 코드 ' + Object.keys(sum.statuses).map((k) => k + '×' + sum.statuses[k]).join(', ') + '\n\n';
+    md += '| 요청 | 건수 | 평균 | p50 | p95 | p99 | 최대 | 오류 | 검증 실패 |\n|---|---|---|---|---|---|---|---|---|\n';
+    sum.byRequest.forEach((r) => { md += '| `' + r.method + '` ' + r.name + ' | ' + r.count + ' | ' + r.avg + 'ms | ' + r.p50 + 'ms | ' + r.p95 + 'ms | ' + r.p99 + 'ms | ' + r.max + 'ms | ' + r.errors + ' | ' + r.failedChecks + ' |\n'; });
+    return md;
+  }
+
+  /* ================================================================== *
    * 스크립트 스니펫 (Postman 과 동일한 사용법)
    * ================================================================== */
   const SNIPPETS = {
@@ -1188,6 +1696,7 @@
       ['응답값 → 환경 변수 저장', 'const json = pm.response.json();\npm.environment.set("token", json.token);'],
       ['응답값 → 전역 변수 저장', 'pm.globals.set("userId", pm.response.json().id);'],
       ['JSON 스키마 필드 확인', 'pm.test("필수 필드 존재", function () {\n  const json = pm.response.json();\n  pm.expect(json).to.have.keys(["id", "name"]);\n});'],
+      ['JSON 스키마 검증', 'pm.test("응답이 스키마와 일치", function () {\n  pm.response.to.have.jsonSchema({\n    type: "object",\n    required: ["id", "name"],\n    properties: {\n      id: { type: "integer" },\n      name: { type: "string" }\n    }\n  });\n});'],
       ['콘솔에 출력', 'console.log(pm.response.json());']
     ],
     pre: [
@@ -1202,6 +1711,9 @@
 
   return {
     DYNAMIC, SCOPES, TARGETS, OPS, NO_VALUE_OPS, SNIPPETS,
+    validateSchema, derefSchema, resolveRef, diffJson, compareResponses, ignoreMatcher,
+    oauthKey, fetchOAuthToken, tokenValid, sampleFromSchema, fromOpenAPI,
+    runLoad, summarizeLoad, statsOf, percentile, loadToMarkdown,
     rowsToMap, mergeMapIntoRows, lookup, substitute, pathVarNames,
     resolveRequest, bodySpec, jsonPath, expect, AssertionError, executeScript, responseView,
     assertionName, evalAssertion, evalExtraction, runItem, runCollection,

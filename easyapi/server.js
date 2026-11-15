@@ -14,8 +14,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const EasyEngine = require('./public/js/engine.js');
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ACCESS_KEY = process.env.ACCESS_KEY || '';
@@ -428,6 +429,39 @@ function serveStatic(req, res, pathname) {
 /* ====================================================================== *
  * 내장 QA 연습 API (/qa/*) — 외부 서버 없이 바로 테스트·자동화 연습
  * ====================================================================== */
+function qaOpenApi(host) {
+  const Item = { type: 'object', required: ['id', 'name', 'price'], properties: { id: { type: 'integer', readOnly: true, example: 1 }, name: { type: 'string', example: '아메리카노' }, price: { type: 'integer', minimum: 0, example: 4500 }, stock: { type: 'integer', minimum: 0, example: 10 } } };
+  const Err = { type: 'object', required: ['error'], properties: { error: { type: 'string' } } };
+  const json = (schema) => ({ content: { 'application/json': { schema } } });
+  return {
+    openapi: '3.0.3',
+    info: { title: 'EasyAPI QA 연습 API', version: '1.0.0', description: 'EasyAPI 서버에 내장된 연습용 API 명세예요. OAuth: qa-client / qa-secret, 로그인: qa / 1234' },
+    servers: [{ url: host + '/qa' }],
+    security: [{ bearerAuth: [] }],
+    components: {
+      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' }, oauth: { type: 'oauth2', flows: { clientCredentials: { tokenUrl: host + '/qa/oauth/token', scopes: { read: '읽기' } } } } },
+      schemas: { Item, Error: Err }
+    },
+    paths: {
+      '/login': { post: { tags: ['auth'], summary: '로그인', security: [], requestBody: json({ type: 'object', required: ['username', 'password'], properties: { username: { type: 'string', example: 'qa' }, password: { type: 'string', example: '1234' } } }),
+        responses: { 200: Object.assign({ description: '토큰' }, json({ type: 'object', required: ['token', 'user'], properties: { token: { type: 'string' }, expiresIn: { type: 'integer' }, user: { type: 'object', properties: { username: { type: 'string' }, name: { type: 'string' }, role: { type: 'string', enum: ['tester', 'admin'] } } } } })), 401: Object.assign({ description: '실패' }, json({ $ref: '#/components/schemas/Error' })) } } },
+      '/me': { get: { tags: ['auth'], summary: '내 정보', responses: { 200: Object.assign({ description: 'ok' }, json({ type: 'object', required: ['username', 'name', 'role'], properties: { username: { type: 'string' }, name: { type: 'string' }, role: { type: 'string' } } })) } } },
+      '/items': {
+        get: { tags: ['items'], summary: '상품 목록', security: [], responses: { 200: Object.assign({ description: 'ok' }, json({ type: 'object', required: ['items', 'total'], properties: { items: { type: 'array', items: { $ref: '#/components/schemas/Item' } }, total: { type: 'integer' } } })) } },
+        post: { tags: ['items'], summary: '상품 등록', requestBody: json({ $ref: '#/components/schemas/Item' }), responses: { 201: Object.assign({ description: 'created' }, json({ $ref: '#/components/schemas/Item' })), 422: { description: '검증 오류' } } }
+      },
+      '/items/{id}': {
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer', example: 1 } }],
+        get: { tags: ['items'], summary: '상품 조회', security: [], responses: { 200: Object.assign({ description: 'ok' }, json({ $ref: '#/components/schemas/Item' })), 404: { description: '없음' } } },
+        put: { tags: ['items'], summary: '상품 수정', requestBody: json({ $ref: '#/components/schemas/Item' }), responses: { 200: Object.assign({ description: 'ok' }, json({ $ref: '#/components/schemas/Item' })) } },
+        delete: { tags: ['items'], summary: '상품 삭제', responses: { 204: { description: '삭제됨' } } }
+      },
+      '/status/{code}': { get: { tags: ['util'], summary: '원하는 상태 코드 응답', security: [], parameters: [{ name: 'code', in: 'path', required: true, schema: { type: 'integer', example: 200 } }], responses: { 200: { description: 'ok' } } } },
+      '/delay/{ms}': { get: { tags: ['util'], summary: '지연 응답', security: [], parameters: [{ name: 'ms', in: 'path', required: true, schema: { type: 'integer', example: 300 } }], responses: { 200: Object.assign({ description: 'ok' }, json({ type: 'object', properties: { delayed: { type: 'integer' } } })) } } }
+    }
+  };
+}
+
 const QA_USERS = { qa: { password: '1234', name: 'QA 테스터', role: 'tester' }, admin: { password: 'admin', name: '관리자', role: 'admin' } };
 const qaToken = (u) => 'qa.' + Buffer.from(u).toString('base64url') + '.' + crypto.createHash('sha256').update('easyapi-qa:' + u).digest('hex').slice(0, 16);
 const qaItems = new Map([[1, { id: 1, name: '아메리카노', price: 4500, stock: 30 }], [2, { id: 2, name: '카페라떼', price: 5000, stock: 12 }]]);
@@ -466,6 +500,24 @@ async function handleQa(req, res, url) {
     if (!json || !json.username || !json.password) return send(400, { error: 'username 과 password 가 필요해요' });
     if (!u || u.password !== json.password) return send(401, { error: '아이디 또는 비밀번호가 틀렸어요' });
     return send(200, { token: qaToken(json.username), user: { username: json.username, name: u.name, role: u.role }, expiresIn: 3600 });
+  }
+  if (p === '/qa/oauth/token' && req.method === 'POST') {
+    const form = Object.fromEntries(new URLSearchParams(raw));
+    let cid = form.client_id, csec = form.client_secret;
+    const basic = /^Basic\s+(.+)$/i.exec(req.headers.authorization || '');
+    if (basic) { const dec = Buffer.from(basic[1], 'base64').toString(); cid = dec.split(':')[0]; csec = dec.slice(cid.length + 1); }
+    if (cid !== 'qa-client' || csec !== 'qa-secret') return send(401, { error: 'invalid_client', error_description: 'client_id / client_secret 이 틀렸어요 (qa-client / qa-secret)' });
+    let user = 'qa';
+    if (form.grant_type === 'password') {
+      const u = QA_USERS[form.username];
+      if (!u || u.password !== form.password) return send(400, { error: 'invalid_grant', error_description: '아이디 또는 비밀번호가 틀렸어요' });
+      user = form.username;
+    } else if (form.grant_type !== 'client_credentials') return send(400, { error: 'unsupported_grant_type' });
+    return send(200, { access_token: qaToken(user), token_type: 'Bearer', expires_in: 3600, scope: form.scope || 'read' });
+  }
+  if (p === '/qa/openapi.json') {
+    const host = 'http://' + (req.headers.host || 'localhost:' + PORT);
+    return send(200, qaOpenApi(host));
   }
   if (p === '/qa/me') {
     const u = authUser();
@@ -521,6 +573,8 @@ const server = http.createServer(async (req, res) => {
   if (!checkAccess(req, url)) return sendJson(res, 401, { ok: false, error: { code: 'ACCESS_KEY', message: '접속 키가 필요합니다. 설정 → 접속 키를 입력하세요.' } });
 
   try {
+    const lm = /^\/api\/load(?:\/([a-z0-9]+))?\/(start|events|stop)$/.exec(p);
+    if (lm) return handleLoad(req, res, url, lm[1], lm[2]);
     if (p === '/api/send' && req.method === 'POST') {
       const spec = JSON.parse((await readBody(req, MAX_REQ_BODY)).toString('utf8') || '{}');
       const started = Date.now();
@@ -578,6 +632,52 @@ if (require.main === module) {
     else console.log('  ⚠ 외부 공개 서버라면 ACCESS_KEY 환경변수를 꼭 설정하세요.');
     console.log(line + '\n');
   });
+}
+
+/* ====================================================================== *
+ * 성능(부하) 테스트 — 서버에서 동시 요청 (브라우저 연결 수 제한 회피)
+ *   보안: 서버에서는 사용자 스크립트를 실행하지 않음 (노코드 검증만)
+ * ====================================================================== */
+const loads = new Map();
+async function handleLoad(req, res, url, id, action) {
+  if (action === 'start' && req.method === 'POST') {
+    const body = JSON.parse((await readBody(req, 10 * 1024 * 1024)).toString('utf8') || '{}');
+    const items = (body.items || []).map((it) => ({ req: EasyEngine.normalizeRequest(it.req), parent: it.parent || {} }));
+    if (!items.length) return sendJson(res, 400, { ok: false, error: { message: '실행할 요청이 없어요' } });
+    if (loads.size >= 3) return sendJson(res, 429, { ok: false, error: { message: '동시에 실행할 수 있는 성능 테스트는 3개까지예요' } });
+    const o = body.opts || {};
+    const settings = body.settings || {};
+    const jobId = crypto.randomBytes(6).toString('hex');
+    const job = { id: jobId, stop: false, last: null, done: false, clients: new Set() };
+    loads.set(jobId, job);
+    const push = (event, data) => job.clients.forEach((c) => sse(c, event, data));
+    const transport = (r) => performRequest({
+      method: r.method, url: r.url, headers: r.headers, body: EasyEngine.bodySpec(r),
+      proxy: settings.proxy, insecure: !!settings.insecure, followRedirects: settings.followRedirects !== false,
+      timeoutMs: Math.min(Number(settings.timeoutMs) || 30000, 120000)
+    }).catch((e) => ({ ok: false, error: errorInfo(e) }));
+    EasyEngine.runLoad(items, {
+      vus: Math.min(Number(o.vus) || 1, 100), duration: Math.min(Number(o.duration) || 10, 600), rampUp: Number(o.rampUp) || 0,
+      vars: body.vars || {}, oauthCache: body.oauthCache || {}
+    }, { transport }, {
+      shouldStop: () => job.stop,
+      onTick: (sum) => { job.last = sum; push('tick', sum); }
+    }).then((sum) => { job.last = sum; job.done = true; push('done', sum); }, (e) => { job.done = true; push('fail', { message: e.message }); })
+      .finally(() => setTimeout(() => { job.clients.forEach((c) => c.end()); loads.delete(jobId); }, 60000));
+    return sendJson(res, 200, { ok: true, id: jobId });
+  }
+  const job = loads.get(id);
+  if (!job) return sendJson(res, 404, { ok: false, error: { message: '없는 테스트예요' } });
+  if (action === 'stop') { job.stop = true; return sendJson(res, 200, { ok: true }); }
+  if (action === 'events') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.write('retry: 2000\n\n');
+    job.clients.add(res);
+    if (job.last) sse(res, job.done ? 'done' : 'tick', job.last);
+    req.on('close', () => job.clients.delete(res));
+    return undefined;
+  }
+  return sendJson(res, 405, { ok: false });
 }
 
 module.exports = { server, performRequest, isBypassed, parseProxy, buildBody };

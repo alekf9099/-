@@ -18,25 +18,32 @@ PC·모바일(안드로이드/아이폰) 모두 지원하고, 앱처럼 홈 화�
 
 | Postman | EasyAPI | 비고 |
 |---|---|---|
+| OpenAPI 3 / Swagger 2 가져오기 | ✅ | JSON·YAML, URL·파일·붙여넣기. 태그별 폴더, 경로/쿼리 변수, 예시 바디, 인증, **응답 스키마 검증 자동 생성** |
 | Params / Headers / Body / Auth | ✅ | Body: JSON · form-urlencoded · form-data(파일) · raw · **GraphQL** · **binary** |
 | Path Variables (`/users/:id`) | ✅ | 파라미터 탭에 자동 표시 |
+| OAuth 2.0 | ✅ | Client Credentials · Password 방식, 토큰 자동 발급·만료 시 재발급 (실행기·성능 테스트 공유) |
 | Auth 상속 (Inherit from parent) | ✅ | 폴더 설정의 인증을 요청이 이어받음 (새 요청 기본값) |
 | Environments / Globals / Collection Variables | ✅ | 우선순위: local > data > environment > collection > globals |
 | 동적 변수 `{{$guid}}` `{{$timestamp}}` `{{$randomEmail}}` … | ✅ | 19종 |
 | Pre-request Script / Tests (`pm.*`) | ✅ | `pm.test` · `pm.expect`(chai 문법) · `pm.response.to.have.status` · `pm.environment/globals/collectionVariables/variables` · `pm.sendRequest` · `pm.iterationData` · `pm.execution.skipRequest` · `postman.setNextRequest` · 구버전 `tests[]` 문법. Web Worker 샌드박스에서 실행 |
 | 폴더 단위 스크립트 | ✅ | 폴더 Pre-request/Tests가 요청 스크립트보다 먼저 실행 |
+| JSON Schema 검증 | ✅ | `pm.response.to.have.jsonSchema` · `tv4` · 노코드 "JSON 스키마 일치" (type·required·enum·format·$ref·oneOf·nullable 등) |
+| Performance Testing | ✅ | 가상 사용자·시간·램프업 → RPS · p50/p95/p99 · 오류율 · 초당 그래프 · 요청별 통계 (서버에서 실행) |
 | Collection Runner | ✅ | 반복 횟수, **CSV/JSON 데이터 파일**, 요청 간 대기, 실패 시 중단, 변수 유지 |
 | Newman (CLI) | ✅ | `node cli.js run` — CLI / JUnit / HTML / JSON / Markdown 리포트, 실패 시 종료 코드 1 |
 | Cookies 관리 | ✅ | Set-Cookie 자동 저장·첨부(도메인/경로/만료), 직접 추가·삭제 |
 | Console | ✅ | 실제 전송 헤더·바디, `console.log`, 경고 |
 | Code snippet | ✅ | cURL(bash/cmd) · JavaScript fetch · Python requests |
 | Postman 컬렉션 가져오기/내보내기 | ✅ | v2.1 (폴더·스크립트·인증·변수 포함). 내보낼 때 노코드 검증은 `pm.test` 스크립트로 자동 변환 → Newman 에서도 동작 |
-| Mock Server · Monitor · WebSocket · OAuth 2.0 흐름 | ❌ | 미지원 (Bearer 토큰으로 대체 가능) |
+| Mock Server · Monitor · WebSocket · OAuth Authorization Code(브라우저 로그인) | ❌ | 미지원 |
 
 ## QA 를 편하게 하는 기능 (EasyAPI 전용)
 
 | 기능 | 설명 |
 |---|---|
+| **명령 팔레트 (Ctrl/⌘ + K)** | 요청·폴더·최근 기록·모든 기능을 키보드로 바로 찾아 실행 |
+| **JSON 트리 뷰** | 응답의 키/값을 누르면 → 검증 추가 · 변수로 저장 · JSON 경로 복사 · 구조로 스키마 생성 |
+| **기준 응답 회귀 비교** | 응답을 "기준"으로 저장 → 이후 응답과 자동 비교(검증 실패로 표시). `$.updatedAt`, `$.items[*].id` 처럼 매번 바뀌는 경로 제외 |
 | **노코드 검증** | `상태 코드 = 200`, `$.data.id 존재함`, `응답 시간 < 500` 같은 조건을 표처럼 입력. 보낼 때마다 행마다 PASS/FAIL 표시 |
 | **응답값 → 변수 저장** | JSON 경로 / 헤더 / 정규식 / 상태 코드를 변수로 저장 → 로그인 토큰 체이닝을 코드 없이 |
 | **현재 응답으로 검증 자동 생성** | 지금 받은 응답을 기준으로 상태·응답 시간·주요 필드 검증을 한 번에 생성 (회귀 테스트 기준선) |
@@ -54,6 +61,8 @@ PC·모바일(안드로이드/아이폰) 모두 지원하고, 앱처럼 홈 화�
 | `ANY /qa/echo` | 받은 요청을 그대로 돌려줌 |
 | `GET /qa/status/:code`, `GET /qa/delay/:ms` | 원하는 상태 코드 / 지연 응답 |
 | `GET /qa/cookies/set?k=v`, `GET /qa/cookies` | 쿠키 저장/확인 |
+| `POST /qa/oauth/token` | OAuth 2.0 토큰 (client: `qa-client` / `qa-secret`, password 방식은 qa / 1234) |
+| `GET /qa/openapi.json` | 이 연습 API의 OpenAPI 명세 → 가져오기·계약 테스트 연습용 |
 
 ## 실행 방법
 
@@ -82,6 +91,7 @@ npm start            # 또는 node server.js
 | `Ctrl/⌘ + S` | 저장 |
 | `Alt + T` / `Alt + W` | 새 탭 / 탭 닫기 |
 | `Ctrl/⌘ + Shift + R` | 실행기 열기 |
+| `Ctrl/⌘ + K` | 명령 팔레트 |
 
 ## CLI · CI 자동화 (Newman 대체)
 
@@ -102,6 +112,17 @@ node cli.js run postman_collection.json -d users.csv --bail --var host=https://a
 | `-r, --reporters cli,junit,html,json,md` · `-o <dir>` | 리포트 종류 · 저장 폴더 (기본 `./easyapi-reports`) |
 
 실패한 검증이나 요청 오류가 있으면 **종료 코드 1** 을 반환해 CI 파이프라인을 실패 처리합니다.
+
+**OpenAPI 명세로 바로 계약 테스트**
+```bash
+node cli.js run openapi.json --var baseUrl=https://api.dev.example.com --var token=$TOKEN -r cli,junit
+```
+
+**성능 테스트 + 성능 기준(게이트)**
+```bash
+node cli.js load shop.easyapi.json --vus 50 --duration 60 --ramp 10 --threshold-p95 800 --threshold-errors 1 -r md,json
+```
+p95 응답 시간이나 실패율이 기준을 넘으면 종료 코드 1.
 
 **GitHub Actions 예시**
 ```yaml
@@ -150,7 +171,7 @@ easyapi/
 │   ├── js/app.js          # 화면 로직
 │   └── sw.js · manifest.webmanifest · icons/   # PWA
 ├── store/                 # 스토어 그래픽
-└── test/                  # npm test (cURL 파서 · 엔진 23개 테스트)
+└── test/                  # npm test (cURL 파서 · 엔진 · 고급 기능 30개 테스트)
 ```
 
 ## 보안 참고

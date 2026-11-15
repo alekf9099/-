@@ -42,7 +42,9 @@
     const el = document.createElement('div');
     el.className = 'toast ' + (type || '');
     el.textContent = msg;
-    $('#toasts').appendChild(el);
+    const box = $('#toasts');
+    while (box.children.length >= 3) box.firstChild.remove();
+    box.appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, ms || 2600);
   }
 
@@ -410,7 +412,7 @@
     $('#cntParams').textContent = n(r.params) || '';
     $('#cntHeaders').textContent = n(r.headers) || '';
     $('#cntBody').textContent = r.body.mode === 'none' ? '' : ({ json: 'JSON', form: '폼', multipart: '파일', raw: '텍스트', graphql: 'GQL', binary: '파일' }[r.body.mode]);
-    $('#cntAuth').textContent = ({ none: '', inherit: '', bearer: 'Bearer', basic: 'Basic', apikey: 'Key' }[r.auth.type]) || '';
+    $('#cntAuth').textContent = ({ none: '', inherit: '', bearer: 'Bearer', basic: 'Basic', apikey: 'Key', oauth2: 'OAuth' }[r.auth.type]) || '';
     const na = r.assertions.filter((a) => a.enabled !== false).length;
     const nx = r.extracts.filter((x) => x.enabled !== false && x.varName).length;
     $('#cntAssert').textContent = na || nx ? (na + (nx ? '+' + nx : '')) : '';
@@ -508,10 +510,20 @@
     $('#authKeyName').value = a.apiKeyName || '';
     $('#authKeyValue').value = a.apiKeyValue || '';
     $('#authKeyIn').value = a.apiKeyIn || 'header';
+    $('#oaGrant').value = a.oauthGrant || 'client_credentials';
+    $('#oaClientAuth').value = a.clientAuth || 'body';
+    $('#oaTokenUrl').value = a.tokenUrl || '';
+    $('#oaClientId').value = a.clientId || '';
+    $('#oaClientSecret').value = a.clientSecret || '';
+    $('#oaUser').value = a.oauthUser || '';
+    $('#oaPass').value = a.oauthPass || '';
+    $('#oaScope').value = a.scope || '';
+    $('#oaUserRow').hidden = a.oauthGrant !== 'password';
+    renderOAuthStatus();
     const col = currentCollection();
     const pa = col ? col.auth : null;
     $('#inheritInfo').innerHTML = !col ? '보관함에 저장하면 폴더의 인증을 이어받아요. 지금은 인증 없이 보내요.'
-      : (pa && pa.type !== 'none' ? '<b>' + esc(col.name) + '</b> 폴더의 인증(' + ({ bearer: 'Bearer 토큰', basic: 'Basic', apikey: 'API Key' }[pa.type]) + ')을 사용해요. '
+      : (pa && pa.type !== 'none' ? '<b>' + esc(col.name) + '</b> 폴더의 인증(' + ({ bearer: 'Bearer 토큰', basic: 'Basic', apikey: 'API Key', oauth2: 'OAuth 2.0' }[pa.type]) + ')을 사용해요. '
         : '<b>' + esc(col.name) + '</b> 폴더에 인증이 없어 인증 없이 보내요. ') + '<a href="#" id="lnkColSettings">폴더 설정 열기</a>';
     const lnk = $('#lnkColSettings');
     if (lnk) lnk.addEventListener('click', (e) => { e.preventDefault(); openCollectionSettings(col.id); });
@@ -620,6 +632,12 @@
       $(sel).addEventListener('input', (e) => { S.req.auth[key] = e.target.value; reqChanged(); });
     });
     $('#authKeyIn').addEventListener('change', (e) => { S.req.auth.apiKeyIn = e.target.value; reqChanged(); });
+    [['#oaTokenUrl', 'tokenUrl'], ['#oaClientId', 'clientId'], ['#oaClientSecret', 'clientSecret'], ['#oaUser', 'oauthUser'], ['#oaPass', 'oauthPass'], ['#oaScope', 'scope']].forEach(([sel, key]) => {
+      $(sel).addEventListener('input', (e) => { S.req.auth[key] = e.target.value; reqChanged(); renderOAuthStatus(); });
+    });
+    $('#oaGrant').addEventListener('change', (e) => { S.req.auth.oauthGrant = e.target.value; $('#oaUserRow').hidden = e.target.value !== 'password'; reqChanged(); });
+    $('#oaClientAuth').addEventListener('change', (e) => { S.req.auth.clientAuth = e.target.value; reqChanged(); });
+    $('#btnOaFetch').addEventListener('click', fetchTokenNow);
 
     // 미러
     $('#mirrorEnabled').addEventListener('change', (e) => {
@@ -788,7 +806,7 @@
     S.sending = ctrl;
     setLoading(true);
     const env = S.envs.find((e) => e.id === S.activeEnv);
-    const ctx = { vars: currentVars(), cookieJar: S.cookies, cookieAuto: S.settings.cookieAuto, info: { iteration: 0, iterationCount: 1, environmentName: env ? env.name : '' } };
+    const ctx = { vars: currentVars(), cookieJar: S.cookies, cookieAuto: S.settings.cookieAuto, oauthCache: S.oauthCache, info: { iteration: 0, iterationCount: 1, environmentName: env ? env.name : '' } };
     const deps = { transport: (r) => transport(r, ctrl.signal), sandbox: (code, sctx) => Sandbox.run(code, sctx) };
     const mUrl = S.settings.mirror.enabled ? mirrorUrl(pre.url) : '';
     try {
@@ -812,7 +830,7 @@
       if (failed) S.ui.respTab = 'tests';
       else if (mUrl) S.ui.respTab = 'compare';
       else if (['compare', 'console', 'cookies'].indexOf(S.ui.respTab) >= 0) S.ui.respTab = 'body';
-      if (tabObj.id === S.activeTab) { renderResponse(); renderAssertTab(); renderResolvedUrl(); }
+      if (tabObj.id === S.activeTab) { renderResponse(); renderAssertTab(); renderResolvedUrl(); renderOAuthStatus(); }
       if (counted.length) toast('테스트 ' + (counted.length - failed) + '/' + counted.length + ' 통과', failed ? 'err' : 'ok', 2200);
       persist();
       Room.publish('response', { response: trimForSync(tabObj.response), mirror: trimForSync(tabObj.mirrorResponse), meta: tabObj.responseReq, run: { tests: rec.tests, logs: rec.logs, extracted: rec.extracted } });
@@ -923,7 +941,7 @@
     renderTests();
     renderCookies();
     renderConsole();
-    const hasMirror = !!S.mirrorResponse;
+    const hasMirror = !!S.mirrorResponse || !!(S.req.baseline && r.ok);
     $('#tabCompare').hidden = !hasMirror;
     if (!hasMirror && S.ui.respTab === 'compare') S.ui.respTab = 'body';
     if (hasMirror) renderCompare();
@@ -957,6 +975,12 @@
     if (kind === 'binary' || kind === 'image') {
       box.innerHTML = '<pre class="muted">바이너리 데이터 (' + formatBytes(r.size) + ', ' + esc(r.contentType || '형식 미상') + ')\n오른쪽 위 저장 버튼으로 파일을 받을 수 있어요.' + (kind === 'image' ? '\n"미리보기"를 누르면 이미지를 볼 수 있어요.' : '') + '</pre>';
       return;
+    }
+    if (mode === 'tree' && kind === 'json' && body.length < 2000000) {
+      try {
+        box.innerHTML = '<div class="tree" role="tree">' + treeHtml(JSON.parse(body), '$', null, 0) + '</div><p class="tree-hint beginner">값이나 키를 누르면 검증 추가 · 변수 저장 · 경로 복사를 할 수 있어요.</p>';
+        return;
+      } catch (e) { /* 아래 일반 보기로 */ }
     }
     let html;
     if (mode !== 'raw' && kind === 'json' && body.length < 3000000) {
@@ -1040,56 +1064,19 @@
   }
   const show = (v) => v === undefined ? '(없음)' : (typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v));
 
-  function renderCompare() {
-    const A = S.response;
-    const B = S.mirrorResponse;
-    const meta = S.responseReq || {};
-    const diffs = [];
-    if (!A.ok || !B.ok) {
-      if (A.ok !== B.ok || (A.error && B.error && A.error.code !== B.error.code)) diffs.push({ path: '연결 결과', a: A.ok ? A.status : A.error.message, b: B.ok ? B.status : B.error.message });
-    } else {
-      if (A.status !== B.status) diffs.push({ path: '상태 코드', a: A.status, b: B.status });
-      let bodyDiffs = [];
-      let ja, jb, bothJson = false;
-      try { ja = JSON.parse(A.body); jb = JSON.parse(B.body); bothJson = true; } catch (e) { /* noop */ }
-      if (bothJson) deepDiff(ja, jb, '$', bodyDiffs);
-      else if (A.body !== B.body) {
-        const la = (A.body || '').split('\n');
-        const lb = (B.body || '').split('\n');
-        let i = 0;
-        while (i < la.length && i < lb.length && la[i] === lb[i]) i++;
-        bodyDiffs.push({ path: '본문 ' + (i + 1) + '번째 줄부터 다름', a: (la[i] || '').slice(0, 200), b: (lb[i] || '').slice(0, 200) });
-      }
-      bodyDiffs.forEach((d) => diffs.push(d));
-    }
-    const headerDiffs = [];
-    if (A.ok && B.ok) {
-      const ha = {}, hb = {};
-      A.headers.forEach(([k, v]) => { ha[k.toLowerCase()] = v; });
-      B.headers.forEach(([k, v]) => { hb[k.toLowerCase()] = v; });
-      new Set(Object.keys(ha).concat(Object.keys(hb))).forEach((k) => {
-        if (IGNORE_HEADERS.has(k)) return;
-        if (ha[k] !== hb[k]) headerDiffs.push({ path: k, a: ha[k], b: hb[k] });
-      });
-    }
-    $('#cntDiff').textContent = diffs.length ? diffs.length : '✓';
-    const col = (label, r, url) => '<div class="cmp-col"><h4>' + label + '</h4>' +
-      (r.ok ? '<span class="status-chip s' + Math.floor(r.status / 100) + '"><i class="dot"></i>' + r.status + '</span> <span class="stat"><b>' + formatMs(r.timeMs) + '</b></span> <span class="stat"><b>' + formatBytes(r.size) + '</b></span>'
-        : '<span class="status-chip err"><i class="dot"></i>ERROR</span> <span class="muted">' + esc(r.error.message) + '</span>') +
-      '<div class="u">' + esc(url || '') + '</div></div>';
-    const list = (arr) => '<div class="diff-list">' + arr.map((d) => '<div class="diff-item"><div class="p">' + esc(d.path) + '</div><div class="a">A: ' + esc(show(d.a)) + '</div><div class="b">B: ' + esc(show(d.b)) + '</div></div>').join('') + '</div>';
-    $('#compareView').innerHTML =
-      '<div class="cmp-verdict ' + (diffs.length ? 'diff' : 'same') + '">' + icon(diffs.length ? 'help' : 'check') +
-      (diffs.length ? diffs.length + '군데 차이가 있어요' + (diffs.length >= 300 ? ' (300개까지 표시)' : '') : '두 서버의 응답이 같아요') + '</div>' +
-      '<div class="cmp-grid">' + col('A · 기본 서버', A, meta.url) + col('B · 비교 서버', B, meta.mirrorUrl) + '</div>' +
-      (diffs.length ? '<div class="section-title">본문 / 상태 차이</div>' + list(diffs) : '') +
-      (headerDiffs.length ? '<div class="section-title">헤더 차이 (날짜·요청ID 등 매번 바뀌는 값 제외)</div>' + list(headerDiffs) : '');
-  }
-
   function bindResponse() {
     $$('#respTabs button').forEach((b) => b.addEventListener('click', () => switchRespTab(b.dataset.rtab)));
     $$('#viewMode button').forEach((b) => b.addEventListener('click', () => { S.ui.viewMode = b.dataset.view; renderRespBody(); persist(); }));
     $('#respFilter').addEventListener('input', debounce(renderRespBody, 200));
+    $('#btnBaseline').addEventListener('click', saveBaseline);
+    $('#respBody').addEventListener('click', (e) => {
+      const el = e.target.closest('.tree [data-path]');
+      if (!el) return;
+      if (el.classList.contains('t-sum') && e.target.closest('summary') && !e.altKey) { /* 요약 클릭은 펼치기 유지, 길게 쓰려면 키 클릭 */ }
+      if (el.closest('summary') && el.classList.contains('t-sum')) return;
+      e.preventDefault();
+      treeMenu(el.dataset.path);
+    });
     $('#btnCopyResp').addEventListener('click', () => {
       const r = S.response;
       if (!r || !r.ok) return;
@@ -1274,6 +1261,7 @@
     $('#btnLibMore').addEventListener('click', () => actionSheet('가져오기 / 내보내기', [
       { label: '전체 내보내기 (JSON 백업)', icon: 'download', run: exportWorkspace },
       { label: '파일 가져오기 (EasyAPI 백업 / Postman 컬렉션)', icon: 'import', run: importFile },
+      { label: 'OpenAPI / Swagger 명세 가져오기', icon: 'import', run: openOpenAPI },
       { label: 'cURL 붙여넣기', icon: 'code', run: () => openImport() }
     ]));
   }
@@ -1684,7 +1672,7 @@
 
         '<section class="set-section"><h3>' + icon('folder') + '데이터</h3>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" id="sExport">전체 백업 내보내기</button><button class="btn btn-outline btn-sm" id="sImport">백업/Postman 가져오기</button><button class="btn btn-ghost btn-sm" id="sReset" style="color:var(--danger)">모두 초기화</button></div>' +
-        '<p class="muted" style="font-size:12px;margin:10px 0 0">모든 데이터는 이 기기 브라우저에만 저장돼요. EasyAPI v1.1</p></section>',
+        '<p class="muted" style="font-size:12px;margin:10px 0 0">모든 데이터는 이 기기 브라우저에만 저장돼요. EasyAPI v1.2</p></section>',
       buttons: [{ label: '닫기', cls: 'btn-primary' }],
       onOpen: (b) => {
         const bindSwitch = (id, fn) => $(id, b).addEventListener('change', (e) => { fn(e.target.checked); persist(); });
@@ -1797,7 +1785,10 @@
         let data;
         try { data = JSON.parse(t); } catch (e) { toast('JSON 파일이 아니에요', 'err'); return; }
         let added = 0;
-        if (data.info && /postman/i.test(String(data.info.schema || data.info._postman_id || '')) || (data.info && data.item)) {
+        if (data.openapi || data.swagger) {
+          const cols = EasyEngine.fromOpenAPI(data);
+          cols.forEach((c) => { S.collections.push(c); added += c.requests.length; });
+        } else if (data.info && /postman/i.test(String(data.info.schema || data.info._postman_id || '')) || (data.info && data.item)) {
           const cols = EasyEngine.fromPostman(data);
           cols.forEach((c) => { S.collections.push(c); added += c.requests.length; });
         } else if (data.values && data.name && Array.isArray(data.values)) {
@@ -2119,22 +2110,32 @@
   function assertRow(a) {
     const d = document.createElement('div');
     const draw = () => {
-      const needsPath = a.target === 'header' || a.target === 'json';
+      if (a.target === 'schema' && a.op !== 'schema') a.op = 'schema';
+      if (a.target === 'baseline') a.op = 'eq';
+      if (a.target !== 'schema' && a.op === 'schema') a.op = 'eq';
+      const special = a.target === 'schema' || a.target === 'baseline';
+      const needsPath = a.target === 'header' || a.target === 'json' || a.target === 'schema';
       const noVal = EasyEngine.NO_VALUE_OPS.indexOf(a.op) >= 0;
+      const ops = {};
+      Object.keys(EasyEngine.OPS).forEach((k) => { if (k !== 'schema') ops[k] = EasyEngine.OPS[k]; });
       const res = lastResultFor(EasyEngine.assertionName(a), 'assert');
       d.className = 'arow' + (a.enabled === false ? ' off' : '') + (res ? (res.passed ? ' pass' : ' fail') : '');
       d.innerHTML = '<input type="checkbox" class="chk" title="사용"' + (a.enabled !== false ? ' checked' : '') + '>' +
         '<select class="a-target" aria-label="검사 대상">' + optList(EasyEngine.TARGETS, a.target) + '</select>' +
-        '<input type="text" class="a-path" aria-label="경로" placeholder="' + (a.target === 'json' ? '$.data.id' : 'Content-Type') + '" value="' + esc(a.path || '') + '"' + (needsPath ? '' : ' hidden') + ' autocapitalize="off" spellcheck="false">' +
-        '<select class="a-op" aria-label="조건">' + optList(EasyEngine.OPS, a.op) + '</select>' +
-        '<input type="text" class="a-val" aria-label="기대값" placeholder="기대값" value="' + esc(a.value || '') + '"' + (noVal ? ' hidden' : '') + ' autocapitalize="off" spellcheck="false">' +
+        '<input type="text" class="a-path" aria-label="경로" placeholder="' + ({ json: '$.data.id', schema: '$ (전체) 또는 $.data' }[a.target] || 'Content-Type') + '" value="' + esc(a.path || '') + '"' + (needsPath ? '' : ' hidden') + ' autocapitalize="off" spellcheck="false">' +
+        '<select class="a-op" aria-label="조건"' + (special ? ' hidden' : '') + '>' + optList(ops, a.op) + '</select>' +
+        (a.target === 'schema' ? '<button class="btn btn-ghost btn-sm a-schema" title="스키마 편집">' + icon('edit') + esc(schemaSummary(a.value)) + '</button>'
+          : '<input type="text" class="a-val" aria-label="기대값" placeholder="' + (a.target === 'baseline' ? '제외할 경로: $.updatedAt, $.items[*].id' : '기대값') + '" value="' + esc(a.value || '') + '"' + (noVal ? ' hidden' : '') + ' autocapitalize="off" spellcheck="false">') +
         '<span class="a-res" title="' + esc(res && res.error ? res.error : '') + '">' + (res ? (res.passed ? 'PASS' : 'FAIL') : '') + '</span>' +
         '<button class="icon-btn del" aria-label="조건 삭제">' + icon('trash') + '</button>';
       $('.chk', d).addEventListener('change', (e) => { a.enabled = e.target.checked; d.classList.toggle('off', !a.enabled); reqChanged(); });
       $('.a-target', d).addEventListener('change', (e) => { a.target = e.target.value; draw(); reqChanged(); });
       $('.a-op', d).addEventListener('change', (e) => { a.op = e.target.value; draw(); reqChanged(); });
       $('.a-path', d).addEventListener('input', (e) => { a.path = e.target.value; reqChanged(); });
-      $('.a-val', d).addEventListener('input', (e) => { a.value = e.target.value; reqChanged(); });
+      const av = $('.a-val', d);
+      if (av) av.addEventListener('input', (e) => { a.value = e.target.value; reqChanged(); if (a.target === 'baseline' && S.response) renderCompare(); });
+      const sb = $('.a-schema', d);
+      if (sb) sb.addEventListener('click', () => openSchemaEditor(a));
       $('.del', d).addEventListener('click', () => { S.req.assertions.splice(S.req.assertions.indexOf(a), 1); renderAssertTab(); reqChanged(); });
     };
     draw();
@@ -2179,6 +2180,7 @@
           else add.push({ target: 'json', op: 'eq', path: p, value: String(v), enabled: true });
         });
       }
+      if (j && typeof j === 'object') add.push({ target: 'schema', op: 'schema', value: JSON.stringify(inferSchema(j)), path: '', enabled: true });
     } catch (e) { /* JSON 아님 */ }
     const have = new Set(S.req.assertions.map((a) => a.target + '|' + a.path + '|' + a.op));
     const fresh = add.filter((a) => !have.has(a.target + '|' + a.path + '|' + a.op));
@@ -2404,13 +2406,18 @@
         if (tab === 'auth') {
           const a = c.auth;
           body.innerHTML = '<p class="tip">이 폴더의 요청 중 인증이 <b>"상위 폴더 인증 사용"</b>인 요청에 자동 적용돼요. (새 요청의 기본값)</p>' +
-            '<label class="field"><span>인증 방식</span><select id="csAuth"><option value="none">없음</option><option value="bearer">Bearer 토큰</option><option value="basic">아이디 / 비밀번호 (Basic)</option><option value="apikey">API Key</option></select></label>' +
+            '<label class="field"><span>인증 방식</span><select id="csAuth"><option value="none">없음</option><option value="bearer">Bearer 토큰</option><option value="basic">아이디 / 비밀번호 (Basic)</option><option value="apikey">API Key</option><option value="oauth2">OAuth 2.0</option></select></label>' +
+            (a.type === 'oauth2' ? '<div class="grid-2"><label class="field"><span>방식</span><select data-k="oauthGrant"><option value="client_credentials"' + (a.oauthGrant !== 'password' ? ' selected' : '') + '>Client Credentials</option><option value="password"' + (a.oauthGrant === 'password' ? ' selected' : '') + '>Password</option></select></label>' +
+              '<label class="field"><span>클라이언트 인증</span><select data-k="clientAuth"><option value="body">본문</option><option value="header"' + (a.clientAuth === 'header' ? ' selected' : '') + '>Basic 헤더</option></select></label></div>' +
+              '<label class="field"><span>Token URL</span><input type="text" data-k="tokenUrl" value="' + esc(a.tokenUrl) + '"></label><div class="grid-2"><label class="field"><span>Client ID</span><input type="text" data-k="clientId" value="' + esc(a.clientId) + '"></label><label class="field"><span>Client Secret</span><input type="password" data-k="clientSecret" value="' + esc(a.clientSecret) + '"></label></div>' +
+              '<div class="grid-2"><label class="field"><span>아이디 (Password 방식)</span><input type="text" data-k="oauthUser" value="' + esc(a.oauthUser) + '"></label><label class="field"><span>비밀번호</span><input type="password" data-k="oauthPass" value="' + esc(a.oauthPass) + '"></label></div>' +
+              '<label class="field"><span>Scope</span><input type="text" data-k="scope" value="' + esc(a.scope) + '"></label>' : '') +
             (a.type === 'bearer' ? '<label class="field"><span>토큰</span><input type="text" data-k="bearer" value="' + esc(a.bearer) + '" placeholder="{{token}}"></label>' : '') +
             (a.type === 'basic' ? '<label class="field"><span>아이디</span><input type="text" data-k="username" value="' + esc(a.username) + '"></label><label class="field"><span>비밀번호</span><input type="password" data-k="password" value="' + esc(a.password) + '"></label>' : '') +
             (a.type === 'apikey' ? '<label class="field"><span>키 이름</span><input type="text" data-k="apiKeyName" value="' + esc(a.apiKeyName) + '"></label><label class="field"><span>키 값</span><input type="text" data-k="apiKeyValue" value="' + esc(a.apiKeyValue) + '"></label>' : '');
           $('#csAuth', body).value = a.type;
           $('#csAuth', body).addEventListener('change', (e) => { a.type = e.target.value; persist(); drawTab(); });
-          $$('[data-k]', body).forEach((inp) => inp.addEventListener('input', () => { a[inp.dataset.k] = inp.value; persist(); }));
+          $$('[data-k]', body).forEach((inp) => { const h = () => { a[inp.dataset.k] = inp.value; persist(); }; inp.addEventListener('input', h); inp.addEventListener('change', h); });
         } else if (tab === 'vars') {
           body.innerHTML = '<p class="tip">이 폴더 안에서만 쓰는 변수예요. 우선순위: 로컬 &gt; 데이터 &gt; <b>환경</b> &gt; <b>컬렉션</b> &gt; 전역</p><div class="kv" id="csVars"></div>';
           kvEditor($('#csVars', body), () => c.variables, { keyPh: '변수명', valPh: '값', keyLabel: '변수명', valLabel: '값', onChange: () => persist() }).render();
@@ -2439,7 +2446,8 @@
    * 16-I. 컬렉션 실행기 (Runner)
    * ------------------------------------------------------------------ */
   let RUN = null;
-  function openRunner(colId) {
+  function openRunner(colId, initialMode) {
+    let mode = initialMode === 'perf' ? 'perf' : 'func';
     const cols = S.collections.filter((c) => c.requests.length);
     if (!cols.length) { toast('실행할 요청이 담긴 폴더가 없어요', 'err'); return; }
     let col = cols.find((c) => c.id === colId) || (S.current && cols.find((c) => c.id === S.current.colId)) || cols[0];
@@ -2453,14 +2461,20 @@
     const drawSetup = () => {
       const b = bodyEl;
       b.innerHTML =
-        '<p class="tip beginner">폴더의 요청을 위에서부터 차례로 보내고 검증·스크립트 결과를 모아 리포트를 만들어요. 앞 요청에서 저장한 변수(토큰 등)는 다음 요청에서 바로 쓰여요.</p>' +
+        '<div class="seg seg-full" id="rMode" style="margin-bottom:12px"><button data-m="func">' + icon('play') + ' 기능 테스트</button><button data-m="perf">' + icon('gauge') + ' 성능 테스트</button></div>' +
+        '<p class="tip beginner" data-mode="func">폴더의 요청을 위에서부터 차례로 보내고 검증·스크립트 결과를 모아 리포트를 만들어요. 앞 요청에서 저장한 변수(토큰 등)는 다음 요청에서 바로 쓰여요.</p>' +
+        '<p class="tip" data-mode="perf">여러 가상 사용자가 동시에 요청을 반복해 <b>초당 처리량(RPS)·응답 시간 p95·오류율</b>을 측정해요. 서버에서 실행되며, 보안을 위해 <b>스크립트는 제외하고 노코드 검증만</b> 실행해요. (토큰은 미리 변수에 넣어 두거나 OAuth 2.0 사용)</p>' +
         '<div class="grid-2"><label class="field"><span>폴더</span><select id="rCol">' + cols.map((c) => '<option value="' + c.id + '"' + (c.id === col.id ? ' selected' : '') + '>' + esc(c.name) + ' (' + c.requests.length + ')</option>').join('') + '</select></label>' +
         '<label class="field"><span>환경</span><select id="rEnv"><option value="">환경 없음</option>' + S.envs.map((e) => '<option value="' + e.id + '"' + (e.id === envId ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select></label></div>' +
-        '<div class="grid-3"><label class="field"><span>반복 횟수</span><input type="number" id="rIter" min="1" max="1000" value="1"></label>' +
+        '<div data-mode="func"><div class="grid-3"><label class="field"><span>반복 횟수</span><input type="number" id="rIter" min="1" max="1000" value="1"></label>' +
         '<label class="field"><span>요청 간 대기 (ms)</span><input type="number" id="rDelay" min="0" max="60000" value="0"></label>' +
         '<label class="field"><span>데이터 파일 (CSV/JSON)</span><label class="file-drop sm">' + icon('file') + '<span id="rDataName">' + (dataName ? esc(dataName) + ' · ' + data.length + '행' : '선택 안 함') + '</span><input type="file" id="rData" accept=".csv,.json,text/csv,application/json"></label></label></div>' +
         '<div class="grid-2"><div class="switch-row"><div><b>실패하면 중단</b><p class="muted">첫 실패에서 멈춰요</p></div><label class="switch"><input type="checkbox" id="rBail"><i></i></label></div>' +
-        '<div class="switch-row"><div><b>바뀐 변수 저장</b><p class="muted">실행 중 저장된 토큰 등을 유지</p></div><label class="switch"><input type="checkbox" id="rPersist" checked><i></i></label></div></div>' +
+        '<div class="switch-row"><div><b>바뀐 변수 저장</b><p class="muted">실행 중 저장된 토큰 등을 유지</p></div><label class="switch"><input type="checkbox" id="rPersist" checked><i></i></label></div></div></div>' +
+        '<div data-mode="perf"><div class="grid-3"><label class="field"><span>가상 사용자 (VU)</span><input type="number" id="pVus" min="1" max="100" value="10"></label>' +
+        '<label class="field"><span>실행 시간 (초)</span><input type="number" id="pDur" min="1" max="600" value="20"></label>' +
+        '<label class="field"><span>램프업 (초)</span><input type="number" id="pRamp" min="0" max="300" value="0"><small>사용자를 서서히 늘리는 시간</small></label></div>' +
+        '<p class="muted" style="font-size:12px;margin:-4px 0 12px">⚠ 운영 서버에 부하를 줄 수 있어요. 허가받은 대상에만 실행하세요.</p></div>' +
         '<div class="sub-head"><b>실행할 요청 <span class="muted" id="rCount"></span></b><span><button class="btn btn-ghost btn-sm" id="rAll">모두</button><button class="btn btn-ghost btn-sm" id="rNone">해제</button></span></div>' +
         '<div class="run-pick" id="rList"></div>';
       const list = $('#rList', b);
@@ -2491,7 +2505,17 @@
           } catch (err) { toast('데이터 파일을 읽을 수 없어요: ' + err.message, 'err'); }
         });
       });
+      const applyMode = () => {
+        $$('#rMode button', b).forEach((x) => x.classList.toggle('on', x.dataset.m === mode));
+        $$('[data-mode]', b).forEach((el) => { el.hidden = el.dataset.mode !== mode; });
+      };
+      $$('#rMode button', b).forEach((x) => x.addEventListener('click', () => { mode = x.dataset.m; applyMode(); }));
+      applyMode();
       setFoot([{ label: '닫기' }, { label: '실행 시작', cls: 'btn-primary', icon: 'play', onClick: () => {
+        if (mode === 'perf') {
+          startLoad({ vus: Math.max(1, Math.min(100, Number($('#pVus', b).value) || 1)), duration: Math.max(1, Math.min(600, Number($('#pDur', b).value) || 10)), rampUp: Math.max(0, Number($('#pRamp', b).value) || 0) });
+          return false;
+        }
         start({ iterations: Number($('#rIter', b).value) || 1, delay: Number($('#rDelay', b).value) || 0, bail: $('#rBail', b).checked, persistVars: $('#rPersist', b).checked });
         return false;
       } }]);
@@ -2534,7 +2558,7 @@
       }));
       const summary = await EasyEngine.runCollection(items, {
         iterations: iterations, data: data, delay: o.delay, bail: o.bail, vars: vars,
-        cookieJar: S.cookies, cookieAuto: S.settings.cookieAuto, environmentName: env ? env.name : ''
+        cookieJar: S.cookies, cookieAuto: S.settings.cookieAuto, oauthCache: S.oauthCache, environmentName: env ? env.name : ''
       }, { transport: (r) => transport(r), sandbox: (code, ctx) => Sandbox.run(code, ctx) }, {
         shouldStop: () => RUN.stop,
         onResult: (rec) => {
@@ -2596,6 +2620,87 @@
       if (S.response) renderResponse();
     }
 
+    /* ---- 성능 테스트 ---- */
+    let loadES = null;
+    async function startLoad(o) {
+      if (S.serverOk === false) { toast('성능 테스트는 EasyAPI 서버 실행 시에만 사용할 수 있어요', 'err'); return; }
+      const reqs = col.requests.filter((r) => sel.has(r.id));
+      if (!reqs.length) { toast('실행할 요청을 선택하세요', 'err'); return; }
+      const env = S.envs.find((e) => e.id === envId);
+      const vars = { globals: EasyEngine.rowsToMap(S.globals), collection: EasyEngine.rowsToMap(col.variables), environment: EasyEngine.rowsToMap(env ? env.vars : []), data: {}, local: {} };
+      const headers = { 'Content-Type': 'application/json' };
+      if (S.settings.accessKey) headers['X-Access-Key'] = S.settings.accessKey;
+      let start;
+      try {
+        start = await (await fetch('api/load/start', { method: 'POST', headers: headers, body: JSON.stringify({
+          items: reqs.map((r) => ({ req: stripFiles(r), parent: { name: col.name, auth: col.auth } })), vars: vars, oauthCache: S.oauthCache,
+          opts: { vus: o.vus, duration: o.duration, rampUp: o.rampUp },
+          settings: { proxy: S.settings.proxy, insecure: S.settings.insecure, followRedirects: S.settings.followRedirects, timeoutMs: (Number(S.settings.timeoutSec) || 30) * 1000 }
+        }) })).json();
+      } catch (e) { toast('성능 테스트를 시작하지 못했어요: ' + e.message, 'err'); return; }
+      if (!start.ok) { toast(start.error ? start.error.message : '시작 실패', 'err'); return; }
+      const b = bodyEl;
+      b.innerHTML = '<div class="run-head"><div class="run-title"><b>성능 테스트 · ' + esc(col.name) + '</b><span class="muted">가상 사용자 ' + o.vus + '명 · ' + o.duration + '초' + (o.rampUp ? ' · 램프업 ' + o.rampUp + '초' : '') + ' · 요청 ' + reqs.length + '개 반복</span></div>' +
+        '<div class="run-stats"><div><b id="lsCount">0</b><span>요청</span></div><div><b id="lsRps">0</b><span>req/s</span></div><div><b id="lsP95">-</b><span>p95 응답</span></div><div><b id="lsErr">0%</b><span>오류율</span></div></div>' +
+        '<div class="run-progress"><i id="lsBar"></i></div></div><div id="lsChart" class="perf-chart"></div><div id="lsTable"></div>';
+      setFoot([{ label: '중단', icon: 'stop', onClick: () => { fetch('api/load/' + start.id + '/stop', { method: 'POST', headers: headers }); return false; } }]);
+      let last = null;
+      const render = (s) => {
+        last = s;
+        const t = s.total;
+        $('#lsCount', b).textContent = t.count;
+        $('#lsRps', b).textContent = s.rps;
+        $('#lsP95', b).textContent = t.p95 + 'ms';
+        const er = ((t.errors + t.failedChecks) / Math.max(1, t.count)) * 100;
+        $('#lsErr', b).textContent = er.toFixed(1) + '%';
+        $('#lsErr', b).className = er > 0 ? 'bad' : 'ok';
+        $('#lsBar', b).style.width = Math.min(100, (s.elapsed / s.duration) * 100) + '%';
+        $('#lsChart', b).innerHTML = perfChart(s.timeline);
+        $('#lsTable', b).innerHTML = '<table class="perf-table"><thead><tr><th>요청</th><th>건수</th><th>평균</th><th>p50</th><th>p95</th><th>p99</th><th>최대</th><th>오류</th><th>검증 실패</th></tr></thead><tbody>' +
+          s.byRequest.map((r) => '<tr><td><span class="mbadge m-' + r.method + '">' + r.method + '</span>' + esc(r.name) + '</td><td>' + r.count + '</td><td>' + r.avg + '</td><td>' + r.p50 + '</td><td><b>' + r.p95 + '</b></td><td>' + r.p99 + '</td><td>' + r.max + '</td><td class="' + (r.errors ? 'bad' : '') + '">' + r.errors + '</td><td class="' + (r.failedChecks ? 'bad' : '') + '">' + r.failedChecks + '</td></tr>').join('') +
+          '</tbody></table><p class="muted" style="font-size:12px">단위: ms · 상태 코드 ' + Object.keys(s.statuses).map((k) => esc(k) + '×' + s.statuses[k]).join(', ') + '</p>';
+      };
+      const key = S.settings.accessKey ? '?key=' + encodeURIComponent(S.settings.accessKey) : '';
+      loadES = new EventSource('api/load/' + start.id + '/events' + key);
+      loadES.addEventListener('tick', (e) => render(JSON.parse(e.data)));
+      loadES.addEventListener('fail', (e) => { toast('성능 테스트 실패: ' + JSON.parse(e.data).message, 'err'); loadES.close(); });
+      loadES.addEventListener('done', (e) => {
+        render(JSON.parse(e.data));
+        loadES.close();
+        loadES = null;
+        $('#lsBar', b).style.width = '100%';
+        $('#lsBar', b).className = last.total.errors || last.total.failedChecks ? 'bad' : 'ok';
+        b.querySelector('.run-head').insertAdjacentHTML('afterbegin', '<div class="run-verdict ' + (last.total.errors ? 'bad' : 'ok') + '">' + icon(last.total.errors ? 'x' : 'check') + (last.stopped ? '중단됨 · ' : '완료 · ') + last.rps + ' req/s · p95 ' + last.total.p95 + 'ms<span class="muted">' + last.elapsed.toFixed(1) + '초</span></div>');
+        const title = '성능 테스트 · ' + col.name;
+        setFoot([
+          { label: '결과 요약 복사', icon: 'copy', onClick: () => { copyText(EasyEngine.loadToMarkdown(last, title)); return false; } },
+          { label: 'JSON 저장', icon: 'download', onClick: () => { downloadText(JSON.stringify(last, null, 2), 'load-' + col.name.replace(/[\\/:*?"<>|\s]+/g, '_') + '.json', 'application/json'); return false; } },
+          { label: '다시 설정', onClick: () => { drawSetup(); return false; } },
+          { label: '다시 실행', cls: 'btn-primary', icon: 'play', onClick: () => { startLoad(o); return false; } }
+        ]);
+      });
+    }
+    function perfChart(tl) {
+      if (!tl || !tl.length) return '<div class="perf-empty">데이터 수집 중…</div>';
+      const W = 640, H = 150, P = 26;
+      const maxC = Math.max(1, ...tl.map((x) => x.count));
+      const maxMs = Math.max(1, ...tl.map((x) => x.avg));
+      const bw = (W - P * 2) / tl.length;
+      const bars = tl.map((x, i) => {
+        const h = (x.count / maxC) * (H - P * 2);
+        const eh = x.count ? (x.errors / x.count) * h : 0;
+        return '<rect x="' + (P + i * bw + 1).toFixed(1) + '" y="' + (H - P - h).toFixed(1) + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h.toFixed(1) + '" class="pc-bar"><title>' + x.sec + '초: ' + x.count + '건, 평균 ' + x.avg + 'ms, 실패 ' + x.errors + '</title></rect>' +
+          (eh ? '<rect x="' + (P + i * bw + 1).toFixed(1) + '" y="' + (H - P - eh).toFixed(1) + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + eh.toFixed(1) + '" class="pc-err"/>' : '');
+      }).join('');
+      const pts = tl.map((x, i) => (P + i * bw + bw / 2).toFixed(1) + ',' + (H - P - (x.avg / maxMs) * (H - P * 2)).toFixed(1)).join(' ');
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="pc" role="img" aria-label="초당 요청 수와 평균 응답 시간">' +
+        '<line x1="' + P + '" y1="' + (H - P) + '" x2="' + (W - P) + '" y2="' + (H - P) + '" class="pc-axis"/>' + bars +
+        '<polyline points="' + pts + '" class="pc-line"/>' +
+        '<text x="' + P + '" y="14" class="pc-t">초당 요청 (최대 ' + maxC + ')</text><text x="' + (W - P) + '" y="14" class="pc-t pc-r">평균 응답 (최대 ' + maxMs + 'ms)</text>' +
+        '<text x="' + P + '" y="' + (H - 8) + '" class="pc-t">0초</text><text x="' + (W - P) + '" y="' + (H - 8) + '" class="pc-t pc-r">' + tl.length + '초</text></svg>' +
+        '<div class="pc-legend"><span><i class="lg-bar"></i>초당 요청 수</span><span><i class="lg-err"></i>실패</span><span><i class="lg-line"></i>평균 응답 시간</span></div>';
+    }
+
     function resultRow(rec, idx, iterations) {
       const tests = rec.tests.filter((t) => !t.skipped);
       const passed = tests.filter((t) => t.passed).length;
@@ -2613,7 +2718,7 @@
         '<button class="btn btn-ghost btn-sm" data-open-rec="' + idx + '">요청·응답 열어서 확인 →</button></div></details>';
     }
 
-    openModal({ title: '컬렉션 실행기', size: 'wide', body: '', buttons: [], onOpen: (b) => { bodyEl = b; drawSetup(); }, onClose: () => { if (RUN) RUN.stop = true; } });
+    openModal({ title: '컬렉션 실행기', size: 'wide', body: '', buttons: [], onOpen: (b) => { bodyEl = b; drawSetup(); }, onClose: () => { if (RUN) RUN.stop = true; if (loadES) loadES.close(); } });
   }
 
   function downloadText(text, name, type) {
@@ -2623,6 +2728,365 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     toast(name + ' 저장', 'ok', 1500);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-J. 비교 (요청 미러링 · 기준 응답 회귀)
+   * ------------------------------------------------------------------ */
+  function compareSection(A, B, labelA, labelB, urlA, urlB, ignore) {
+    let diffs = [];
+    if (!A.ok || !B.ok) {
+      if (A.ok !== B.ok || (A.error && B.error && A.error.code !== B.error.code)) diffs.push({ path: '연결 결과', a: A.ok ? A.status : A.error.message, b: B.ok ? B.status : B.error.message });
+    } else diffs = EasyEngine.compareResponses(A, B, ignore);
+    const headerDiffs = [];
+    if (A.ok && B.ok && A.headers && B.headers) {
+      const ha = {}, hb = {};
+      A.headers.forEach(([k, v]) => { ha[k.toLowerCase()] = v; });
+      B.headers.forEach(([k, v]) => { hb[k.toLowerCase()] = v; });
+      new Set(Object.keys(ha).concat(Object.keys(hb))).forEach((k) => { if (!IGNORE_HEADERS.has(k) && ha[k] !== hb[k]) headerDiffs.push({ path: k, a: ha[k], b: hb[k] }); });
+    }
+    const col = (label, r, url) => '<div class="cmp-col"><h4>' + label + '</h4>' +
+      (r.ok ? '<span class="status-chip s' + Math.floor(r.status / 100) + '"><i class="dot"></i>' + r.status + '</span> <span class="stat"><b>' + formatMs(r.timeMs) + '</b></span> <span class="stat"><b>' + formatBytes(r.size) + '</b></span>'
+        : '<span class="status-chip err"><i class="dot"></i>ERROR</span> <span class="muted">' + esc(r.error.message) + '</span>') +
+      '<div class="u">' + esc(url || '') + '</div></div>';
+    const list = (arr) => '<div class="diff-list">' + arr.map((d) => '<div class="diff-item"><div class="p">' + esc(d.path) + '</div><div class="a">A: ' + esc(show(d.a)) + '</div><div class="b">B: ' + esc(show(d.b)) + '</div></div>').join('') + '</div>';
+    return {
+      count: diffs.length,
+      html: '<div class="cmp-verdict ' + (diffs.length ? 'diff' : 'same') + '">' + icon(diffs.length ? 'help' : 'check') + (diffs.length ? diffs.length + '군데 차이가 있어요' + (diffs.length >= 300 ? ' (300개까지 표시)' : '') : '응답이 같아요') + '</div>' +
+        '<div class="cmp-grid">' + col(labelA, A, urlA) + col(labelB, B, urlB) + '</div>' +
+        (diffs.length ? '<div class="section-title">본문 / 상태 차이</div>' + list(diffs) : '') +
+        (headerDiffs.length ? '<div class="section-title">헤더 차이 (날짜·요청ID 등 매번 바뀌는 값 제외)</div>' + list(headerDiffs) : '')
+    };
+  }
+  function renderCompare() {
+    const meta = S.responseReq || {};
+    const parts = [];
+    let total = 0;
+    if (S.mirrorResponse && S.response) {
+      const r = compareSection(S.response, S.mirrorResponse, 'A · 기본 서버', 'B · 비교 서버', meta.url, meta.mirrorUrl, '');
+      parts.push('<div class="cmp-block"><div class="sub-head"><b>요청 미러링</b></div>' + r.html + '</div>');
+      total += r.count;
+    }
+    const bl = S.req.baseline;
+    if (bl && S.response && S.response.ok) {
+      const ba = S.req.assertions.find((a) => a.target === 'baseline');
+      const ign = ba ? ba.value : '';
+      const base = { ok: true, status: bl.status, body: bl.body, timeMs: bl.timeMs, size: bl.size, headers: null };
+      const r = compareSection(base, S.response, '기준 · ' + new Date(bl.savedAt).toLocaleString(), '현재 응답', '', meta.url, ign);
+      parts.push('<div class="cmp-block"><div class="sub-head"><b>기준 응답 회귀 비교</b><span class="muted">' + (ign ? '제외: ' + esc(ign) : '제외할 경로는 검증 탭의 "기준 응답" 조건에서 설정') + '</span></div>' + r.html +
+        '<div class="test-actions"><button class="btn btn-outline btn-sm" id="btnRebase">' + icon('pin') + '현재 응답을 새 기준으로</button> <button class="btn btn-ghost btn-sm" id="btnDropBase">기준 삭제</button></div></div>');
+      total += r.count;
+    }
+    $('#cntDiff').textContent = total || '✓';
+    $('#compareView').innerHTML = parts.join('');
+    const rb = $('#btnRebase');
+    if (rb) rb.addEventListener('click', saveBaseline);
+    const db = $('#btnDropBase');
+    if (db) db.addEventListener('click', () => {
+      S.req.baseline = null;
+      S.req.assertions = S.req.assertions.filter((a) => a.target !== 'baseline');
+      reqChanged(); renderAssertTab(); renderResponse();
+      toast('기준 응답을 삭제했어요');
+    });
+  }
+  function saveBaseline() {
+    const r = S.response;
+    if (!r || !r.ok) { toast('성공한 응답이 있어야 기준으로 저장할 수 있어요', 'err'); return; }
+    if (r.bodyEncoding === 'base64') { toast('바이너리 응답은 기준으로 저장할 수 없어요', 'err'); return; }
+    if ((r.body || '').length > 300000) { toast('300KB 이하 응답만 기준으로 저장할 수 있어요', 'err'); return; }
+    S.req.baseline = { status: r.status, statusText: r.statusText, body: r.body, timeMs: r.timeMs, size: r.size, savedAt: Date.now() };
+    const added = !S.req.assertions.some((a) => a.target === 'baseline');
+    if (added) S.req.assertions.push({ target: 'baseline', op: 'eq', value: '', path: '', enabled: true });
+    reqChanged(); renderAssertTab(); renderResponse();
+    toast(added ? '기준 응답을 저장하고 회귀 검증을 추가했어요. 매번 바뀌는 필드는 검증 탭에서 제외하세요' : '기준 응답을 갱신했어요', 'ok', 4000);
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-K. JSON 트리 뷰 (값을 눌러 검증·변수 추가)
+   * ------------------------------------------------------------------ */
+  const jsKeyPath = (path, k) => path + (/^[A-Za-z_$][\w$]*$/.test(k) ? '.' + k : "['" + String(k).replace(/'/g, "\\'") + "']");
+  function treeHtml(v, path, key, depth) {
+    const k = key !== null ? '<span class="t-key" data-path="' + esc(path) + '">' + esc(key) + '</span><span class="t-colon">: </span>' : '';
+    const t = EasyEngine.typeOf(v);
+    if (t === 'object' || t === 'array') {
+      const entries = t === 'array' ? v.map((x, i) => [i, x]) : Object.keys(v).map((x) => [x, v[x]]);
+      if (!entries.length) return '<div class="t-row">' + k + '<span class="t-val t-empty" data-path="' + esc(path) + '">' + (t === 'array' ? '[]' : '{}') + '</span></div>';
+      const kids = entries.slice(0, 300).map(([ck, cv]) => treeHtml(cv, t === 'array' ? path + '[' + ck + ']' : jsKeyPath(path, ck), t === 'array' ? String(ck) : ck, depth + 1)).join('');
+      return '<details class="t-node"' + (depth < 2 ? ' open' : '') + '><summary>' + k + '<span class="t-sum" data-path="' + esc(path) + '">' + (t === 'array' ? 'Array(' + entries.length + ')' : '{ ' + entries.length + ' }') + '</span></summary><div class="t-children">' +
+        kids + (entries.length > 300 ? '<div class="t-more">… ' + (entries.length - 300) + '개 더 (원본 보기에서 확인)</div>' : '') + '</div></details>';
+    }
+    return '<div class="t-row">' + k + '<span class="t-val t-' + t + '" data-path="' + esc(path) + '">' + esc(t === 'string' ? JSON.stringify(v) : String(v)) + '</span></div>';
+  }
+  function treeMenu(path) {
+    let value;
+    try { value = EasyEngine.jsonPath(JSON.parse(S.response.body), path).value; } catch (e) { return; }
+    const t = EasyEngine.typeOf(value);
+    const prim = t !== 'object' && t !== 'array';
+    const addA = (a, msg) => { S.req.assertions.push(Object.assign({ enabled: true, path: path, value: '' }, a)); renderAssertTab(); reqChanged(); toast(msg || '검증 조건을 추가했어요 (검증 탭)', 'ok', 2200); };
+    const lastKey = (path.match(/[A-Za-z_$][\w$]*(?=[^.]*$)/) || ['value'])[0];
+    const acts = [
+      { label: 'JSON 경로 복사  ' + path, icon: 'copy', run: () => copyText(path) },
+      { label: '값 복사', icon: 'copy', run: () => copyText(prim ? String(value) : JSON.stringify(value, null, 2)) }
+    ];
+    if (prim) acts.push({ label: '검증 추가: ' + path + ' = ' + (t === 'string' ? JSON.stringify(value) : String(value)).slice(0, 40), icon: 'check', run: () => addA({ target: 'json', op: 'eq', value: value === null ? 'null' : String(value) }) });
+    acts.push({ label: '검증 추가: 값이 존재함', icon: 'check', run: () => addA({ target: 'json', op: 'exists' }) });
+    acts.push({ label: '검증 추가: 타입이 ' + t, icon: 'check', run: () => addA({ target: 'json', op: 'type', value: t }) });
+    if (t === 'array') acts.push({ label: '검증 추가: 항목이 1개 이상', icon: 'check', run: () => addA({ target: 'json', op: 'gte', value: '1', path: path + '.length' }) });
+    if (t === 'object' || t === 'array') acts.push({ label: '검증 추가: 이 구조의 JSON 스키마', icon: 'check', run: () => addA({ target: 'schema', op: 'schema', value: JSON.stringify(inferSchema(value)), path: path === '$' ? '' : path }, '현재 구조로 스키마 검증을 추가했어요') });
+    acts.push({ label: '변수로 저장  {{' + lastKey + '}}', icon: 'braces', run: async () => {
+      const name = await promptModal('응답값을 변수로 저장', '변수 이름 (보낼 때마다 이 경로의 값이 저장돼요)', lastKey);
+      if (!name) return;
+      S.req.extracts.push({ varName: name.replace(/[{}\s]/g, ''), from: 'json', path: path, scope: 'environment', enabled: true });
+      renderAssertTab(); reqChanged();
+      toast('{{' + name + '}} 변수 저장을 추가했어요. 다음에 보낼 때부터 저장돼요', 'ok', 3000);
+    } });
+    actionSheet(path, acts);
+  }
+  function inferSchema(v, depth) {
+    depth = depth || 0;
+    if (depth > 10) return {};
+    const t = EasyEngine.typeOf(v);
+    if (t === 'null') return { nullable: true };
+    if (t === 'array') return { type: 'array', items: v.length ? inferSchema(v[0], depth + 1) : {} };
+    if (t === 'object') {
+      const props = {};
+      Object.keys(v).forEach((k) => { props[k] = inferSchema(v[k], depth + 1); });
+      return { type: 'object', required: Object.keys(v).filter((k) => v[k] !== null), properties: props };
+    }
+    if (t === 'number') return { type: Number.isInteger(v) ? 'integer' : 'number' };
+    return { type: t };
+  }
+  function openSchemaEditor(a) {
+    openModal({
+      title: 'JSON 스키마 편집', size: 'wide',
+      body: '<p class="tip">응답(또는 <code>' + esc(a.path || '$') + '</code> 위치의 값)이 이 스키마와 맞는지 검사해요. <code>type · required · properties · items · enum · format · minimum</code> 등 JSON Schema 문법을 지원해요.</p>' +
+        '<textarea id="schemaText" class="code-area" spellcheck="false" style="min-height:340px"></textarea><p id="schemaMsg" class="json-status" style="margin-top:8px"></p>',
+      buttons: [
+        { label: '현재 응답에서 생성', cls: 'btn-ghost', onClick: () => {
+          try {
+            const j = JSON.parse(S.response.body);
+            const sub = a.path ? EasyEngine.jsonPath(j, a.path).value : j;
+            $('#schemaText').value = JSON.stringify(inferSchema(sub), null, 2);
+            $('#schemaText').dispatchEvent(new Event('input'));
+          } catch (e) { toast('JSON 응답이 있어야 해요', 'err'); }
+          return false;
+        } },
+        { label: '취소' },
+        { label: '저장', cls: 'btn-primary', onClick: () => {
+          try { a.value = JSON.stringify(JSON.parse($('#schemaText').value)); } catch (e) { toast('JSON 형식 오류: ' + e.message, 'err'); return false; }
+          renderAssertTab(); reqChanged();
+          return true;
+        } }
+      ],
+      onOpen: (b) => {
+        const ta = $('#schemaText', b);
+        try { ta.value = JSON.stringify(JSON.parse(a.value || '{}'), null, 2); } catch (e) { ta.value = a.value || ''; }
+        const check = () => { const m = $('#schemaMsg', b); try { JSON.parse(ta.value); m.textContent = '올바른 JSON'; m.className = 'json-status ok'; } catch (e) { m.textContent = 'JSON 형식 오류'; m.className = 'json-status bad'; } };
+        ta.addEventListener('input', check);
+        check();
+      }
+    });
+  }
+  function schemaSummary(v) {
+    try { const s = JSON.parse(v || '{}'); const n = s.properties ? Object.keys(s.properties).length : 0; return (s.type || '스키마') + (n ? ' · 속성 ' + n + '개' : '') + (s.required ? ' · 필수 ' + s.required.length : ''); } catch (e) { return '형식 오류'; }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-L. OAuth 2.0
+   * ------------------------------------------------------------------ */
+  S.oauthCache = {};
+  function effectiveAuth() {
+    const a = S.req.auth;
+    if (a.type !== 'inherit') return a;
+    const col = currentCollection();
+    return col ? col.auth : { type: 'none' };
+  }
+  function renderOAuthStatus() {
+    const el = $('#oaStatus');
+    if (!el) return;
+    const a = effectiveAuth();
+    if (a.type !== 'oauth2') return;
+    const tk = S.oauthCache[EasyEngine.oauthKey(a, currentVars())];
+    if (EasyEngine.tokenValid(tk)) {
+      el.className = 'ok';
+      el.textContent = '토큰 발급됨 · ' + tk.accessToken.slice(0, 12) + '… · ' + (tk.expiresAt ? new Date(tk.expiresAt).toLocaleTimeString() + ' 만료' : '만료 없음');
+    } else { el.className = 'muted'; el.textContent = '토큰은 보낼 때 자동으로 발급·갱신돼요.'; }
+  }
+  async function fetchTokenNow() {
+    const a = effectiveAuth();
+    if (a.type !== 'oauth2') return;
+    const el = $('#oaStatus');
+    el.className = 'muted';
+    el.textContent = '토큰 발급 중…';
+    try {
+      const vars = currentVars();
+      S.oauthCache[EasyEngine.oauthKey(a, vars)] = await EasyEngine.fetchOAuthToken(a, vars, (r) => transport(r));
+      renderOAuthStatus();
+      toast('OAuth 토큰을 받았어요', 'ok');
+    } catch (e) { el.className = 'bad'; el.textContent = e.message; }
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-M. OpenAPI / Swagger 가져오기
+   * ------------------------------------------------------------------ */
+  let yamlLoading = null;
+  function loadYaml() {
+    if (window.jsyaml) return Promise.resolve(window.jsyaml);
+    if (!yamlLoading) {
+      yamlLoading = new Promise((ok, no) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js';
+        s.onload = () => ok(window.jsyaml);
+        s.onerror = () => { yamlLoading = null; no(new Error('YAML 해석기를 불러오지 못했어요 (인터넷 연결 필요). JSON 형식 명세를 사용해 주세요.')); };
+        document.head.appendChild(s);
+      });
+    }
+    return yamlLoading;
+  }
+  async function parseSpecText(t) {
+    t = String(t || '').trim();
+    if (!t) throw new Error('내용이 비어 있어요');
+    if (/^[{[]/.test(t)) return JSON.parse(t);
+    const y = await loadYaml();
+    return y.load(t);
+  }
+  function openOpenAPI() {
+    let spec = null;
+    let specUrl = '';
+    const practice = (/^https?:$/.test(location.protocol) ? location.origin : 'http://localhost:8080') + '/qa/openapi.json';
+    openModal({
+      title: 'OpenAPI / Swagger 가져오기', size: 'wide',
+      body: '<p class="tip beginner">백엔드의 API 명세(OpenAPI 3.x, Swagger 2.0 · JSON/YAML)로 요청을 한 번에 만들어요. 경로·쿼리 변수, 예시 바디, 인증, <b>응답 스키마 검증</b>까지 자동으로 채워요.</p>' +
+        '<div class="seg" id="oaSrc" style="margin-bottom:12px"><button data-s="url" class="on">URL</button><button data-s="file">파일</button><button data-s="paste">붙여넣기</button></div>' +
+        '<div data-src="url"><div style="display:flex;gap:8px"><input type="text" id="specUrl" placeholder="https://api.example.com/v3/api-docs" autocapitalize="off" spellcheck="false"><button class="btn btn-outline" id="specFetch">불러오기</button></div>' +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">연습용: <a href="#" id="specPractice">' + esc(practice) + '</a></p></div>' +
+        '<div data-src="file" hidden><label class="file-drop">' + icon('file') + '<span id="specFileName">openapi.json / swagger.yaml 파일 선택</span><input type="file" id="specFile" accept=".json,.yaml,.yml,application/json,text/yaml"></label></div>' +
+        '<div data-src="paste" hidden><textarea id="specText" class="code-area" spellcheck="false" style="min-height:180px" placeholder="openapi: 3.0.0&#10;info: ..."></textarea></div>' +
+        '<div class="switch-row" style="margin-top:14px"><div><b>응답 스키마 검증 자동 추가</b><p class="muted">명세의 응답 스키마로 계약 테스트를 만들어요</p></div><label class="switch"><input type="checkbox" id="specSchema" checked><i></i></label></div>' +
+        '<div id="specPreview" class="preview-box" hidden></div>',
+      buttons: [{ label: '취소' }, { label: '가져오기', cls: 'btn-primary', id: 'btnSpecImport', onClick: () => {
+        if (!spec) { toast('먼저 명세를 불러오세요', 'err'); return false; }
+        try {
+          const cols = EasyEngine.fromOpenAPI(spec, { specUrl: specUrl, schemaAssertions: $('#specSchema').checked });
+          cols.forEach((c) => S.collections.push(c));
+          S.ui.lib = 'collections';
+          persist(); renderLibrary();
+          toast(cols.meta.title + ': 폴더 ' + cols.length + '개 · 요청 ' + cols.meta.endpoints + '개를 만들었어요', 'ok', 3500);
+          if (isMobile()) setView('library');
+          return true;
+        } catch (e) { toast(e.message, 'err', 4000); return false; }
+      } }],
+      onOpen: (b) => {
+        const prev = $('#specPreview', b);
+        const btn = $('#btnSpecImport');
+        btn.disabled = true;
+        const preview = (obj, url) => {
+          try {
+            const cols = EasyEngine.fromOpenAPI(obj, { specUrl: url });
+            spec = obj; specUrl = url || '';
+            const m = cols.meta;
+            const a = cols[0] ? cols[0].auth : { type: 'none' };
+            prev.className = 'preview-box';
+            prev.innerHTML = '<div class="preview-line"><b>' + esc(m.title) + '</b> <span class="muted">' + esc(m.version || '') + (m.isV2 ? ' · Swagger 2.0' : ' · OpenAPI 3') + '</span></div>' +
+              '<div class="preview-tags"><span class="tag ok">요청 ' + m.endpoints + '개</span><span class="tag">폴더 ' + cols.length + '개 (' + esc(m.tags.join(', ')) + ')</span><span class="tag">인증 ' + esc(a.type) + '</span><span class="tag">' + esc(m.baseUrl || '서버 주소 없음') + '</span></div>';
+            btn.disabled = false;
+          } catch (e) { spec = null; prev.className = 'preview-box bad'; prev.textContent = e.message; btn.disabled = true; }
+          prev.hidden = false;
+        };
+        const fromText = (t, url) => parseSpecText(t).then((o) => preview(o, url), (e) => { spec = null; prev.className = 'preview-box bad'; prev.textContent = '명세를 해석하지 못했어요: ' + e.message; prev.hidden = false; btn.disabled = true; });
+        $$('#oaSrc button', b).forEach((x) => x.addEventListener('click', () => {
+          $$('#oaSrc button', b).forEach((y) => y.classList.toggle('on', y === x));
+          $$('[data-src]', b).forEach((el) => { el.hidden = el.dataset.src !== x.dataset.s; });
+        }));
+        const fetchUrl = async () => {
+          const u = $('#specUrl', b).value.trim();
+          if (!u) return;
+          prev.hidden = false; prev.className = 'preview-box'; prev.textContent = '불러오는 중…';
+          const r = await transport({ method: 'GET', url: u, headers: [['Accept', 'application/json, application/yaml, */*']], bodyText: null, multipart: null, binary: null });
+          if (!r.ok || r.status >= 400) { prev.className = 'preview-box bad'; prev.textContent = '불러오기 실패: ' + (r.ok ? r.status : r.error.message); btn.disabled = true; return; }
+          fromText(r.body, u);
+        };
+        $('#specFetch', b).addEventListener('click', fetchUrl);
+        $('#specUrl', b).addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchUrl(); });
+        $('#specPractice', b).addEventListener('click', (e) => { e.preventDefault(); $('#specUrl', b).value = practice; fetchUrl(); });
+        $('#specFile', b).addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; $('#specFileName', b).textContent = f.name; f.text().then((t) => fromText(t, '')); });
+        $('#specText', b).addEventListener('input', debounce(() => fromText($('#specText', b).value, ''), 400));
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 16-N. 명령 팔레트 (Ctrl/⌘ + K)
+   * ------------------------------------------------------------------ */
+  function paletteItems() {
+    const out = [];
+    const act = (label, hint, run, ic) => out.push({ kind: 'action', label: label, hint: hint, run: run, icon: ic || 'chevron' });
+    act('새 요청 탭', 'Alt+T', () => { openNewTab(); $('#url').focus(); }, 'plus');
+    act('cURL 가져오기', '', () => openImport(), 'import');
+    act('OpenAPI / Swagger 가져오기', '', openOpenAPI, 'import');
+    act('실행기 (기능 테스트)', 'Ctrl+Shift+R', () => openRunner(), 'play');
+    act('성능 테스트', '', () => openRunner(null, 'perf'), 'gauge');
+    act('현재 요청 보내기', 'Ctrl+Enter', send, 'send');
+    act('현재 요청 저장', 'Ctrl+S', saveRequest, 'save');
+    act('코드로 내보내기', '', openCode, 'code');
+    act('이슈 리포트 복사', '', bugReport, 'bug');
+    act('기준 응답으로 저장', '', saveBaseline, 'pin');
+    act('환경 변수 관리', '', () => openEnv(), 'braces');
+    act('쿠키 관리', '', openCookies, 'shield');
+    act('기기 미러링 (PC ↔ 휴대폰)', '', openRoom, 'devices');
+    act('설정', '', () => openSettings(), 'gear');
+    act('사용 가이드 다시 보기', '', openOnboarding, 'help');
+    act('테마 전환 (라이트/다크)', '', () => { const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (S.settings.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches); S.settings.theme = dark ? 'light' : 'dark'; applyTheme(); persist(); }, 'edit');
+    S.envs.forEach((e) => act('환경 전환: ' + e.name, e.id === S.activeEnv ? '사용 중' : '', () => { S.activeEnv = e.id; renderEnvSelect(); renderResolvedUrl(); persist(); toast('환경: ' + e.name, '', 1500); }, 'braces'));
+    S.collections.forEach((c) => c.requests.forEach((r) => out.push({ kind: 'request', label: r.name, hint: c.name, method: r.method, sub: r.url, run: () => loadRequest(r, { colId: c.id, reqId: r.id }) })));
+    S.history.slice(0, 20).forEach((h) => out.push({ kind: 'history', label: shortUrl(h.req.url), hint: '최근 · ' + timeAgo(h.ts), method: h.req.method, run: () => loadRequest(h.req, null) }));
+    return out;
+  }
+  function openPalette() {
+    const all = paletteItems();
+    let idx = 0;
+    let shown = [];
+    const score = (it, q) => {
+      if (!q) return it.kind === 'history' ? 0 : 1;
+      const hay = (it.label + ' ' + (it.hint || '') + ' ' + (it.sub || '') + ' ' + (it.method || '')).toLowerCase();
+      const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+      if (!words.every((w) => hay.indexOf(w) >= 0)) return -1;
+      return (it.label.toLowerCase().indexOf(words[0]) === 0 ? 3 : 1) + (it.kind === 'action' ? 0.5 : 0);
+    };
+    openModal({
+      title: '', size: 'palette',
+      body: '<div class="pal-input">' + icon('search') + '<input type="text" id="palQ" placeholder="요청 이름, 주소, 기능 검색…" autocomplete="off" autocapitalize="off" spellcheck="false"><kbd class="kbd">ESC</kbd></div><div class="pal-list" id="palList" role="listbox"></div>',
+      onOpen: (b) => {
+        const q = $('#palQ', b);
+        const list = $('#palList', b);
+        const draw = () => {
+          const query = q.value.trim();
+          shown = all.map((it) => ({ it: it, s: score(it, query) })).filter((x) => x.s >= 0).sort((a, c) => c.s - a.s).slice(0, 60).map((x) => x.it);
+          idx = Math.min(idx, Math.max(0, shown.length - 1));
+          let lastKind = '';
+          list.innerHTML = shown.length ? shown.map((it, i) => {
+            const head = it.kind !== lastKind ? '<div class="pal-group">' + ({ action: '기능', request: '보관함', history: '최근 기록' }[it.kind]) + '</div>' : '';
+            lastKind = it.kind;
+            return head + '<div class="pal-item' + (i === idx ? ' on' : '') + '" role="option" data-i="' + i + '">' +
+              (it.method ? '<span class="mbadge m-' + it.method + '">' + it.method + '</span>' : icon(it.icon)) +
+              '<span class="pal-label">' + esc(it.label) + (it.sub ? '<span class="pal-sub">' + esc(it.sub) + '</span>' : '') + '</span><span class="pal-hint">' + esc(it.hint || '') + '</span></div>';
+          }).join('') : '<div class="pal-empty">"' + esc(query) + '" 결과가 없어요</div>';
+          const on = $('.pal-item.on', list);
+          if (on) on.scrollIntoView({ block: 'nearest' });
+        };
+        const run = (i) => { const it = shown[i]; if (!it) return; closeModal(); setTimeout(it.run, 20); };
+        q.addEventListener('input', () => { idx = 0; draw(); });
+        q.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); idx = Math.min(shown.length - 1, idx + 1); draw(); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); idx = Math.max(0, idx - 1); draw(); }
+          else if (e.key === 'Enter') { e.preventDefault(); run(idx); }
+        });
+        list.addEventListener('click', (e) => { const el = e.target.closest('.pal-item'); if (el) run(Number(el.dataset.i)); });
+        list.addEventListener('mousemove', (e) => { const el = e.target.closest('.pal-item'); if (el && Number(el.dataset.i) !== idx) { idx = Number(el.dataset.i); $$('.pal-item', list).forEach((x) => x.classList.toggle('on', Number(x.dataset.i) === idx)); } });
+        draw();
+        setTimeout(() => q.focus(), 30);
+      }
+    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -2682,6 +3146,7 @@
     $('#btnSend').addEventListener('click', send);
     $('#btnImport').addEventListener('click', () => openImport());
     $('#btnSettings').addEventListener('click', () => openSettings());
+    $('#btnPalette').addEventListener('click', openPalette);
     $('#btnEnv').addEventListener('click', () => openEnv());
     $('#btnHelp').addEventListener('click', openOnboarding);
     $('#btnMirrorRoom').addEventListener('click', openRoom);
@@ -2712,6 +3177,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeModal();
       const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); if ($('#modal').hidden) openPalette(); else closeModal(); return; }
       if (mod && e.key === 'Enter') { e.preventDefault(); send(); }
       if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveRequest(); }
       if (e.altKey && (e.key === 't' || e.key === 'T')) { e.preventDefault(); openNewTab(); $('#url').focus(); }
@@ -2737,7 +3203,7 @@
 
   async function init() {
     load();
-    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $$('#kbdSend, #kbdSend2').forEach((k) => { k.textContent = 'Ctrl ↵'; });
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $$('#kbdSend, #kbdSend2').forEach((k) => { k.textContent = 'Ctrl ↵'; }); if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $('#kbdPalette').textContent = 'Ctrl K';
     // URL 해시로 전달된 접속 키 (QR 공유용)
     const hashKey = /[#&]key=([^&]+)/.exec(location.hash);
     if (hashKey) { S.settings.accessKey = decodeURIComponent(hashKey[1]); history.replaceState(null, '', location.pathname + location.search); }

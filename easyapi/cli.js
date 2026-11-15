@@ -4,7 +4,7 @@
  *
  *   node cli.js run <컬렉션.json> [옵션]
  *
- * 컬렉션: EasyAPI 백업 / EasyAPI 컬렉션 내보내기 / Postman v2.1 컬렉션
+ * 컬렉션: EasyAPI 백업 / EasyAPI 컬렉션 내보내기 / Postman v2.1 컬렉션 / OpenAPI 3·Swagger 2 명세(JSON)
  */
 'use strict';
 
@@ -39,6 +39,17 @@ EasyAPI CLI - 컬렉션 자동 실행
 예시:
   node cli.js run shop.easyapi.json -e dev.json -r cli,junit,html
   node cli.js run postman_collection.json -d users.csv --bail
+
+성능 테스트:
+  node cli.js load <collection.json> [옵션]
+      --vus <n>              가상 사용자 수 (기본 10)
+      --duration <s>         실행 시간(초, 기본 30)
+      --ramp <s>             램프업 시간(초)
+      --threshold-p95 <ms>   p95 응답 시간이 이 값을 넘으면 실패(종료 코드 1)
+      --threshold-errors <%> 오류+검증 실패 비율이 이 값을 넘으면 실패
+  (환경/변수/폴더/프록시 옵션은 run 과 동일, 리포트: -r md,json)
+
+  예) node cli.js load shop.easyapi.json --vus 50 --duration 60 --threshold-p95 800 --threshold-errors 1
 `;
 
 function parseArgs(argv) {
@@ -62,6 +73,11 @@ function parseArgs(argv) {
       case '-r': case '--reporters': o.reporters = take(i); i++; break;
       case '-o': case '--out': o.out = take(i); i++; break;
       case '--no-color': o.color = false; break;
+      case '--vus': o.vus = Number(take(i)); i++; break;
+      case '--duration': o.duration = Number(take(i)); i++; break;
+      case '--ramp': o.ramp = Number(take(i)); i++; break;
+      case '--threshold-p95': o.thP95 = Number(take(i)); i++; break;
+      case '--threshold-errors': o.thErr = Number(take(i)); i++; break;
       case '-h': case '--help': o.help = true; break;
       default: o._.push(a);
     }
@@ -77,7 +93,8 @@ function readJson(file) {
 function loadCollections(file, folder) {
   const j = readJson(file);
   let cols;
-  if (j.info && j.item) cols = E.fromPostman(j);
+  if (j.openapi || j.swagger) cols = E.fromOpenAPI(j);
+  else if (j.info && j.item) cols = E.fromPostman(j);
   else if (Array.isArray(j.collections)) cols = j.collections.map(E.normalizeCollection);
   else if (Array.isArray(j.requests)) cols = [E.normalizeCollection(j)];
   else fail('알 수 없는 컬렉션 형식이에요 (EasyAPI 또는 Postman v2.1)');
@@ -104,7 +121,7 @@ function loadEnv(file, name) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (args.help || args._[0] !== 'run' || !args._[1]) { console.log(HELP); process.exit(args.help ? 0 : 2); }
+  if (args.help || (args._[0] !== 'run' && args._[0] !== 'load') || !args._[1]) { console.log(HELP); process.exit(args.help ? 0 : 2); }
   const c = args.color;
   const paint = (code) => (s) => (c ? '\x1b[' + code + 'm' + s + '\x1b[0m' : String(s));
   const green = paint('32'), red = paint('31'), dim = paint('2'), bold = paint('1'), yellow = paint('33'), lime = paint('92');
@@ -125,6 +142,7 @@ async function main() {
     proxy: args.proxy ? { enabled: true, url: args.proxy } : null
   }).catch((e) => ({ ok: false, error: { code: e.code || 'ERROR', message: e.message } }));
   const sandbox = (code, ctx) => E.executeScript(code, ctx, { sendRequest: transport });
+  if (args._[0] === 'load') return runLoadCmd(args, cols, vars, envName, transport, sandbox, { green, red, dim, bold, yellow, lime });
 
   console.log('\n' + lime('▸') + ' ' + bold('EasyAPI') + dim(' · ' + cols.map((x) => x.name).join(', ') + (envName ? ' · 환경: ' + envName : '')));
   const total = { requests: 0, requestErrors: 0, tests: 0, passed: 0, failed: 0, totalTime: 0, failedRequests: 0 };
@@ -189,6 +207,44 @@ async function main() {
   files.forEach((f) => console.log('  ' + dim('리포트: ') + f));
   if (files.length) console.log('');
   process.exit(total.failed || total.requestErrors ? 1 : 0);
+}
+
+async function runLoadCmd(args, cols, vars, envName, transport, sandbox, c) {
+  const items = [];
+  cols.forEach((col) => col.requests.forEach((req) => items.push({ req, parent: col })));
+  vars.collection = cols.reduce((m, col) => Object.assign(m, E.rowsToMap(col.variables)), {});
+  const vus = Math.max(1, Math.min(args.vus || 10, 200));
+  const duration = Math.max(1, args.duration || 30);
+  console.log('\n' + c.lime('▸') + ' ' + c.bold('EasyAPI 성능 테스트') + c.dim(' · 요청 ' + items.length + '개 · VU ' + vus + ' · ' + duration + '초' + (args.ramp ? ' · 램프업 ' + args.ramp + '초' : '') + (envName ? ' · 환경: ' + envName : '')) + '\n');
+  const live = process.stdout.isTTY;
+  const sum = await E.runLoad(items, { vus, duration, rampUp: args.ramp || 0, vars, oauthCache: {} }, { transport, sandbox }, {
+    onTick: (s) => {
+      const line = '  ' + Math.floor(s.elapsed) + 's  요청 ' + s.total.count + '  ' + s.rps + ' req/s  p95 ' + s.total.p95 + 'ms  오류 ' + (s.total.errors + s.total.failedChecks) + '  VU ' + s.activeVus;
+      if (live) process.stdout.write('\r' + line.padEnd(80));
+      else if (Math.floor(s.elapsed) % 5 === 0) console.log(line);
+    }
+  });
+  if (live) process.stdout.write('\r' + ' '.repeat(80) + '\r');
+  const t = sum.total;
+  const failRate = ((t.errors + t.failedChecks) / Math.max(1, t.count)) * 100;
+  const pad = (v, n) => String(v).padStart(n);
+  console.log('  ' + c.bold('요청 ' + t.count) + ' · ' + c.bold(sum.rps + ' req/s') + ' · ' + sum.elapsed.toFixed(1) + '초');
+  console.log('  응답 시간  평균 ' + t.avg + 'ms · p50 ' + t.p50 + 'ms · p90 ' + t.p90 + 'ms · ' + c.bold('p95 ' + t.p95 + 'ms') + ' · p99 ' + t.p99 + 'ms · 최대 ' + t.max + 'ms');
+  console.log('  실패율     ' + (failRate ? c.red(failRate.toFixed(2) + '%') : c.green('0%')) + c.dim(' (요청 오류 ' + t.errors + ', 검증 실패 ' + t.failedChecks + ') · 상태 ' + Object.keys(sum.statuses).map((k) => k + '×' + sum.statuses[k]).join(' ')));
+  console.log('\n  ' + c.dim('요청'.padEnd(28) + pad('건수', 7) + pad('평균', 8) + pad('p95', 8) + pad('p99', 8) + pad('오류', 6)));
+  sum.byRequest.forEach((r) => console.log('  ' + (r.method + ' ' + r.name).slice(0, 27).padEnd(28) + pad(r.count, 7) + pad(r.avg, 8) + pad(r.p95, 8) + pad(r.p99, 8) + pad(r.errors + r.failedChecks, 6)));
+  const fails = [];
+  if (args.thP95 && t.p95 > args.thP95) fails.push('p95 ' + t.p95 + 'ms > 기준 ' + args.thP95 + 'ms');
+  if (args.thErr !== undefined && !isNaN(args.thErr) && failRate > args.thErr) fails.push('실패율 ' + failRate.toFixed(2) + '% > 기준 ' + args.thErr + '%');
+  console.log('');
+  if (args.thP95 || args.thErr !== undefined) console.log(fails.length ? '  ' + c.red('✗ 기준 미달: ' + fails.join(', ')) : '  ' + c.green('✓ 성능 기준 통과'));
+  const reporters = String(args.reporters).split(',').map((x) => x.trim());
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  if (reporters.some((r) => r === 'md' || r === 'json')) fs.mkdirSync(args.out, { recursive: true });
+  if (reporters.includes('md')) { const f = path.join(args.out, 'load-' + stamp + '.md'); fs.writeFileSync(f, E.loadToMarkdown(sum, '성능 테스트 · ' + cols.map((x) => x.name).join(', '))); console.log('  ' + c.dim('리포트: ') + f); }
+  if (reporters.includes('json')) { const f = path.join(args.out, 'load-' + stamp + '.json'); fs.writeFileSync(f, JSON.stringify(sum, null, 2)); console.log('  ' + c.dim('리포트: ') + f); }
+  console.log('');
+  process.exit(fails.length ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(2); });
