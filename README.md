@@ -1,4 +1,4 @@
-> 📦 이 저장소에는 별도 프로젝트 **[EasyAPI](easyapi/README.md)** (입문자용 API 테스트 도구)도 포함되어 있습니다.
+> 📦 **EasyAPI** (입문자용 API 테스트·QA 도구)는 독립 저장소 **[alekf9099/easyapi](https://github.com/alekf9099/easyapi)** 로 이전되었습니다. 이 저장소의 `easyapi/` 폴더는 이전 전 사본이며, 최신 개발은 새 저장소에서 진행합니다.
 
 # AI 샷메이커 (AiShotMaker)
 
