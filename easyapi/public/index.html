@@ -3,12 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#5b5bf0">
+  <meta name="theme-color" content="#ffffff">
   <meta name="description" content="입문자도 쉽게 쓰는 API 테스트 도구. cURL 붙여넣기 한 번으로 요청 완성, 모바일 지원, 프록시, 미러링.">
   <title>EasyAPI · API 테스트</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -18,17 +21,18 @@
   <!-- ============ 상단 바 ============ -->
   <header class="topbar">
     <a class="brand" href="./" aria-label="EasyAPI 홈">
-      <img src="icons/icon.svg" alt="" width="28" height="28">
-      <span>Easy<b>API</b></span>
+      <img src="icons/icon.svg" alt="" width="22" height="22">
+      <span>EasyAPI</span><span class="ver">v1.0</span>
     </a>
     <div class="topbar-actions">
-      <label class="env-select" title="환경 변수 세트 선택">
+      <label class="env-select" id="envWrap" title="환경 변수 세트 선택">
         <span class="sr-only">환경</span>
         <select id="envSelect"></select>
       </label>
-      <button class="btn btn-soft" id="btnImport" data-tip="개발자도구에서 복사한 cURL을 붙여넣으면 자동으로 채워져요">
+      <button class="btn btn-outline btn-sm" id="btnImport" title="개발자도구에서 복사한 cURL을 붙여넣으면 자동으로 채워져요">
         <svg class="ic"><use href="#i-import"/></svg><span class="hide-sm">cURL 가져오기</span>
       </button>
+      <span class="sep"></span>
       <button class="icon-btn" id="btnMirrorRoom" aria-label="기기 미러링">
         <svg class="ic"><use href="#i-devices"/></svg><i class="dot" id="roomDot" hidden></i>
       </button>
@@ -69,6 +73,7 @@
     </div>
 
     <div class="urlbar">
+      <div class="url-group">
       <div class="method-wrap">
         <select id="method" aria-label="메서드">
           <option value="GET">GET</option><option value="POST">POST</option><option value="PUT">PUT</option>
@@ -77,9 +82,10 @@
         </select>
       </div>
       <input id="url" class="url-input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
-             placeholder="주소 입력 또는 cURL 붙여넣기  예) https://jsonplaceholder.typicode.com/posts/1">
+             placeholder="https://… 주소 입력 또는 cURL 붙여넣기">
+      </div>
       <button class="btn btn-primary btn-send" id="btnSend">
-        <span class="send-label"><svg class="ic"><use href="#i-send"/></svg>보내기</span>
+        <span class="send-label">보내기<kbd class="kbd hide-sm" id="kbdSend">⌘ ↵</kbd></span>
         <span class="spinner" aria-hidden="true"></span>
       </button>
     </div>
@@ -192,15 +198,16 @@
   <!-- ============ 응답 ============ -->
   <section class="pane response-pane" id="responsePane">
     <div class="resp-empty" id="respEmpty">
-      <div class="illus"><svg class="ic"><use href="#i-rocket"/></svg></div>
-      <h3>요청을 보내면 응답이 여기 표시돼요</h3>
-      <p class="muted">처음이라면 아래 예제로 시작해 보세요.</p>
+      <span class="eyebrow">Response</span>
+      <h3>요청을 보내면<br>응답이 여기 표시됩니다</h3>
+      <p>주소를 입력하고 <b>보내기</b><span class="hide-sm"> 또는 <kbd class="kbd" id="kbdSend2">⌘ ↵</kbd></span>를 누르세요.</p>
+      <p class="samples-title">예제로 바로 해보기</p>
       <div class="samples" id="samples"></div>
     </div>
 
     <div class="resp-loading" id="respLoading" hidden>
       <span class="spinner big"></span>
-      <p>응답 기다리는 중…</p>
+      <p>waiting for response…</p>
       <button class="btn btn-ghost btn-sm" id="btnCancel">취소</button>
     </div>
 

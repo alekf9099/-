@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>EasyAPI Feature Graphic</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  /* Google Play 그래픽 이미지 규격: 1024 x 500 */
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1024px; height: 500px; overflow: hidden; background: #0c0a09; color: #fafaf9;
+    font-family: "Geist", "Pretendard Variable", sans-serif; -webkit-font-smoothing: antialiased; letter-spacing: -.01em; }
+  .wrap { position: relative; height: 100%; padding: 56px 64px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center;
+    background-image: linear-gradient(#1c1917 1px, transparent 1px), linear-gradient(90deg, #1c1917 1px, transparent 1px); background-size: 32px 32px; background-position: -1px -1px; }
+  .wrap::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 20% 40%, transparent 30%, #0c0a09 75%); pointer-events: none; }
+  .left, .right { position: relative; z-index: 1; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 20px; letter-spacing: -.02em; }
+  .brand img { width: 34px; height: 34px; border-radius: 8px; }
+  h1 { margin: 26px 0 14px; font-size: 44px; line-height: 1.18; font-weight: 600; letter-spacing: -.045em; }
+  h1 mark { background: #c6f432; color: #0c0a09; padding: 0 8px; border-radius: 4px; }
+  .sub { font-family: "Geist Mono", "Pretendard Variable", monospace; font-size: 15px; color: #a8a29e; display: flex; gap: 14px; }
+  .sub span::before { content: "— "; color: #57534e; }
+  .card { background: #161413; border: 1px solid #292524; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 60px -20px rgba(0,0,0,.8); font-family: "Geist Mono", "Pretendard Variable", monospace; font-size: 13.5px; }
+  .bar { display: flex; align-items: center; border-bottom: 1px solid #292524; }
+  .m { color: #fbbf24; font-weight: 500; padding: 14px 16px; border-right: 1px solid #292524; }
+  .u { padding: 14px 16px; color: #e7e5e4; flex: 1; white-space: nowrap; overflow: hidden; }
+  .send { margin: 6px; background: #c6f432; color: #0c0a09; font-family: "Geist", "Pretendard Variable", sans-serif; font-weight: 600; padding: 8px 14px; border-radius: 6px; font-size: 13px; }
+  .resp { padding: 16px 18px; line-height: 1.75; }
+  .st { display: inline-flex; align-items: center; gap: 7px; color: #4ade80; border: 1px solid rgba(74, 222, 128, .3); background: #0c1f13; padding: 2px 9px; border-radius: 6px; font-weight: 500; margin-bottom: 10px; }
+  .st i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .meta { color: #78716c; margin-left: 12px; }
+  .k { color: #c084fc; } .s { color: #86efac; } .n { color: #fdba74; }
+  .curl { margin-top: 16px; font-family: "Geist Mono", "Pretendard Variable", monospace; font-size: 12.5px; color: #78716c; background: #161413; border: 1px dashed #44403c; border-radius: 8px; padding: 10px 14px; white-space: nowrap; overflow: hidden; }
+  .curl b { color: #c6f432; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <div class="brand"><img src="../public/icons/icon.svg" alt="">EasyAPI</div>
+    <h1>cURL 붙여넣기 한 번,<br><mark>API 테스트 끝</mark></h1>
+    <div class="sub"><span>프록시</span><span>모바일 검증</span><span>미러링</span></div>
+  </div>
+  <div class="right">
+    <div class="card">
+      <div class="bar"><span class="m">POST</span><span class="u">/v1/orders?page=2</span><span class="send">보내기</span></div>
+      <div class="resp">
+        <span class="st"><i></i>200 OK</span><span class="meta">84 ms · 357 B</span><br>
+        {<br>
+        &nbsp;&nbsp;<span class="k">"item"</span>: <span class="s">"커피"</span>,<br>
+        &nbsp;&nbsp;<span class="k">"qty"</span>: <span class="n">2</span>,<br>
+        &nbsp;&nbsp;<span class="k">"status"</span>: <span class="s">"created"</span><br>
+        }
+      </div>
+    </div>
+    <div class="curl"><b>$</b> curl 'https://api.shop.com/v1/orders' -H 'authorization: …</div>
+  </div>
+</div>
+</body>
+</html>

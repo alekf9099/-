@@ -140,6 +140,7 @@
     S.settings.proxy = Object.assign(defaultSettings().proxy, (data.settings || {}).proxy || {});
     S.settings.mirror = Object.assign(defaultSettings().mirror, (data.settings || {}).mirror || {});
     S.ui = Object.assign(S.ui, data.ui || {});
+    S.collections.forEach((c) => { if (c.name === '📘 예제 모음') c.name = '예제 모음'; });
   }
 
   function persistNow() {
@@ -172,7 +173,7 @@
     const bearer = mk('인증 헤더 확인 (Bearer)', 'GET', 'https://httpbin.org/bearer');
     bearer.auth.type = 'bearer'; bearer.auth.bearer = '{{token}}';
     return {
-      id: uid(), name: '📘 예제 모음', open: true,
+      id: uid(), name: '예제 모음', open: true,
       requests: [mk('게시글 1개 조회', 'GET', '{{baseUrl}}/posts/1'), list, post, put, patch, mk('게시글 삭제', 'DELETE', '{{baseUrl}}/posts/1'), bearer]
     };
   }
@@ -496,7 +497,7 @@
       S.req.method = e.target.value;
       setMethodClass();
       if (['POST', 'PUT', 'PATCH'].includes(S.req.method) && S.req.body.mode === 'none' && S.settings.beginner) {
-        toast('💡 ' + S.req.method + ' 요청은 보통 바디 탭에 내용을 넣어요', '', 3000);
+        toast(S.req.method + ' 요청은 보통 바디 탭에 내용을 넣어요', '', 3000);
       }
       reqChanged();
     });
@@ -804,7 +805,7 @@
     const explain = $('#statusExplain');
     if (!r.ok) {
       chip.className = 'status-chip err';
-      chip.textContent = '오류';
+      chip.innerHTML = '<i class="dot"></i>ERROR';
       explain.className = 'status-explain err';
       explain.innerHTML = '<b>' + esc(r.error ? r.error.code : '') + '</b> · ' + esc(r.error ? r.error.message : '알 수 없는 오류');
       $('#respTime').textContent = formatMs(r.timeMs);
@@ -816,7 +817,7 @@
     } else {
       const info = statusInfo(r.status);
       chip.className = 'status-chip s' + Math.floor(r.status / 100);
-      chip.textContent = r.status + ' ' + (r.statusText || info[0]);
+      chip.innerHTML = '<i class="dot"></i>' + r.status + ' ' + esc(r.statusText || info[0]);
       explain.className = 'status-explain beginner';
       let extra = '';
       if (r.redirects && r.redirects.length) extra = ' · 리다이렉트 ' + r.redirects.length + '회 따라감';
@@ -981,13 +982,13 @@
     }
     $('#cntDiff').textContent = diffs.length ? diffs.length : '✓';
     const col = (label, r, url) => '<div class="cmp-col"><h4>' + label + '</h4>' +
-      (r.ok ? '<span class="status-chip s' + Math.floor(r.status / 100) + '">' + r.status + '</span> <span class="stat"><b>' + formatMs(r.timeMs) + '</b></span> <span class="stat"><b>' + formatBytes(r.size) + '</b></span>'
-        : '<span class="status-chip err">오류</span> <span class="muted">' + esc(r.error.message) + '</span>') +
+      (r.ok ? '<span class="status-chip s' + Math.floor(r.status / 100) + '"><i class="dot"></i>' + r.status + '</span> <span class="stat"><b>' + formatMs(r.timeMs) + '</b></span> <span class="stat"><b>' + formatBytes(r.size) + '</b></span>'
+        : '<span class="status-chip err"><i class="dot"></i>ERROR</span> <span class="muted">' + esc(r.error.message) + '</span>') +
       '<div class="u">' + esc(url || '') + '</div></div>';
     const list = (arr) => '<div class="diff-list">' + arr.map((d) => '<div class="diff-item"><div class="p">' + esc(d.path) + '</div><div class="a">A: ' + esc(show(d.a)) + '</div><div class="b">B: ' + esc(show(d.b)) + '</div></div>').join('') + '</div>';
     $('#compareView').innerHTML =
       '<div class="cmp-verdict ' + (diffs.length ? 'diff' : 'same') + '">' + icon(diffs.length ? 'help' : 'check') +
-      (diffs.length ? '응답이 ' + diffs.length + '군데 달라요' + (diffs.length >= 300 ? ' (300개까지 표시)' : '') : '두 서버의 응답이 같아요') + '</div>' +
+      (diffs.length ? diffs.length + '군데 차이가 있어요' + (diffs.length >= 300 ? ' (300개까지 표시)' : '') : '두 서버의 응답이 같아요') + '</div>' +
       '<div class="cmp-grid">' + col('A · 기본 서버', A, meta.url) + col('B · 비교 서버', B, meta.mirrorUrl) + '</div>' +
       (diffs.length ? '<div class="section-title">본문 / 상태 차이</div>' + list(diffs) : '') +
       (headerDiffs.length ? '<div class="section-title">헤더 차이 (날짜·요청ID 등 매번 바뀌는 값 제외)</div>' + list(headerDiffs) : '');
@@ -1030,8 +1031,8 @@
       { t: 'POST · JSON 바디 보내기', d: '새 데이터 생성', m: 'POST', url: 'https://jsonplaceholder.typicode.com/posts', body: '{\n  "title": "안녕하세요",\n  "body": "첫 요청",\n  "userId": 1\n}' }
     ];
     const box = $('#samples');
-    box.innerHTML = samples.map((s, i) => '<button class="sample" data-i="' + i + '"><span class="mbadge m-' + s.m + '">' + s.m + '</span><span><span class="t">' + esc(s.t) + '</span><br><span class="d">' + esc(s.d) + '</span></span>' + icon('chevron') + '</button>').join('') +
-      '<button class="sample curl" data-curl="1">' + icon('import') + '<span><span class="t">cURL 붙여넣기 체험</span><br><span class="d">개발자도구에서 복사한 명령어로 바로 요청 만들기</span></span>' + icon('chevron') + '</button>';
+    box.innerHTML = samples.map((s, i) => '<button class="sample" data-i="' + i + '"><span class="mbadge m-' + s.m + '">' + s.m + '</span><span><span class="t">' + esc(s.t.split('· ')[1]) + '</span><br><span class="d">' + esc(s.url.replace('https://jsonplaceholder.typicode.com', '')) + '</span></span>' + icon('chevron') + '</button>').join('') +
+      '<button class="sample curl" data-curl="1"><span class="mbadge">cURL</span><span><span class="t">cURL 붙여넣기 체험</span><br><span class="d">개발자도구 → Copy as cURL</span></span>' + icon('chevron') + '</button>';
     $$('.sample[data-i]', box).forEach((b) => b.addEventListener('click', () => {
       const s = samples[Number(b.dataset.i)];
       const r = newRequest();
@@ -1336,7 +1337,7 @@
       const parsed = CurlParser.parseCurl(text);
       const notes = applyParsed(parsed);
       const r = parsed.request;
-      toast('✓ cURL 가져옴: ' + r.method + ' · 헤더 ' + r.headers.length + '개' + (r.body.mode !== 'none' ? ' · 바디 ' + r.body.mode.toUpperCase() : ''), 'ok', 3000);
+      toast('cURL 가져옴: ' + r.method + ' · 헤더 ' + r.headers.length + '개' + (r.body.mode !== 'none' ? ' · 바디 ' + r.body.mode.toUpperCase() : ''), 'ok', 3000);
       notes.concat(parsed.warnings).forEach((n, i) => setTimeout(() => toast(n, '', 4000), 600 * (i + 1)));
     } catch (e) {
       toast(e.message, 'err', 4000);
@@ -1377,7 +1378,7 @@
         { label: '가져오기', cls: 'btn-primary', id: 'btnDoImport', onClick: () => {
           if (!parsed) { toast('먼저 cURL을 붙여넣어 주세요', 'err'); return false; }
           const notes = applyParsed(parsed);
-          toast('✓ 가져왔어요! 보내기를 눌러 테스트하세요', 'ok');
+          toast('가져왔어요. 보내기를 눌러 테스트하세요', 'ok');
           notes.forEach((n, i) => setTimeout(() => toast(n, '', 3500), 700 * (i + 1)));
           return true;
         } }
@@ -1750,8 +1751,9 @@
    * ------------------------------------------------------------------ */
   function renderEnvSelect() {
     const sel = $('#envSelect');
-    sel.innerHTML = '<option value="">환경 없음</option>' + S.envs.map((e) => '<option value="' + e.id + '">' + esc(e.name) + '</option>').join('') + '<option value="__manage">⚙ 환경 관리…</option>';
+    sel.innerHTML = '<option value="">환경 없음</option>' + S.envs.map((e) => '<option value="' + e.id + '">' + esc(e.name) + '</option>').join('') + '<option value="__manage">환경 관리…</option>';
     sel.value = S.envs.some((e) => e.id === S.activeEnv) ? S.activeEnv : '';
+    $('#envWrap').classList.toggle('active', !!sel.value);
   }
 
   function openEnv(selectId) {
@@ -1864,7 +1866,7 @@
       S.responseReq = p.meta || null;
       renderResponse();
       if (!quiet) {
-        toast('📲 다른 기기에서 보낸 요청 결과가 도착했어요', 'ok');
+        toast('다른 기기에서 보낸 요청 결과가 도착했어요', 'ok');
         if (isMobile()) setView('response');
       }
     },
@@ -1892,9 +1894,9 @@
         $('#roomCopy', b).addEventListener('click', () => copyText(link));
         Room.updateUi();
       } else {
-        b.innerHTML = '<div class="onb-step" style="padding-bottom:6px"><div class="big">' + icon('devices') + '</div><h3>PC ↔ 휴대폰 화면 미러링</h3>' +
+        b.innerHTML = '<div class="onb-step" style="padding-bottom:6px"><div class="big">' + icon('devices') + 'DEVICE SYNC</div><h3>PC ↔ 휴대폰 화면 미러링</h3>' +
           '<p>PC에서 만든 요청을 휴대폰에서 그대로 보고, 휴대폰에서 바로 보내 결과를 확인할 수 있어요.</p></div>' +
-          '<button class="btn btn-primary btn-block" id="roomCreate" style="height:46px;margin:16px 0 10px">새 연결 만들기 (이 기기가 기준)</button>' +
+          '<button class="btn btn-primary btn-block" id="roomCreate" style="height:42px;margin:18px 0 10px">새 연결 만들기 (이 기기가 기준)</button>' +
           '<div style="display:flex;gap:8px"><input type="text" id="roomInput" placeholder="받은 코드 입력 (예: AB12CD)" maxlength="12" style="text-transform:uppercase;font-family:var(--mono);letter-spacing:.1em">' +
           '<button class="btn btn-outline" id="roomJoin">참여</button></div>';
         $('#roomCreate', b).addEventListener('click', () => {
@@ -1937,17 +1939,17 @@
    * ------------------------------------------------------------------ */
   function openOnboarding() {
     const steps = [
-      { icon: '👋', title: 'EasyAPI에 오신 걸 환영해요', text: 'API를 처음 다뤄도 괜찮아요. 주소를 넣고 <b>보내기</b>만 누르면 서버의 응답을 바로 볼 수 있어요.',
+      { icon: 'send', title: 'EasyAPI에 오신 걸 환영해요', text: 'API를 처음 다뤄도 괜찮아요. 주소를 넣고 <b>보내기</b>만 누르면 서버의 응답을 바로 볼 수 있어요.',
         list: ['<b>메서드</b>(GET·POST…)를 고르고', '<b>주소</b>를 입력한 다음', '<b>보내기</b>를 누르면 끝!'] },
-      { icon: '📋', title: 'cURL 붙여넣기 한 번이면 완성', text: '웹사이트가 보내는 요청을 그대로 복사해 올 수 있어요.',
+      { icon: 'import', title: 'cURL 붙여넣기 한 번이면 완성', text: '웹사이트가 보내는 요청을 그대로 복사해 올 수 있어요.',
         list: ['크롬에서 <code>F12</code> → Network 탭', '요청 우클릭 → Copy → <b>Copy as cURL</b>', '주소창에 <b>붙여넣기</b> → 파라미터·헤더·바디 자동 입력'] },
-      { icon: '📱', title: '휴대폰에서도 그대로', text: '같은 Wi-Fi라면 휴대폰으로 접속해 API를 검증할 수 있어요.',
+      { icon: 'devices', title: '휴대폰에서도 그대로', text: '같은 Wi-Fi라면 휴대폰으로 접속해 API를 검증할 수 있어요.',
         list: ['설정 → <b>휴대폰에서 접속</b>의 QR 찍기', '브라우저 메뉴 → <b>홈 화면에 추가</b>', '상단 <b>기기 미러링</b> 버튼으로 PC와 실시간 동기화'] }
     ];
     let i = 0;
     const draw = (b) => {
       const s = steps[i];
-      b.innerHTML = '<div class="onb-step"><div class="big">' + s.icon + '</div><h3>' + s.title + '</h3><p>' + s.text + '</p>' +
+      b.innerHTML = '<div class="onb-step"><div class="big">' + icon(s.icon) + 'STEP 0' + (i + 1) + ' / 0' + steps.length + '</div><h3>' + s.title + '</h3><p>' + s.text + '</p>' +
         '<ol class="steps-list">' + s.list.map((x) => '<li>' + x + '</li>').join('') + '</ol>' +
         '<div class="onb-dots">' + steps.map((_, j) => '<i class="' + (j === i ? 'on' : '') + '"></i>').join('') + '</div></div>';
       const foot = $('#modalFoot');
@@ -1978,7 +1980,7 @@
     if (t === 'auto') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', t);
     const dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    $('meta[name="theme-color"]').setAttribute('content', dark ? '#171a23' : '#ffffff');
+    $('meta[name="theme-color"]').setAttribute('content', dark ? '#0f0f0f' : '#ffffff');
   }
   function applyBeginner() { document.body.classList.toggle('no-beginner', !S.settings.beginner); }
 
@@ -1999,6 +2001,7 @@
     $('#envSelect').addEventListener('change', (e) => {
       if (e.target.value === '__manage') { renderEnvSelect(); openEnv(); return; }
       S.activeEnv = e.target.value || null;
+      $('#envWrap').classList.toggle('active', !!S.activeEnv);
       persist(); renderMirrorTab();
       toast(S.activeEnv ? '환경: ' + S.envs.find((x) => x.id === S.activeEnv).name : '환경 변수 사용 안 함', '', 1500);
     });
@@ -2029,6 +2032,7 @@
 
   async function init() {
     load();
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) $$('#kbdSend, #kbdSend2').forEach((k) => { k.textContent = 'Ctrl ↵'; });
     // URL 해시로 전달된 접속 키 (QR 공유용)
     const hashKey = /[#&]key=([^&]+)/.exec(location.hash);
     if (hashKey) { S.settings.accessKey = decodeURIComponent(hashKey[1]); history.replaceState(null, '', location.pathname + location.search); }

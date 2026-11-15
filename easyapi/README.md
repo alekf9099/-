@@ -18,6 +18,16 @@ PC·모바일(안드로이드/아이폰) 모두 지원하고, 앱처럼 홈 화�
 | **코드 내보내기** | cURL(bash / cmd), JavaScript fetch, Python requests |
 | **가져오기/내보내기** | EasyAPI 백업 JSON, **Postman 컬렉션 v2.1 / 환경 파일** 가져오기 |
 
+## 디자인
+
+| 항목 | 내용 |
+|---|---|
+| 컬러 | 잉크(#0C0A09) + 라임(#C6F432) 단일 포인트, 무채색 중심. 다크 모드는 주요 버튼이 라임으로 반전 |
+| 서체 | Geist / Geist Mono (영문·코드) + Pretendard (한글) |
+| 스타일 | 1px 헤어라인 보더, 6~8px 라운드, 그림자는 모달에만. 이모지·그라데이션 없음 |
+| 모바일 | Android Material 3 내비게이션 바(활성 인디케이터 필), 바텀 시트 모달, 44px 이상 터치 영역 |
+| 스토어 그래픽 | `store/feature-graphic.png` (Google Play 그래픽 이미지 1024×500, 원본은 `feature-graphic.html`) |
+
 ## 실행 방법
 
 필요한 것: **Node.js 18 이상** (외부 패키지 설치 없음)
