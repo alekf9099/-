@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4F46E5">
+<title>워터마크 지우개</title>
+<style>
+:root{--bg:#F6F7FB;--card:#FFFFFF;--text:#111827;--sub:#6B7280;--line:#E5E7EB;--primary:#4F46E5;--primary-weak:#EEF2FF;--ok:#059669;--err:#DC2626;--radius:18px}
+@media (prefers-color-scheme:dark){:root{--bg:#0B0D12;--card:#151821;--text:#F3F4F6;--sub:#9CA3AF;--line:#262A36;--primary:#818CF8;--primary-weak:#1E1B4B}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,"Pretendard","Noto Sans KR",Roboto,sans-serif;padding:env(safe-area-inset-top) 0 calc(96px + env(safe-area-inset-bottom))}
+header{padding:28px 20px 8px;max-width:560px;margin:auto}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+header p{margin:0;color:var(--sub);font-size:14px}
+main{max-width:560px;margin:auto;padding:0 16px}
+.card{background:var(--card);border-radius:var(--radius);padding:18px;margin-top:14px;border:1px solid var(--line)}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:170px;border:2px dashed var(--line);border-radius:14px;cursor:pointer;text-align:center;padding:16px;transition:.2s}
+.drop.on{border-color:var(--primary);background:var(--primary-weak)}
+.drop svg{width:44px;height:44px;color:var(--primary)}
+.drop b{font-size:17px}.drop small{color:var(--sub)}
+.file{display:flex;gap:12px;align-items:center;margin-top:12px;padding:12px;border-radius:12px;background:var(--primary-weak)}
+.file .ext{font-weight:700;font-size:12px;background:var(--primary);color:#fff;border-radius:8px;padding:6px 8px}
+.file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+h2{font-size:15px;margin:0 0 12px}
+label.f{display:block;font-size:13px;color:var(--sub);margin:12px 0 6px}
+input[type=text],input[type=password],select{width:100%;font-size:16px;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:999px;padding:8px 14px;font-size:14px;cursor:pointer}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.sw:first-of-type{border-top:0}
+.sw span small{display:block;color:var(--sub);font-size:12px}
+.sw input{appearance:none;width:50px;height:30px;border-radius:999px;background:var(--line);position:relative;flex:none;transition:.2s;cursor:pointer}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px #0003}
+.sw input:checked{background:var(--primary)}.sw input:checked::after{left:23px}
+details summary{cursor:pointer;font-weight:600;font-size:15px;list-style:none}
+details summary::after{content:"⌄";float:right;color:var(--sub)}
+#stage{position:relative;margin-top:10px;touch-action:none;display:none}
+#stage img{width:100%;border-radius:12px;display:block}
+#stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.hint{font-size:12px;color:var(--sub);margin-top:6px}
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 30%)}
+.bar button{display:block;width:100%;max-width:528px;margin:auto;border:0;border-radius:16px;padding:17px;font-size:17px;font-weight:700;background:var(--primary);color:#fff;cursor:pointer}
+.bar button:disabled{opacity:.45}
+#result{display:none}
+#result .big{font-size:22px;font-weight:800}
+#result ul{padding-left:18px;margin:8px 0;color:var(--sub);font-size:14px}
+.dl{display:block;text-align:center;text-decoration:none;margin-top:12px;padding:15px;border-radius:14px;background:var(--ok);color:#fff;font-weight:700}
+.err{color:var(--err)}
+.spin{width:18px;height:18px;border:3px solid #fff6;border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-3px;margin-right:8px;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(1turn)}}
+footer{max-width:560px;margin:18px auto 0;padding:0 20px;font-size:12px;color:var(--sub)}
+</style>
+</head>
+<body>
+<header>
+  <h1>워터마크 지우개</h1>
+  <p>PDF · Word · PowerPoint · Excel · 이미지 워터마크를 한 번에</p>
+</header>
+<main>
+  <section class="card">
+    <label class="drop" id="drop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      <b>파일 선택 또는 끌어놓기</b>
+      <small>{{ exts }} · 최대 {{ max_mb }}MB</small>
+      <input id="file" type="file" hidden accept="{{ exts.replace(' ', '') }}">
+    </label>
+    <div class="file" id="picked" hidden><span class="ext" id="ext"></span><span class="nm" id="nm"></span></div>
+    <div id="stage"><img id="preview" alt="미리보기"><canvas id="cv"></canvas></div>
+    <div class="hint" id="stageHint" hidden>워터마크 위를 손가락으로 드래그하면 그 영역만 지웁니다. (탭하면 초기화)</div>
+  </section>
+
+  <section class="card">
+    <h2>지울 문구 <small style="color:var(--sub);font-weight:400">(선택)</small></h2>
+    <input id="keywords" type="text" placeholder="예: 대외비, CONFIDENTIAL, DRAFT">
+    <div class="chips" style="margin-top:10px">
+      <button class="chip" data-k="대외비">대외비</button><button class="chip" data-k="CONFIDENTIAL">CONFIDENTIAL</button>
+      <button class="chip" data-k="DRAFT">DRAFT</button><button class="chip" data-k="SAMPLE">SAMPLE</button><button class="chip" data-k="초안">초안</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>제거 강도</h2>
+    <label class="sw"><span>강력 모드<small>대각선·반투명 텍스트, 반투명 로고까지 제거</small></span><input type="checkbox" id="aggressive"></label>
+    <label class="sw"><span>반복 이미지 제거 (PDF)<small>모든 페이지에 찍힌 같은 로고 이미지 제거</small></span><input type="checkbox" id="repeated"></label>
+    <label class="sw"><span>스캔 문서 모드 (PDF)<small>사진/스캔으로 만든 PDF용 — 이미지로 재구성</small></span><input type="checkbox" id="raster"></label>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>고급 설정</summary>
+      <label class="f">이미지 처리 방식</label>
+      <select id="mode">
+        <option value="auto">자동 (권장)</option>
+        <option value="threshold">문서 스캔 — 옅은 회색 지우기</option>
+        <option value="overlay">사진 — 반투명 흰 글씨 지우기</option>
+        <option value="color">특정 색 지우기 (도장 등)</option>
+        <option value="region">선택 영역만 지우기</option>
+      </select>
+      <label class="f">지울 색상 (특정 색 방식)</label>
+      <input id="color" type="color" value="#d22c2c" style="width:100%;height:48px;border:0;background:none">
+      <label class="f">PDF 암호 (본인 문서인 경우)</label>
+      <input id="password" type="password" autocomplete="off">
+    </details>
+  </section>
+
+  <section class="card" id="result" aria-live="polite"></section>
+</main>
+<footer>본인이 저작권·권리를 가진 문서, 또는 사용 허락을 받은 문서에만 사용하세요. 파일은 처리 후 서버에 저장되지 않습니다.</footer>
+
+<div class="bar"><button id="go" disabled>워터마크 제거하기</button></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fileIn = $('#file'), drop = $('#drop'), go = $('#go'), res = $('#result');
+let file = null, rects = [], natural = {w:1,h:1};
+const IMG = /\.(png|jpe?g|bmp|tiff?|webp)$/i;
+
+function pick(f){
+  file = f; if(!f) return;
+  $('#picked').hidden = false; $('#nm').textContent = f.name;
+  $('#ext').textContent = (f.name.split('.').pop()||'').toUpperCase();
+  go.disabled = false; res.style.display='none'; rects=[];
+  const isImg = IMG.test(f.name);
+  $('#stage').style.display = isImg ? 'block':'none'; $('#stageHint').hidden = !isImg;
+  if(isImg){ const img=$('#preview'); img.onload=()=>{natural={w:img.naturalWidth,h:img.naturalHeight};draw();}; img.src=URL.createObjectURL(f); }
+}
+fileIn.onchange = e => pick(e.target.files[0]);
+['dragover','dragenter'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('on')}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('on')}));
+drop.addEventListener('drop', e => pick(e.dataTransfer.files[0]));
+
+document.querySelectorAll('.chip').forEach(c=>c.onclick=e=>{
+  e.preventDefault(); const k=$('#keywords'); const list=k.value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!list.includes(c.dataset.k)) list.push(c.dataset.k); k.value=list.join(', ');
+});
+
+// 이미지 영역 드래그 선택
+const cv = $('#cv'), ctx = cv.getContext('2d'); let start=null, cur=null;
+function pos(e){const r=cv.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height};}
+function draw(){
+  const r=cv.getBoundingClientRect(); cv.width=r.width*devicePixelRatio; cv.height=r.height*devicePixelRatio;
+  ctx.clearRect(0,0,cv.width,cv.height); ctx.lineWidth=2*devicePixelRatio;
+  const all = cur&&start ? rects.concat([norm(start,cur)]) : rects;
+  for(const q of all){ctx.fillStyle='rgba(79,70,229,.25)';ctx.strokeStyle='#4F46E5';
+    ctx.fillRect(q.x*cv.width,q.y*cv.height,q.w*cv.width,q.h*cv.height);ctx.strokeRect(q.x*cv.width,q.y*cv.height,q.w*cv.width,q.h*cv.height);}
+}
+function norm(a,b){return {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(a.x-b.x),h:Math.abs(a.y-b.y)};}
+cv.addEventListener('pointerdown',e=>{start=pos(e);cur=start;cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{if(start){cur=pos(e);draw();}});
+cv.addEventListener('pointerup',e=>{const q=norm(start,pos(e)); if(q.w*q.h<0.0004){rects=[];} else rects.push(q); start=cur=null; draw();});
+addEventListener('resize',draw);
+
+go.onclick = async () => {
+  if(!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  fd.append('keywords', $('#keywords').value);
+  for(const id of ['aggressive','repeated','raster']) fd.append(id, $('#'+id).checked?'1':'0');
+  let mode = $('#mode').value; if(rects.length && mode==='auto') mode='region';
+  fd.append('mode', mode); fd.append('password', $('#password').value);
+  if(mode==='color') fd.append('color', $('#color').value);
+  fd.append('regions', rects.map(q=>[q.x*natural.w,q.y*natural.h,q.w*natural.w,q.h*natural.h].map(Math.round).join(',')).join(';'));
+  go.disabled = true; go.innerHTML = '<span class="spin"></span>처리 중…';
+  try{
+    const r = await fetch('/api/clean',{method:'POST',body:fd}); const j = await r.json();
+    res.style.display='block';
+    if(!r.ok) throw new Error(j.error||'처리 실패');
+    const items = Object.entries(j.removed).map(([k,v])=>`<li>${k}: ${v.toLocaleString()}</li>`).join('');
+    const notes = j.notes.map(n=>`<li>${n}</li>`).join('');
+    res.innerHTML = j.total
+      ? `<div class="big">✅ 제거 완료</div><ul>${items}${notes}</ul><a class="dl" href="/api/download/${j.token}">${j.filename} 다운로드</a>`
+      : `<div class="big">🔍 찾은 워터마크 없음</div><ul><li>‘지울 문구’를 입력하거나 ‘강력 모드’를 켜보세요.</li>${notes}</ul><a class="dl" href="/api/download/${j.token}" style="background:var(--sub)">그래도 다운로드</a>`;
+  }catch(err){ res.innerHTML = `<div class="big err">⚠️ ${err.message}</div>`; }
+  finally{ go.disabled=false; go.textContent='워터마크 제거하기'; res.scrollIntoView({behavior:'smooth'}); }
+};
+</script>
+</body>
+</html>
