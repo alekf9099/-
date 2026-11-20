@@ -84,3 +84,15 @@ pip install -e ".[test]" && pytest -q     # 14개: 형식별 샘플을 생성해
 - 본문과 **같은 색·같은 레이어**로 합쳐진 이미지 워터마크는 완벽 복원이 불가능합니다(인페인팅은 주변으로 추정).
 - `--raster` 결과는 이미지 PDF라 텍스트 선택이 안 됩니다.
 - `.doc/.ppt/.xls/.hwp` 구형 형식은 먼저 최신 형식으로 저장 후 사용하세요.
+
+## 8. Play Store 등록 에셋 (Canva 제작)
+
+| 파일 | 규격 | 용도 |
+|---|---|---|
+| `docs/store/icon-512.png` | 512×512 | 앱 아이콘 (풀블리드, 스토어가 둥근 마스크 적용) |
+| `docs/store/feature-graphic-1024x500.png` | 1024×500 | 피처 그래픽 |
+| `docs/store/shot-1.png` ~ `shot-4.png` | 1080×1920 | 스크린샷 (1: 전/후 비교 → 2: 업로드 → 3: 문구 입력 → 4: 사진 영역 지우기) |
+
+<p>
+<img src="docs/store/shot-1.png" width="180"> <img src="docs/store/shot-2.png" width="180"> <img src="docs/store/shot-3.png" width="180"> <img src="docs/store/shot-4.png" width="180">
+</p>
